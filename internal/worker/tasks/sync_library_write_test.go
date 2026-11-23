@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riverqueue/river"
-	"github.com/riverqueue/river/rivertype"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -85,9 +83,9 @@ func TestUserGameWorker_WritesTheMatchARematchCommittedMeanwhile(t *testing.T) {
 	itemID := famInsertItem(t, jobID, userID, egID, "pending")
 
 	commit := rematchInTx(t, 200, egID)
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t), RiverClient: newTestRiverClient(t)}
 	runBlocked(t, func() error {
-		return w.Work(context.Background(), &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}})
+		return w.Work(context.Background(), writeJob(t, tasks.UserGameArgs{JobItemID: itemID}))
 	}, commit)
 
 	if n := ugCountFor(t, userID, 200); n != 1 {
@@ -135,11 +133,8 @@ func igdbMatchWithSearchHook(t *testing.T, itemID string, results []map[string]a
 	}))
 	t.Cleanup(igdbSrv.Close)
 
-	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL), RiverClient: newTestRiverClient(t)}
-	if err := w.Work(context.Background(), &river.Job[tasks.IGDBMatchArgs]{
-		JobRow: &rivertype.JobRow{Attempt: 1, MaxAttempts: 5},
-		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
-	}); err != nil {
+	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL), LC: newTestLC(t)}
+	if err := w.Work(context.Background(), matchJob(t, tasks.IGDBMatchArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("igdb_match: %v", err)
 	}
 }

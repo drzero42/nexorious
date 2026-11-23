@@ -441,7 +441,11 @@ func TestFailByDispatchOwner(t *testing.T) {
 	var ownWrote bool
 	err := m.Fail(ctx, c.JobID, Failure{
 		Message: "dispatch broke", CallerRiverJobID: owner, KindData: json.RawMessage(`{"k":1}`),
-		Own: func(context.Context, bun.Tx) error { ownWrote = true; return nil },
+		// Own's result replaces KindData: the effects learn what the write found.
+		Own: func(context.Context, bun.Tx) (json.RawMessage, error) {
+			ownWrote = true
+			return json.RawMessage(`{"k":2}`), nil
+		},
 	})
 	if err != nil || !ownWrote {
 		t.Fatalf("fail: %v own=%v", err, ownWrote)
@@ -460,7 +464,7 @@ func TestFailByDispatchOwner(t *testing.T) {
 	if err := testDB.NewRaw(`SELECT args->>'kind_data' FROM river_job WHERE kind = ?`, EffectsArgs{}.Kind()).Scan(ctx, &data); err != nil {
 		t.Fatal(err)
 	}
-	if data != `{"k": 1}` {
+	if data != `{"k": 2}` {
 		t.Errorf("kind data = %q", data)
 	}
 	if err := m.Fail(ctx, c.JobID, Failure{Message: "x", CallerRiverJobID: owner}); !errors.Is(err, ErrJobNotActive) {

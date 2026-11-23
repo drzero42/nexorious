@@ -92,10 +92,10 @@ flowchart TD
     A([Trigger: manual or scheduled]) --> B
 
     subgraph Stage1["Stage 1 — Fetch"]
-        B[DispatchSyncWorker<br/>records sync_started_at] --> C
+        B[DispatchSyncWorker<br/>starts the dispatch] --> C
         C[Adapter fetches library<br/>in batches of ≤10] --> D
         D[Upsert external_games<br/>+ external_game_platforms] --> E
-        E[Enqueue one Stage 2 job<br/>per game in batch] --> F{More batches?}
+        E[Add the batch's job items,<br/>each with a Stage 2 job] --> F{More batches?}
         F -->|yes| C
         F -->|no| G[Availability sweep:<br/>mark missing games is_available=false]
     end
@@ -123,26 +123,28 @@ flowchart TD
 
     subgraph UserAction["User Action"]
         M --> R{User decision}
-        R -->|picks IGDB match| S[Set resolved_igdb_id<br/>enqueue Stage 3]
+        R -->|picks IGDB match| S[Rematch: set the match,<br/>write the library,<br/>complete the item]
         R -->|skips game| T[Set is_skipped=true<br/>mark item skipped]
     end
 
     E --> H
     L --> S3A
-    S --> S3A
 ```
+
+Every change to the status of a sync Job or job item goes through the Job lifecycle module (`internal/joblifecycle`); [docs/job-lifecycle.md](job-lifecycle.md) is its specification. This document describes what is particular to sync.
 
 ### DispatchSyncWorker responsibilities
 
-- Recording `sync_started_at` at the beginning of a sync run
+The `DispatchSyncWorker` is the dispatch owner of its Job.
+
+- Starting the dispatch through the module; it is refused, and exits, when the Job is no longer active or the dispatch is already done
 - Repairing Child games before the fetch: aligning each child's skip with its parent's and promoting the children of parents that have left the library (see [Siblings](#siblings))
 - Calling the adapter's batch callback and iterating until the library is fully fetched
-- Applying rate limiting between API calls
-- Upserting `external_games` and `external_game_platforms` after each batch
-- Enqueuing Stage 2 jobs after each batch
-- Running the availability sweep at the end of the fetch phase, then promoting the children of parents that left in this sync
-- Re-queueing, once the dispatch is done, every `pending` item of its Job that has nothing running it (waiting children, promoted games)
-- Failing the job and cancelling pending items on credential errors
+- Upserting `external_games` and `external_game_platforms` after each batch, only while the Job is active
+- Adding each batch's job items, with their Stage 2 River jobs, through the module
+- Running the sweeps at the end of the fetch phase, then promoting the children of parents that left in this sync
+- Marking the dispatch done, with `last_synced_at`
+- Failing the Job through the module on a credential error or any other failure
 
 ### Storefront adapter responsibilities
 
@@ -174,20 +176,24 @@ The interface requires a `GetLibrary` method that accepts a context, a batch siz
 
 The `DispatchSyncWorker` runs once per sync job. It:
 
-1. Records `sync_started_at`, then repairs Child games: every child gets its parent's `is_skipped`, and the children of parents that left the library in an earlier sync are promoted (see [Siblings](#siblings))
+1. Starts the dispatch, then repairs Child games: every child gets its parent's `is_skipped`, and the children of parents that left the library in an earlier sync are promoted (see [Siblings](#siblings))
 2. Calls the storefront adapter which fetches the library and yields games in batches of ≤10
 3. After each batch:
-   - Upserts each game into `external_games`, always setting `updated_at = now()` and `is_available = true`
+   - Writes each game in a short transaction that first takes a share lock on the Job row and stops the dispatch if the Job is no longer active (a Cancel, or a reset of the storefront's sync data). In it the game is upserted into `external_games` (`updated_at = now()`, `is_available = true`), its platform rows into `external_game_platforms`, and a skipped game's `skipped` change. These writes are best effort: one that fails is logged and the game is written by the next sync
    - Accumulates each game's `external_id` into an in-memory set of fetched IDs
-   - Upserts platform rows into `external_game_platforms`; removes any platform rows for that game that were not in this batch
-   - Enqueues one Stage 2 job per game in the batch that is not skipped. A skipped game gets no job item, only a `skipped` change
-4. After all batches complete, runs a sweep: queries all `external_games` rows for this user and storefront where `is_available = true`, and marks any whose `external_id` is not in the fetched ID set as `is_available = false` — these are games that were not seen in this sync run and have been removed from the user's library. For each game marked unavailable, writes a `removed` entry to `sync_changes`
+   - Adds a job item for every game that is not skipped, with its Stage 2 River job, in one transaction through the module. A game the Job already has an item for gets none, so a dispatch that runs again gives no item a second River job. A skipped game gets no job item, only a `skipped` change
+   - A database error while adding the items is returned to River, which runs the dispatch again; it does not fail the sync
+4. After all batches complete, the sweeps run: platform rows not seen in this fetch are removed, and every `external_games` row for this user and storefront still marked available whose `external_id` was not fetched is marked `is_available = false` with a `removed` entry in `sync_changes`. Each game is one transaction (Job row share lock, then the game, then the `removed` row only when this run changed it), so a sweep that runs twice writes one row.
    After the sweep, the children of parents that left in this sync are promoted.
    The sweep is skipped when the fetch returned no games at all while at least one game is still marked available for this storefront. An empty reply is far more likely a privacy setting, an upstream glitch or a changed response shape than a library that really went to zero, so the job fails instead (`sync.failed`) and nothing is marked removed. If the library really is empty, reset the storefront's sync data or disconnect it.
 
-5. Marks the dispatch done, then gives a Stage 2 job to every `pending` item of this Job that has no River job running or queued. This is how a child that waited while the dispatch could still add its parent's item is looked at again. It only runs while the Job is active, so a sync cancelled during its dispatch is not restarted.
+5. Marks the dispatch done, with `last_synced_at` and the cleared credentials flag in the same transaction. The module then queues every waiting item that can no longer wait (see [Siblings](#siblings)) and evaluates completion; an empty library completes here.
 
-If a credential error occurs at any point, the job is marked `failed` and all pending job_items are cancelled. Any `external_games` rows already upserted in this run are kept.
+The dispatch checks its context as soon as the fetch returns, whatever the fetch returned: a fetch cut off by a shutdown or a Cancel can return with a partial library and no error, or with an error that is not the storefront's answer (an authentication error from a cancelled request). Such a dispatch records nothing; it is not failed, no sweep runs and it is not marked done.
+
+If a credential error occurs, the Job is failed (its unfinished items cancelled) and `credentials_error` is set in the same transaction. Any `external_games` rows already upserted in this run are kept.
+
+The dispatch has a two-hour timeout. One that exceeds it is cancelled, uses an attempt and runs again; after its last attempt recovery fails the sync.
 
 ---
 
@@ -215,34 +221,32 @@ A sibling is another `external_games` row for the same user, storefront, and tit
 **Keeping a family together (Stage 1, at the start of each dispatch).**
 
 - Every child gets its parent's `is_skipped`, in both directions. A skip or unskip only cascades to the children that exist at that moment, so this catches later editions and failed cascades. A child this unskips whose `resolved_igdb_id` differs from its parent's carries a stale match: its platform links are removed (the user game they were on is kept) and it takes the parent's match. The repair is one transaction.
-- **Promotion.** A parent that is unavailable, unmatched and not skipped will never be matched by a sync. If it has an available child, the oldest available child becomes the parent (`parent_id` cleared) and the other children point to it. Unfinished items of the two games left in finished Jobs are cancelled, so the promoted game is listed and its review can be done. Promotion runs at the start of the dispatch, for parents that left in an earlier sync, and again after the availability sweep, for parents that left in this one. It is the only thing that changes `parent_id` after a game is created; a parent that later returns to the library stays a separate top-level game.
+- **Promotion.** A parent that is unavailable, unmatched and not skipped will never be matched by a sync. If it has an available child, the oldest available child becomes the parent (`parent_id` cleared) and the other children point to it. Promotion runs at the start of the dispatch, for parents that left in an earlier sync, and again after the availability sweep, for parents that left in this one. It is the only thing that changes `parent_id` after a game is created; a parent that later returns to the library stays a separate top-level game.
 
-**Stage 2 (child).** A child whose parent is matched inherits the match and proceeds to Stage 3. A child whose parent is unmatched waits only when the wait can end: its Job is active, the parent is top-level, and the parent has an unfinished item in this Job (`pending`, `processing`, `pending_review`) or the dispatch is still running and may add one. Otherwise the item fails with `parent game is unmatched and is not part of this sync`, and the sync completes with errors; the next sync tries again. The decision is taken in one transaction with the parent row locked, so a rematch or promotion committing meanwhile is not missed.
+**Stage 2 (child).** A child whose parent is matched inherits the match and proceeds to Stage 3. A child whose parent is unmatched asks the module to wait on the parent's item. The sync kind tells the module which item each child waits on: the item of its parent game in the same Job, or none. Waiting is allowed while that item is unfinished, or while it does not exist and the dispatch is still running (it may be in a later batch). A waiting item is `pending` with no River job. When waiting is not allowed, the worker loads the game again and decides at once: it inherits if the parent was matched meanwhile, is searched like any other game if it was promoted, and otherwise fails with `parent game is unmatched and is not part of this sync`, and the sync completes with errors; the next sync tries again.
 
-**Waking a waiting child.** After writing the parent's library entries, Stage 3 re-enqueues Stage 2 for the parent's children that are not yet resolved and have a `pending` job item. A child that waited while the dispatch was running is re-queued when the dispatch is done (Stage 1, step 5). A child waiting on a parent that ends after that is picked up by the orphaned-item rescue (see [docs/maintenance.md](maintenance.md)).
+**Waking a waiting child.** When the parent's item finishes, in any status, the module queues its waiting children in the same transaction. When the dispatch is marked done, it queues every waiting child whose parent has no item, and every `pending` item without a River job that is no longer a child (a game promoted during the sweep). While the parent is in Pending review its children keep waiting; a rematch of the parent completes them. Retrying a failed parent also retries the failed children that waited on it.
 
-**Manual match / skip (cascade).** `HandleRematchExternalGame` and `HandleUnskipGame` act on the whole family: the game and its children via `parent_id = eg.id`, locked in that order. They write the library themselves (see [User Interactions](#user-interactions)). `HandleSkipGame` propagates the skip flag to each child and marks their job items skipped.
+**Manual match / skip (cascade).** `HandleRematchExternalGame` and `HandleUnskipGame` act on the whole family: the game and its children via `parent_id = eg.id`, locked in that order. They write the library themselves (see [User Interactions](#user-interactions)). `HandleSkipGame` propagates the skip flag to each child and skips the family's unfinished job items.
 
 Child rows (`parent_id IS NOT NULL`) are filtered from all UI lists and counts — only the parent row is visible and actionable by the user.
 
-Both item workers do nothing for an item that is no longer `pending`, so a late or duplicate River job cannot run a finished item again.
+Both item workers act only on an item whose recorded River job they are, so a late or duplicate River job, or one run again after its result committed, writes nothing.
 
 ---
 
 ## Stage 3 — User Game Write
 
-One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a retry.
+One `UserGameWorker` job runs per game, handed on by Stage 2.
 
-1. If `is_skipped` is true: record a `skipped` change, mark the item `skipped`, and stop
-2. If `external_game.resolved_igdb_id` is not set but `job_item.resolved_igdb_id` is (a manual resolution), copy it to the external game, only while the game is still unmatched: a rematch that committed meanwhile wins
-3. In one transaction, the **library write** (`tasks.WriteExternalGameToLibrary`, shared with rematch and unskip), the item's `sync_changes` rows and the item's completion:
+1. If `is_skipped` is true: record a `skipped` change and finish the item as `skipped`, in one transaction, and stop
+2. In one transaction, after the module checked that this River job still owns the item, the **library write** (`tasks.WriteExternalGameToLibrary`, shared with rematch and unskip), the item's `sync_changes` rows and the item's completion:
    - Lock the `external_games` row (`FOR UPDATE`) and read `resolved_igdb_id` and `is_skipped` again under the lock. A writer that loaded the game before a rematch committed writes the rematch's match, never the old one; a game skipped meanwhile is handled as in step 1
    - Ensure the `games` row, then `usergame.Acquire` (`ModeUpsert`) on every row in `external_game_platforms`: one `user_games` row per user + IGDB game ID, and one `user_game_platforms` row per `(user_game_id, platform, storefront)` with `external_game_id` set. On conflict the ownership rank guard applies (never downgrade ownership status), and `hours_played` is updated only if the incoming value is greater
    - Set `external_games.updated_at` and `library_written_at`
    - Write `added` (new user game), `status_changed` (ownership upgrade) or `already_in_library` to `sync_changes`
-   - Complete the item, only if it is still `pending`; otherwise everything rolls back
-   - A game with no match or no platform rows fails the item; so does any other error in the write
-4. After commit, if IGDB is configured and the `games` row has no description, an immediate metadata fetch is enqueued for that game. This ensures newly added games have cover art and full IGDB data within seconds rather than waiting for the next scheduled bulk refresh. The enqueue is fire-and-forget and non-fatal — the periodic bulk refresh (see [docs/maintenance.md](maintenance.md) § "Metadata refresh") remains the safety net.
+   - A game with no match, no platform rows, or that `Acquire` refuses fails the item. A database error is returned to River, which retries; on the last attempt the item fails with it
+3. After commit, if IGDB is configured and the `games` row has no description, an immediate metadata fetch is enqueued for that game. This ensures newly added games have cover art and full IGDB data within seconds rather than waiting for the next scheduled bulk refresh. The enqueue is fire-and-forget and non-fatal — the periodic bulk refresh (see [docs/maintenance.md](maintenance.md) § "Metadata refresh") remains the safety net.
 
 Stage 2 never overwrites a match: its writes of `resolved_igdb_id` (a confident search result, a child inheriting from its parent) apply only while the game has none, so a rematch that commits during an IGDB search wins. A child inherits in a transaction that reads the parent `FOR SHARE`, and an item goes to `pending_review` only in a transaction that first reads the game `FOR SHARE` and finds it still unmatched; otherwise the item goes on to Stage 3.
 
@@ -275,48 +279,9 @@ Additionally, a manually added row has no `external_game_id` because it was not 
 
 ## Job Lifecycle
 
-```mermaid
-stateDiagram-v2
-    [*] --> pending : triggered (manual or scheduled)
-    pending --> processing : DispatchSyncWorker starts
-    processing --> processing : pending_review items remain
-    processing --> completed : all items completed or skipped
-    processing --> failed : credential error or fatal dispatch failure
-    failed --> [*]
-    completed --> [*]
-```
+Sync Jobs and their job items follow [docs/job-lifecycle.md](job-lifecycle.md): its states, transitions, recovery, and what happens on a shutdown or restart. A sync interrupted by a shutdown resumes at the next startup. A sync waiting on the user (items in Pending review) stays `processing` until they are resolved or skipped, and the storefront does not start a new sync meanwhile.
 
-A job is complete only when every job_item is either `completed` or `skipped`. Items in `pending_review` hold the job in `processing` indefinitely — the job does not time out waiting for the user.
-
-### Shutdowns and restarts
-
-A sync that is running when the server shuts down resumes at the next startup; the user does not have to do anything. This relies on Nexorious running as a **single instance**: at startup nothing else is working, so any unfinished sync work is left over from the previous process.
-
-- **During shutdown.** River gets 20 seconds to drain, then cancels the running workers. A cancelled `DispatchSyncWorker` stops without recording anything: the job is not failed, the removed-game sweep does not run, and `last_synced_at` and `dispatch_complete` are not written. The job stays `processing` with `dispatch_complete = false`.
-- **At startup**, before River starts, `scheduler.RecoverInterruptedSyncs` runs once (also after a backup restore):
-  1. River jobs of the sync kinds (`dispatch_sync`, `igdb_match`, `user_game_write`) that are still `running` with no attempts left are discarded, and what they were working on is failed: for a dispatch the job is failed (pending items cancelled, `sync.failed` sent), for an item job the item is failed. They are not retried, so work that kills the server every time cannot loop.
-  2. The remaining `running` River jobs of the sync kinds are released for retry. A hard kill (SIGKILL, OOM) leaves them in that state.
-  3. The dispatch is re-enqueued for every active sync job with `dispatch_complete = false` that has no live `dispatch_sync` River job.
-  4. Pending job_items with no live River job are re-queued, whatever their age. No maintenance event is emitted.
-  5. The completion check runs for every `processing` sync job with `dispatch_complete = true`, so a job whose last item settled just before the shutdown is finalized and its notification sent.
-
-Running a dispatch again for the same job is safe: external games and platforms are upserted, a job_item is inserted once per `(job_id, item_key)`, and a `skipped` change is recorded once per game.
-
-A dispatch only changes a job that is still `pending` or `processing`. One that starts after the job was cancelled does nothing, and one that fails after a cancel leaves the job `cancelled` and sends no notification.
-
-Not covered: the sync diff can be wrong for the one game that was being written when the process was killed.
-
-### Job item statuses
-
-| Status | Meaning |
-|---|---|
-| `pending` | Waiting to be picked up by a Stage 2 or Stage 3 worker |
-| `processing` | Currently being worked on |
-| `completed` | Successfully written to the user's library (by Stage 3, or by a rematch that settled it) |
-| `skipped` | Game is marked `is_skipped`; no user_game entry was created |
-| `pending_review` | Awaiting the user to pick an IGDB match or skip the game |
-| `cancelled` | Job failed mid-run; this item will not be processed |
-| `failed` | Permanent failure (e.g. the external_game record is missing) |
+The sync kind's finishing effects are `sync.completed` (or `sync.completed_with_errors`), `sync.diff` and the store-link refresh for the storefront when it completes; `sync.failed` or `sync.auth_expired` when it fails; and `sync.needs_review` when it starts waiting on the user.
 
 ---
 
@@ -326,20 +291,20 @@ Rematch and unskip are edits to one game and its children, not sync work ([ADR 0
 
 ### Matching or rematching a game
 
-The user searches IGDB and picks a match, for a game in review, an unmatched game, or a matched game whose match is wrong. `HandleRematchExternalGame`, in one transaction:
+The user searches IGDB and picks a match, for a game in review, an unmatched game, or a matched game whose match is wrong. `HandleRematchExternalGame` first looks, without a lock, for an active Job in which the game or a child has an unfinished item. If there is one, everything below runs in the Job lifecycle module's transaction for that Job, with the Job row locked first, as a sync worker does. In one transaction:
 
 1. Locks the game, then its children ordered by id (the family lock order).
-2. Refuses with 409 `a sync is still working on this game` while any item of the game or a child is `pending` or `processing` and being worked: its Job is active, or a River job naming it can still run. One exception: a child's `pending` item does not count when the child and its parent are both unmatched; no worker can write it, and it is waiting for exactly this rematch.
+2. Refuses with 409 `a sync is still working on this game` while the game's **own** item is `pending` in that Job: the sync has not finished with it.
 3. Removes the platform links of the game and its children. Every user game this leaves with no links from outside the family is orphaned, except the user game of the new match: without `orphan_action` the request is refused with 409 `orphan_action required`; `keep` keeps them, `remove` deletes them.
 4. Sets the match on the whole family and clears `is_skipped` on it.
 5. Writes the game and each child to the library. A member with no platform rows is not written; the match is still recorded.
-6. Completes the items this rematch settles, in **active** Jobs only: every item of the family in `pending_review`, in any Job, and the waiting children's items from step 2. Each completion is conditional on the status read, so a Skip that got there first wins. For each it writes the `sync_changes` rows the worker would have (one `added` per Job when the write created the user game), and after commit each of those Jobs' completion is checked.
+6. Completes, in that Job, the game's item if it is in Pending review, and every unfinished item of its children, waiting or not, cancelling their River jobs. For each it writes the `sync_changes` rows the worker would have (one `added` when the write created the user game). A child's worker that was running is refused before it writes.
 
 Items in a Job that is not active are left alone, and a rematch outside an active sync writes no `sync_changes`. The immediate metadata fetch is queued after commit.
 
 ### Skipping a game
 
-The user marks a game as ignored. `is_skipped` is set to `true` on the `external_game` and its children, and the job_items are marked `skipped`. No Stage 3 job is created. On future syncs the dispatch creates no job item for a skipped game and records a `skipped` change instead. A new edition of a skipped game that appears later is skipped too (see [Siblings](#siblings)).
+The user marks a game as ignored. `is_skipped` is set to `true` on the `external_game` and its children. When the game or a child has an unfinished item in an active Job, this runs in the Job lifecycle module's transaction for that Job: those items become `skipped`, a River job working on one is cancelled, and the game's `skipped` change is written when its own item was skipped. Otherwise only the flags are set. On future syncs the dispatch creates no job item for a skipped game and records a `skipped` change instead. A new edition of a skipped game that appears later is skipped too (see [Siblings](#siblings)).
 
 ### Unskipping a game
 
@@ -347,7 +312,7 @@ The user removes the skip. In one transaction `HandleUnskipGame` locks the famil
 
 ### Retrying failed games
 
-"Retry all" on a storefront retries the games the view shows as failed, and the children whose own newest item failed by the same rule. All their items are reset to `pending` first and queued afterwards, parents first.
+"Retry all" on a storefront retries the games the view shows as failed, and the children whose own newest item failed by the same rule. The items are retried through the module, per Job, newest Job first, which also retries the failed children that waited on a retried parent. An item whose Job cannot be retried is left as it is: a `failed` or `cancelled` Job is never reopened, and a `completed` one is not reopened while another sync of the storefront is active (including one this request has just reopened). The endpoint answers 204 either way.
 
 ### The storefront view
 
@@ -355,9 +320,9 @@ The External Games list reads a game's status from its **newest** item (`ORDER B
 
 - **needs_review**: the newest item is `pending_review` and was created after the last write, or any item of the game is `pending_review` in an active Job (an older Job reopened by a retry, which blocks new syncs until the game is reviewed).
 - **skipped** comes next: a skipped game whose newest item failed shows as skipped, where it can be unskipped.
-- **failed**: the newest item failed after the last write. `failed_job_item_id` is that item, and null unless the game shows as failed.
+- **failed**: the newest item failed after the last write. `failed_job_item_id` is that item while its Job is active or `completed`, so Retry can work; it is null otherwise, and null unless the game shows as failed.
 - **matched** / **unmatched** otherwise.
-- A game is hidden only while its newest item is `pending` or `processing` and being worked (same test as the rematch 409), so a cancelled sync's leftover items do not hide it.
+- A game is hidden while its newest item is `pending` in an active Job: a sync worker still acts on it. No item is left unfinished in a finished Job.
 
 The orphan fields (`has_user_game`, `user_game_id`, `user_game_other_platform_count`) are per family, with the same definition as the rematch's orphan check. The pending-review badge counts sync review by the same `needs_review` rule, per top-level game.
 
@@ -418,7 +383,7 @@ Modelled on the metadata-refresh pattern (a dispatch + item worker pair, in `int
 
 Enrichment is **event-driven, never periodic**:
 
-- **Sync completion** — when a sync job finalizes, `SyncCheckJobCompletion` enqueues a **scoped, incremental** dispatch (`Force = false`) for that job's storefront only. New/changed games get links shortly after their sync.
+- **Sync completion** — when a sync job completes, its finishing effect queues a **scoped, incremental** dispatch (`Force = false`) for that job's storefront only. New/changed games get links shortly after their sync.
 - **Admin maintenance** — `POST /api/games/store-links/refresh-job` (admin-only; the "Refresh store links" button on the maintenance page) enqueues a **global, forced** dispatch (`Force = true`) that re-resolves every resolvable row from upstream.
 
 Storefront associations created outside sync (e.g. CSV import onto non-sync stores) have no resolver and render no link. Existing rows show no link until their storefront re-syncs (or an admin runs the manual refresh); there is no migration-time backfill.
@@ -437,7 +402,7 @@ Only the first failure since the last successful sync sends `sync.failed`; later
 
 ## Maintenance
 
-Maintenance tasks that support the sync system — sync history pruning, orphaned item rescue, and stale job cleanup — are documented in [docs/maintenance.md](maintenance.md).
+Maintenance tasks that support the sync system, such as sync history pruning, are documented in [docs/maintenance.md](maintenance.md). Interrupted sync work is recovered by the Job lifecycle module's recovery rule (see [docs/job-lifecycle.md](job-lifecycle.md#recovery)).
 
 An admin can also trigger a global store-link refresh (re-resolving every storefront product link from upstream) from the maintenance page; see [Store-Link Enrichment](#store-link-enrichment).
 

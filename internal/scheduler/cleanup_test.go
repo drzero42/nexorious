@@ -312,7 +312,7 @@ func TestCheckPendingSyncs_OverdueSyncDispatched(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, LC: newTestLC(t)}
 	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	// A pending sync job should have been inserted.
@@ -345,7 +345,7 @@ func TestCheckPendingSyncs_NotOverdue_NotDispatched(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, LC: newTestLC(t)}
 	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	var count int
@@ -373,7 +373,7 @@ func TestCheckPendingSyncs_NeverSynced_Dispatched(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, LC: newTestLC(t)}
 	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	var count int
@@ -415,7 +415,7 @@ func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
 		t.Fatalf("insert running job: %v", err)
 	}
 
-	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, LC: newTestLC(t)}
 	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	var count int
@@ -443,7 +443,7 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, LC: newTestLC(t)}
 	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	var count int
@@ -497,7 +497,7 @@ func TestCheckPendingSyncs_BacksOffAfterFailures(t *testing.T) {
 				}
 			}
 
-			w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+			w := &scheduler.CheckPendingSyncsWorker{DB: testDB, LC: newTestLC(t)}
 			_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 			var pending int
@@ -591,23 +591,9 @@ func TestCleanupSyncChanges_DeletesOldRows(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildPeriodicJobs_InvalidMetadataRefreshInterval_DefaultsTo24h(t *testing.T) {
-	cfg := &config.Config{
-		MetadataRefreshInterval: "not-a-duration",
-		StaleJobThreshold:       "4h",
-	}
+	cfg := &config.Config{MetadataRefreshInterval: "not-a-duration"}
 	// Should not panic; falls back to 24h.
-	jobs := scheduler.BuildPeriodicJobs(cfg, 4*time.Hour)
-	if len(jobs) == 0 {
-		t.Fatal("expected non-empty periodic jobs slice")
-	}
-}
-
-func TestBuildPeriodicJobs_InvalidStaleJobThreshold_DefaultsTo4h(t *testing.T) {
-	cfg := &config.Config{
-		MetadataRefreshInterval: "24h",
-		StaleJobThreshold:       "not-a-duration",
-	}
-	jobs := scheduler.BuildPeriodicJobs(cfg, 4*time.Hour)
+	jobs := scheduler.BuildPeriodicJobs(cfg)
 	if len(jobs) == 0 {
 		t.Fatal("expected non-empty periodic jobs slice")
 	}

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/riverqueue/river"
 	"golang.org/x/time/rate"
 
 	"github.com/drzero42/nexorious/internal/db/models"
@@ -60,10 +59,8 @@ func TestDispatchSync_SteamPartialOwnedGames_FailsWithoutRemovingGames(t *testin
 		return steam.NewAdapter(client, "key", "76561198000000001"), nil
 	}
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("Work: %v", err)
 	}
@@ -164,13 +161,12 @@ func TestDispatchSync_FailureNotifiesOncePerOutage(t *testing.T) {
 					return nil, tasks.ErrCredentials
 				}
 				return steam.NewAdapter(client, "key", "76561198000000001"), nil
-			}}
-			job := &river.Job[tasks.DispatchSyncArgs]{
-				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-			}
+			}, LC: newTestLC(t)}
+			job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 			if err := w.Work(ctx, job); err != nil {
 				t.Fatalf("work: %v", err)
 			}
+			runSyncEffects(t, w.LC)
 			var status string
 			if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
 				t.Fatalf("read job: %v", err)

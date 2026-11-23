@@ -13,6 +13,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/usergame"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -25,10 +26,6 @@ import (
 
 // errSyncStillWorking is the 409 while a sync worker may be writing the game.
 const errSyncStillWorking = "a sync is still working on this game"
-
-// liveRiverJobPredicate matches the River job states in which a job can
-// still run.
-const liveRiverJobPredicate = `state NOT IN ('completed', 'cancelled', 'discarded')`
 
 // lockFamily locks an External game FOR UPDATE, then its Child games ordered
 // by id: the family lock order #1339's promotion uses. A Child game is refused
@@ -67,35 +64,6 @@ func familyIDs(eg models.ExternalGame, children []models.ExternalGame) []string 
 		ids = append(ids, ch.ID)
 	}
 	return ids
-}
-
-// familyItem is an unfinished item of a family member.
-type familyItem struct {
-	ID             string `bun:"id"`
-	JobID          string `bun:"job_id"`
-	ExternalGameID string `bun:"external_game_id"`
-	Status         string `bun:"status"`
-	// Worked: its Job is active, or a River job naming it can still run.
-	Worked bool `bun:"worked"`
-}
-
-func loadFamilyItems(ctx context.Context, tx bun.Tx, ids []string) ([]familyItem, error) {
-	var items []familyItem
-	if err := tx.NewRaw(`
-		SELECT ji.id, ji.job_id, ji.external_game_id, ji.status,
-		       (j.status IN ('pending', 'processing') OR EXISTS (
-		          SELECT 1 FROM river_job rj
-		          WHERE rj.args->>'job_item_id' = ji.id AND rj.`+liveRiverJobPredicate+`)) AS worked
-		FROM job_items ji
-		JOIN jobs j ON j.id = ji.job_id
-		WHERE ji.external_game_id IN (?)
-		  AND ji.status IN ('pending', 'processing', 'pending_review')
-		ORDER BY ji.id`,
-		bun.List(ids),
-	).Scan(ctx, &items); err != nil {
-		return nil, fmt.Errorf("load family items: %w", err)
-	}
-	return items, nil
 }
 
 // rematchUnlinkFamily removes the platform links of the game and its Child
@@ -166,80 +134,6 @@ func writeFamily(ctx context.Context, tx bun.Tx, userID string, ids []string) (m
 	return writes, nil
 }
 
-// completeWaitingItems completes the given items in active Jobs and writes
-// their diff rows, as the sync worker would have. It returns the Jobs whose
-// completion must be checked after commit. Items in a Job that is not active
-// are left alone.
-func completeWaitingItems(ctx context.Context, tx bun.Tx, userID string, items []familyItem, writes map[string]tasks.LibraryWrite) ([]string, error) {
-	if len(items) == 0 {
-		return nil, nil
-	}
-	jobSet := map[string]bool{}
-	var jobIDs []string
-	for _, it := range items {
-		if !jobSet[it.JobID] {
-			jobSet[it.JobID] = true
-			jobIDs = append(jobIDs, it.JobID)
-		}
-	}
-	var jobs []struct {
-		ID     string `bun:"id"`
-		Active bool   `bun:"active"`
-	}
-	if err := tx.NewRaw(`
-		SELECT id, status IN ('pending', 'processing') AS active
-		FROM jobs WHERE id IN (?) ORDER BY id FOR UPDATE`, bun.List(jobIDs),
-	).Scan(ctx, &jobs); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("lock jobs: %w", err)
-	}
-	var active []string
-	for _, j := range jobs {
-		if j.Active {
-			active = append(active, j.ID)
-		}
-	}
-	isActive := map[string]bool{}
-	for _, id := range active {
-		isActive[id] = true
-	}
-
-	created := false
-	for _, lw := range writes {
-		if lw.Result.Created {
-			created = true
-		}
-	}
-	addedIn := map[string]bool{}
-	for _, it := range items {
-		if !isActive[it.JobID] {
-			continue
-		}
-		// Conditional on the status read: a Skip may have got there first.
-		res, err := tx.NewRaw(
-			`UPDATE job_items SET status = 'completed', processed_at = now() WHERE id = ? AND status = ?`,
-			it.ID, it.Status,
-		).Exec(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("complete item: %w", err)
-		}
-		if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // pgdriver always reports RowsAffected
-			continue
-		}
-		lw, ok := writes[it.ExternalGameID]
-		if !ok {
-			continue // not written (no platform rows): no diff row
-		}
-		added := created && !addedIn[it.JobID]
-		if added {
-			addedIn[it.JobID] = true
-		}
-		if err := tasks.InsertLibraryWriteChanges(ctx, tx, it.JobID, userID, lw, added); err != nil {
-			return nil, err
-		}
-	}
-	return active, nil
-}
-
 // HandleRematchExternalGame handles POST /api/sync/external-games/:id/rematch:
 // it re-resolves a top-level external game and its Child games to a new IGDB
 // id and writes them to the library, all in one transaction (#1338).
@@ -260,67 +154,41 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "igdb_id is required")
 	}
 
-	var jobsToCheck []string
-	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		eg, children, err := lockFamily(ctx, tx, userID, id, "rematch")
-		if err != nil {
-			return err
-		}
-		ids := familyIDs(eg, children)
+	// A plain read, no lock: the active Job in which the game or a child has
+	// an unfinished item, preferring the game's own. Then everything runs in
+	// the module's transaction for that Job: the Job row lock first, then the
+	// family, as a sync worker does, so the two cannot deadlock.
+	var jobID string
+	if err := h.db.NewRaw(`
+		SELECT ji.job_id FROM job_items ji
+		JOIN jobs j ON j.id = ji.job_id
+		JOIN external_games eg ON eg.id = ji.external_game_id
+		WHERE (eg.id = ? OR eg.parent_id = ?) AND eg.user_id = ?
+		  AND ji.status IN ('pending', 'pending_review')
+		  AND j.status IN ('pending', 'processing')
+		ORDER BY (eg.id = ?) DESC, j.created_at DESC
+		LIMIT 1`,
+		id, id, userID, id,
+	).Scan(ctx, &jobID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.ErrorContext(reqCtx, "sync: rematch: find items", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to rematch external game")
+	}
 
-		// Refuse while a worker may be writing a family member, and note the
-		// items this rematch settles: every item in Pending review, and a
-		// waiting child's pending item. Both are decided now, before the match
-		// is set: afterwards no family member is unmatched any more.
-		unmatchedChild := map[string]bool{}
-		if eg.ResolvedIGDBID == nil {
-			for _, ch := range children {
-				if ch.ResolvedIGDBID == nil {
-					unmatchedChild[ch.ID] = true
-				}
-			}
+	var err error
+	if jobID != "" {
+		_, err = h.lc.CompleteByRematch(ctx, jobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
+			return rematchFamily(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, job.ID)
+		})
+		if errors.Is(err, joblifecycle.ErrJobNotActive) || errors.Is(err, joblifecycle.ErrGone) {
+			jobID, err = "", nil // finished meanwhile: no items to touch
 		}
-		items, err := loadFamilyItems(ctx, tx, ids)
-		if err != nil {
+	}
+	if jobID == "" && err == nil {
+		err = h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+			_, err := rematchFamily(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, "")
 			return err
-		}
-		var waiting []familyItem
-		for _, it := range items {
-			switch {
-			case it.Status == models.JobItemStatusPendingReview:
-				waiting = append(waiting, it)
-			case !it.Worked:
-				// Unfinished in a finished Job with nothing queued: left alone.
-			case it.Status == models.JobItemStatusPending && unmatchedChild[it.ExternalGameID]:
-				// No worker can write a child of an unmatched parent; it is
-				// waiting for exactly this rematch.
-				waiting = append(waiting, it)
-			default:
-				return echo.NewHTTPError(http.StatusConflict, errSyncStillWorking)
-			}
-		}
-
-		if err := tasks.EnsureGameRow(ctx, tx, int32(body.IGDBID), eg.Title); err != nil { //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
-			return err
-		}
-		if err := rematchUnlinkFamily(ctx, tx, userID, ids, body.IGDBID, body.OrphanAction); err != nil {
-			return err
-		}
-		// The whole family takes the match and is unskipped: a child's skip
-		// equals its parent's (#1339), and a rematch unskips the parent.
-		if _, err := tx.NewRaw(
-			`UPDATE external_games SET resolved_igdb_id = ?, is_skipped = false, updated_at = now() WHERE id IN (?)`,
-			body.IGDBID, bun.List(ids),
-		).Exec(ctx); err != nil {
-			return fmt.Errorf("set match: %w", err)
-		}
-		writes, err := writeFamily(ctx, tx, userID, ids)
-		if err != nil {
-			return err
-		}
-		jobsToCheck, err = completeWaitingItems(ctx, tx, userID, waiting, writes)
-		return err
-	})
+		})
+	}
 	if err != nil {
 		var he *echo.HTTPError
 		if errors.As(err, &he) {
@@ -330,11 +198,94 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to rematch external game")
 	}
 
-	for _, jobID := range jobsToCheck {
-		tasks.SyncCheckJobCompletion(ctx, h.db, h.riverClient, jobID)
-	}
 	tasks.EnqueueImmediateMetadataFetch(ctx, h.db, h.riverClient, int32(body.IGDBID)) //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 	return c.NoContent(http.StatusNoContent)
+}
+
+// abortHTTP marks an HTTP error so a module transaction rolls back without
+// logging it as a failed transition; errors.As still finds it.
+func abortHTTP(err error) error {
+	var he *echo.HTTPError
+	if errors.As(err, &he) {
+		return joblifecycle.Abort(err)
+	}
+	return err
+}
+
+// rematchFamily re-resolves a top-level game and its Child games to igdbID
+// and writes them to the library. With jobID set it runs in the module's
+// transaction for that Job and returns the items to complete there, with
+// their diff rows written: the game's item when it is in Pending review, and
+// every unfinished item of its children, waiting or not. It refuses (409)
+// while the game's own item is pending: the sync has not finished with it.
+func rematchFamily(ctx context.Context, tx bun.Tx, userID, id string, igdbID int, orphanAction, jobID string) ([]string, error) {
+	eg, children, err := lockFamily(ctx, tx, userID, id, "rematch")
+	if err != nil {
+		return nil, abortHTTP(err)
+	}
+	ids := familyIDs(eg, children)
+
+	var items []struct {
+		ID             string `bun:"id"`
+		ExternalGameID string `bun:"external_game_id"`
+		Status         string `bun:"status"`
+	}
+	if jobID != "" {
+		if err := tx.NewRaw(`
+			SELECT id, external_game_id, status FROM job_items
+			WHERE job_id = ? AND external_game_id IN (?) AND status IN ('pending', 'pending_review')
+			ORDER BY id`,
+			jobID, bun.List(ids),
+		).Scan(ctx, &items); err != nil {
+			return nil, fmt.Errorf("load family items: %w", err)
+		}
+	}
+	for _, it := range items {
+		if it.ExternalGameID == eg.ID && it.Status == models.JobItemStatusPending {
+			return nil, abortHTTP(echo.NewHTTPError(http.StatusConflict, errSyncStillWorking))
+		}
+	}
+
+	if err := tasks.EnsureGameRow(ctx, tx, int32(igdbID), eg.Title); err != nil { //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
+		return nil, err
+	}
+	if err := rematchUnlinkFamily(ctx, tx, userID, ids, igdbID, orphanAction); err != nil {
+		return nil, abortHTTP(err)
+	}
+	// The whole family takes the match and is unskipped: a child's skip
+	// equals its parent's (#1339), and a rematch unskips the parent.
+	if _, err := tx.NewRaw(
+		`UPDATE external_games SET resolved_igdb_id = ?, is_skipped = false, updated_at = now() WHERE id IN (?)`,
+		igdbID, bun.List(ids),
+	).Exec(ctx); err != nil {
+		return nil, fmt.Errorf("set match: %w", err)
+	}
+	writes, err := writeFamily(ctx, tx, userID, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	// Diff rows for the items this completes, as the sync worker would have
+	// written them: 'added' once per Job when any write created the user game.
+	created := false
+	for _, lw := range writes {
+		if lw.Result.Created {
+			created = true
+		}
+	}
+	done := make([]string, 0, len(items))
+	for _, it := range items {
+		done = append(done, it.ID)
+		lw, ok := writes[it.ExternalGameID]
+		if !ok {
+			continue // not written (no platform rows): no diff row
+		}
+		if err := tasks.InsertLibraryWriteChanges(ctx, tx, jobID, userID, lw, created); err != nil {
+			return nil, err
+		}
+		created = false
+	}
+	return done, nil
 }
 
 // HandleUnskipGame handles POST /api/sync/external-games/:id/unskip. It clears

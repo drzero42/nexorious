@@ -190,6 +190,15 @@ func (m *Module) cancelJobRiverJobs(ctx context.Context, tx bun.Tx, k *Kind, job
 	return nil
 }
 
+// cancelRiverJob cancels one River job: a queued one at once, a running one
+// is signalled. One that has ended or is gone is left alone.
+func (m *Module) cancelRiverJob(ctx context.Context, tx bun.Tx, id int64) error {
+	if _, err := m.rc.JobCancelTx(ctx, tx.Tx, id); err != nil && !errors.Is(err, rivertype.ErrNotFound) {
+		return fmt.Errorf("cancel river job %d: %w", id, err)
+	}
+	return nil
+}
+
 // riverStates returns the state of each River job that still has a row.
 func riverStates(ctx context.Context, tx bun.Tx, ids []int64) (map[int64]string, error) {
 	out := make(map[int64]string, len(ids))

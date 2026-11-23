@@ -23,10 +23,10 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
-	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // SteamClient abstracts the Steam Web API call used during credential verification.
@@ -236,6 +236,7 @@ type SyncHandler struct {
 	db                     *bun.DB
 	encrypter              *crypto.Encrypter
 	riverClient            *river.Client[pgx.Tx]
+	lc                     *joblifecycle.Module
 	steamClient            SteamClient
 	playstationStoreClient PlaystationStoreClient
 	epicGamesStoreClient   EpicGamesStoreClient
@@ -248,8 +249,10 @@ type SyncHandler struct {
 }
 
 // NewSyncHandler constructs a SyncHandler.
-func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient, amazonGames AmazonGamesClient) *SyncHandler {
-	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble, amazonGamesClient: amazonGames}
+// riverClient inserts the immediate metadata fetch after a rematch or an
+// unskip, which is not Job work; lc owns the sync Jobs.
+func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], lc *joblifecycle.Module, steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient, amazonGames AmazonGamesClient) *SyncHandler {
+	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, lc: lc, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble, amazonGamesClient: amazonGames}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
@@ -559,54 +562,19 @@ func (h *SyncHandler) HandleTriggerSync(c *echo.Context) error {
 	if !validStorefronts[sf] {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
 	}
-	ctx := context.Background()
-
-	now := time.Now().UTC()
-	jobID := uuid.NewString()
-	// The active-job guard and the insert run in one transaction fronted by a
-	// transaction-scoped advisory lock on the (sync, storefront, user) dedup key:
-	// without it the bare SELECT+INSERT races under READ COMMITTED and two
-	// concurrent triggers both pass the guard and both create an active job.
-	var duplicate bool
-	txErr := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if e := tasks.AcquireJobDedupLock(ctx, tx, "sync", sf, userID); e != nil {
-			return e
-		}
-		var existingID string
-		e := tx.NewRaw(
-			`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
-			userID, sf,
-		).Scan(ctx, &existingID)
-		if e == nil {
-			duplicate = true
-			return nil
-		}
-		if !errors.Is(e, sql.ErrNoRows) {
-			return e
-		}
-		// priority is TEXT in the jobs table with default 'high'.
-		_, e = tx.NewRaw(
-			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at) VALUES (?, ?, 'sync', ?, 'pending', 'high', ?)`,
-			jobID, userID, sf, now,
-		).Exec(ctx)
-		return e
+	// The module's duplicate check runs under the (sync, storefront, user)
+	// lock the scheduled sync shares, so two triggers never both create one.
+	created, err := h.lc.CreateWithDispatch(context.Background(), joblifecycle.NewJob{
+		UserID: userID, JobType: models.JobTypeSync, Source: sf, Priority: models.JobPriorityHigh,
 	})
-	if txErr != nil {
-		slog.ErrorContext(c.Request().Context(), "sync: create job", logging.KeyErr, txErr, logging.KeySource, sf, logging.Cat(logging.CategoryDB))
+	if err != nil {
+		slog.ErrorContext(c.Request().Context(), "sync: create job", logging.KeyErr, err, logging.KeySource, sf, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job")
 	}
-	if duplicate {
+	if !created.Created {
 		return echo.NewHTTPError(http.StatusConflict, "sync already in progress")
 	}
-
-	if h.riverClient != nil {
-		if _, err := h.riverClient.Insert(ctx, tasks.DispatchSyncArgs{
-			JobID: jobID, UserID: userID, Storefront: sf,
-		}, nil); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: enqueue dispatch failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync job")
-		}
-	}
+	jobID := created.JobID
 
 	return c.JSON(http.StatusOK, manualSyncTriggerResponse{
 		Message:    "Sync job created for " + sf,
@@ -1266,89 +1234,114 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	id := c.Param("id")
 	ctx := context.Background()
 
-	var ownerRow struct {
-		UserID string `bun:"user_id"`
-		Title  string `bun:"title"`
-	}
-	err := h.db.NewRaw(`SELECT user_id, title FROM external_games WHERE id = ?`, id).Scan(ctx, &ownerRow)
-	if errors.Is(err, sql.ErrNoRows) || ownerRow.UserID != userID {
-		return echo.NewHTTPError(http.StatusNotFound, "not found")
-	}
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to find game")
-	}
-
-	if _, err := h.db.NewRaw(
-		`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ?`, id,
-	).Exec(ctx); err != nil {
-		slog.ErrorContext(c.Request().Context(), "sync: skip game failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
+	// A plain read, no lock: the Jobs in which the game or a child has an
+	// unfinished item. Each is entered through the module, which locks the
+	// Job row before the family (one lock order everywhere).
+	var jobIDs []string
+	if err := h.db.NewRaw(`
+		SELECT ji.job_id FROM job_items ji
+		JOIN jobs j ON j.id = ji.job_id
+		JOIN external_games eg ON eg.id = ji.external_game_id
+		WHERE (eg.id = ? OR eg.parent_id = ?) AND eg.user_id = ?
+		  AND ji.status IN ('pending', 'pending_review')
+		  AND j.status IN ('pending', 'processing')
+		GROUP BY ji.job_id
+		ORDER BY max(j.created_at) DESC`,
+		id, id, userID,
+	).Scan(ctx, &jobIDs); err != nil {
+		slog.ErrorContext(c.Request().Context(), "sync: skip game: find items", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 	}
 
-	// Cascade skip to children.
-	var childIDs []string
-	if err := h.db.NewRaw(
-		`SELECT id FROM external_games WHERE parent_id = ?`, id,
-	).Scan(ctx, &childIDs); err == nil {
-		for _, childID := range childIDs {
-			if _, err := h.db.NewRaw(
-				`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ?`, childID,
-			).Exec(ctx); err != nil {
-				slog.ErrorContext(c.Request().Context(), "sync: skip game: cascade child failed", logging.KeyErr, err, "child_id", childID, logging.Cat(logging.CategoryDB))
-				continue
-			}
-			var childItem struct {
-				ID    string `bun:"id"`
-				JobID string `bun:"job_id"`
-			}
-			if err := h.db.NewRaw(`
-				SELECT id, job_id FROM job_items
-				WHERE external_game_id = ? AND status IN ('pending_review', 'pending')
-				ORDER BY created_at DESC
-				LIMIT 1`, childID,
-			).Scan(ctx, &childItem); err == nil {
-				if _, err := h.db.NewRaw(
-					`UPDATE job_items SET status = 'skipped', processed_at = now() WHERE id = ?`,
-					childItem.ID,
-				).Exec(ctx); err != nil {
-					slog.ErrorContext(c.Request().Context(), "sync: skip game: cascade child job_item", logging.KeyErr, err, logging.KeyJobItemID, childItem.ID, logging.Cat(logging.CategoryDB))
-				} else {
-					tasks.SyncCheckJobCompletion(ctx, h.db, h.riverClient, childItem.JobID)
-				}
-			}
+	flagged := false
+	for _, jobID := range jobIDs {
+		_, err := h.lc.SkipItems(ctx, jobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
+			return skipFamily(ctx, tx, userID, id, job.ID)
+		})
+		switch {
+		case err == nil:
+			flagged = true
+		case errors.Is(err, joblifecycle.ErrJobNotActive), errors.Is(err, joblifecycle.ErrGone):
+			// Finished meanwhile: only the flags, below.
+		default:
+			return skipHTTPError(c, err, id)
 		}
 	}
-
-	// Mark the most recent pending_review or pending job_item for this game as skipped,
-	// then check whether the job can now complete.
-	var jobItemRow struct {
-		ID    string `bun:"id"`
-		JobID string `bun:"job_id"`
-	}
-	if err := h.db.NewRaw(`
-		SELECT id, job_id FROM job_items
-		WHERE external_game_id = ? AND status IN ('pending_review', 'pending')
-		ORDER BY created_at DESC
-		LIMIT 1`, id,
-	).Scan(ctx, &jobItemRow); err == nil {
-		if _, err := h.db.NewRaw(
-			`UPDATE job_items SET status = 'skipped', processed_at = now() WHERE id = ?`,
-			jobItemRow.ID,
-		).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: skip game: mark job_item skipped", logging.KeyErr, err, logging.KeyJobItemID, jobItemRow.ID, logging.Cat(logging.CategoryDB))
-		} else {
-			if _, err := h.db.NewRaw(
-				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-				 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
-				uuid.NewString(), jobItemRow.JobID, userID, id, ownerRow.Title,
-			).Exec(ctx); err != nil {
-				slog.ErrorContext(c.Request().Context(), "sync: skip game: insert sync_change (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			}
-			tasks.SyncCheckJobCompletion(ctx, h.db, h.riverClient, jobItemRow.JobID)
+	if !flagged {
+		if err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+			_, err := skipFamily(ctx, tx, userID, id, "")
+			return err
+		}); err != nil {
+			return skipHTTPError(c, err, id)
 		}
 	}
-
 	return c.NoContent(http.StatusNoContent)
+}
+
+func skipHTTPError(c *echo.Context, err error, id string) error {
+	var he *echo.HTTPError
+	if errors.As(err, &he) {
+		return he
+	}
+	slog.ErrorContext(c.Request().Context(), "sync: skip game failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
+	return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
+}
+
+// skipFamily skips a game and its Child games: it locks the game, then its
+// children ordered by id, and sets their skip flags. With jobID set it runs in
+// the module's transaction for that Job and returns the family's unfinished
+// items in it, for the module to skip; the game's 'skipped' row is written
+// only when the game's own item is among them (children get none).
+func skipFamily(ctx context.Context, tx bun.Tx, userID, id, jobID string) ([]string, error) {
+	var eg models.ExternalGame
+	err := tx.NewSelect().Model(&eg).Where("id = ? AND user_id = ?", id, userID).For("UPDATE").Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, joblifecycle.Abort(echo.NewHTTPError(http.StatusNotFound, "not found"))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lock external game: %w", err)
+	}
+	var childIDs []string
+	if err := tx.NewRaw(`SELECT id FROM external_games WHERE parent_id = ? ORDER BY id FOR UPDATE`, id).Scan(ctx, &childIDs); err != nil {
+		return nil, fmt.Errorf("lock child external games: %w", err)
+	}
+	family := append([]string{id}, childIDs...)
+	if _, err := tx.NewRaw(
+		`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id IN (?)`, bun.List(family),
+	).Exec(ctx); err != nil {
+		return nil, fmt.Errorf("skip: %w", err)
+	}
+	if jobID == "" {
+		return nil, nil
+	}
+	var items []struct {
+		ID             string `bun:"id"`
+		ExternalGameID string `bun:"external_game_id"`
+	}
+	if err := tx.NewRaw(`
+		SELECT id, external_game_id FROM job_items
+		WHERE job_id = ? AND external_game_id IN (?) AND status IN ('pending', 'pending_review')`,
+		jobID, bun.List(family),
+	).Scan(ctx, &items); err != nil {
+		return nil, fmt.Errorf("load family items: %w", err)
+	}
+	ids := make([]string, 0, len(items))
+	for _, it := range items {
+		ids = append(ids, it.ID)
+		if it.ExternalGameID != id {
+			continue
+		}
+		if _, err := tx.NewRaw(
+			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			 SELECT ?, ?, ?, ?, 'skipped', ?, now()
+			 WHERE NOT EXISTS (
+			   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
+			uuid.NewString(), jobID, userID, id, eg.Title, jobID, id,
+		).Exec(ctx); err != nil {
+			return nil, fmt.Errorf("insert sync_change (skipped): %w", err)
+		}
+	}
+	return ids, nil
 }
 
 func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
@@ -1379,7 +1372,7 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 		           WHEN resolved_igdb_id IS NOT NULL THEN 'matched'
 		           ELSE 'unmatched'
 		       END AS sync_status,
-		       CASE WHEN failed AND NOT needs_review AND NOT is_skipped THEN newest_item_id END AS failed_job_item_id,
+		       CASE WHEN retryable AND NOT is_skipped THEN newest_item_id END AS failed_job_item_id,
 		       platforms_csv, store_link
 		FROM (
 			SELECT
@@ -1392,6 +1385,7 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 				ni.id AS newest_item_id,
 				`+syncNeedsReview+` AS needs_review,
 				`+syncFailed+` AS failed,
+				`+syncRetryable+` AS retryable,
 				`+syncInFlight+` AS in_flight,
 				COALESCE(
 					(SELECT string_agg(DISTINCT egp.platform, ',' ORDER BY egp.platform)
@@ -1470,28 +1464,22 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 	}
 	ctx := context.Background()
 
-	// Cancel any active sync job for this user+storefront.
-	var activeJob models.Job
+	// Cancel the storefront's active syncs through the module first. A
+	// dispatch still running notices at its next batch: its writes are
+	// conditional on the Job being active, so it cannot put back the games
+	// deleted below.
+	var activeJobs []string
 	if err := h.db.NewRaw(
-		`SELECT * FROM jobs WHERE user_id = ? AND source = ? AND job_type = 'sync' AND status IN ('pending', 'processing') LIMIT 1`,
+		`SELECT id FROM jobs WHERE user_id = ? AND source = ? AND job_type = 'sync' AND status IN ('pending', 'processing')`,
 		userID, sf,
-	).Scan(ctx, &activeJob); err == nil {
-		if _, err := h.db.NewRaw(
-			`UPDATE jobs SET status = ?, completed_at = now() WHERE id = ?`,
-			models.JobStatusCancelled, activeJob.ID,
-		).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: cancel active job failed", logging.KeyErr, err, logging.KeyJobID, activeJob.ID, logging.Cat(logging.CategoryDB))
+	).Scan(ctx, &activeJobs); err != nil {
+		slog.ErrorContext(c.Request().Context(), "sync: find active jobs failed", logging.KeyErr, err, logging.KeySource, sf, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel active job")
+	}
+	for _, jobID := range activeJobs {
+		if err := h.lc.Cancel(ctx, jobID); err != nil && !errors.Is(err, joblifecycle.ErrJobNotActive) && !errors.Is(err, joblifecycle.ErrGone) {
+			slog.ErrorContext(c.Request().Context(), "sync: cancel active job failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel active job")
-		}
-		if _, err := h.db.NewRaw(`
-			UPDATE river_job
-			SET state = 'cancelled', finalized_at = now()
-			WHERE state IN ('available', 'scheduled', 'retryable', 'pending')
-			  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE job_id = ?)`,
-			activeJob.ID,
-		).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: cancel river jobs failed", logging.KeyErr, err, logging.KeyJobID, activeJob.ID, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel queued tasks")
 		}
 	}
 
@@ -1524,10 +1512,12 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 }
 
 // HandleRetryFailedExternalGames retries the storefront's games the view
-// shows as failed (their newest item failed, and nothing wrote them since), and
-// the Child games whose own newest item failed by the same rule. Every item is
-// reset first and queued afterwards, parents before children, so a child never
-// runs before its parent has been reset (#1338).
+// shows as failed (their newest item failed, nothing wrote them since, and
+// their Job is active or completed), with the Child games whose own newest
+// item failed by the same rule. Items are retried through the module per Job,
+// newest Job first: a Job that cannot be retried (failed or cancelled, or
+// refused because another sync is active, including one this request has just
+// reopened) is left as it is. It answers 204 either way.
 func (h *SyncHandler) HandleRetryFailedExternalGames(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -1540,38 +1530,38 @@ func (h *SyncHandler) HandleRetryFailedExternalGames(c *echo.Context) error {
 	ctx := context.Background()
 	reqCtx := c.Request().Context()
 
-	var itemIDs []string
-	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if err := tx.NewRaw(`
-			SELECT ni.id
-			FROM external_games eg
-			`+syncNewestItemJoin+`
-			WHERE eg.user_id = ? AND eg.storefront = ? AND NOT eg.is_skipped
-			  AND `+syncFailed+`
-			  AND NOT `+syncNeedsReview+`
-			ORDER BY eg.parent_id IS NOT NULL, ni.id`,
-			userID, sf,
-		).Scan(ctx, &itemIDs); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("query failed items: %w", err)
-		}
-		if len(itemIDs) == 0 {
-			return nil
-		}
-		if _, err := tx.NewRaw(
-			`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL
-			 WHERE id IN (?) AND status = 'failed'`, bun.List(itemIDs),
-		).Exec(ctx); err != nil {
-			return fmt.Errorf("reset failed items: %w", err)
-		}
-		return nil
-	})
-	if err != nil {
+	var rows []struct {
+		ItemID string `bun:"item_id"`
+		JobID  string `bun:"job_id"`
+	}
+	if err := h.db.NewRaw(`
+		SELECT ni.id AS item_id, ni.job_id
+		FROM external_games eg
+		`+syncNewestItemJoin+`
+		WHERE eg.user_id = ? AND eg.storefront = ? AND NOT eg.is_skipped
+		  AND `+syncRetryable+`
+		ORDER BY nj.created_at DESC, nj.id, ni.id`,
+		userID, sf,
+	).Scan(ctx, &rows); err != nil {
 		slog.ErrorContext(reqCtx, "sync: retry-failed", logging.KeySource, sf, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retry failed items")
 	}
-	for _, id := range itemIDs {
-		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, id, tasks.IGDBMatchArgs{JobItemID: id}); err != nil {
-			slog.ErrorContext(reqCtx, "sync: retry-failed: enqueue", logging.KeyJobItemID, id, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	var order []string
+	byJob := map[string][]string{}
+	for _, r := range rows {
+		if _, ok := byJob[r.JobID]; !ok {
+			order = append(order, r.JobID)
+		}
+		byJob[r.JobID] = append(byJob[r.JobID], r.ItemID)
+	}
+	for _, jobID := range order {
+		_, err := h.lc.Retry(ctx, jobID, byJob[jobID])
+		switch {
+		case err == nil, errors.Is(err, joblifecycle.ErrNotRetryable), errors.Is(err, joblifecycle.ErrDuplicateActive),
+			errors.Is(err, joblifecycle.ErrJobNotActive), errors.Is(err, joblifecycle.ErrGone):
+		default:
+			slog.ErrorContext(reqCtx, "sync: retry-failed", logging.KeySource, sf, logging.KeyJobID, jobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to retry failed items")
 		}
 	}
 	return c.NoContent(http.StatusNoContent)

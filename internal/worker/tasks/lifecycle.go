@@ -34,6 +34,7 @@ func importHasEffects(o joblifecycle.Outcome) bool {
 // RegisterLifecycleKinds registers the Job kinds that are on the lifecycle
 // module.
 func RegisterLifecycleKinds(m *joblifecycle.Module) {
+	m.Register(syncKind())
 	m.Register(&joblifecycle.Kind{
 		JobType:            models.JobTypeMetadataRefresh,
 		DispatchRiverKinds: []string{MetadataRefreshDispatchArgs{}.Kind()},

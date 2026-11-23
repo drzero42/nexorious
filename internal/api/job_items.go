@@ -6,9 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
-	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/auth"
@@ -17,13 +15,12 @@ import (
 )
 
 type JobItemsHandler struct {
-	db          *bun.DB
-	riverClient *river.Client[pgx.Tx]
-	lc          *joblifecycle.Module
+	db *bun.DB
+	lc *joblifecycle.Module
 }
 
-func NewJobItemsHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], lc *joblifecycle.Module) *JobItemsHandler {
-	return &JobItemsHandler{db: db, riverClient: riverClient, lc: lc}
+func NewJobItemsHandler(db *bun.DB, lc *joblifecycle.Module) *JobItemsHandler {
+	return &JobItemsHandler{db: db, lc: lc}
 }
 
 // HandleGetJobItem handles GET /api/job-items/:id.
@@ -58,69 +55,28 @@ func (h *JobItemsHandler) HandleRetryItem(c *echo.Context) error {
 	itemID := c.Param("id")
 	ctx := c.Request().Context()
 
-	// A Job on the lifecycle module is authorised on the Job's owner: in an
-	// admin-triggered refresh the Job is the admin's while each item belongs to
-	// the storefront's user.
+	// Authorised on the Job's owner: in an admin-triggered refresh the Job is
+	// the admin's while each item belongs to the storefront's user.
 	var owner struct {
 		JobID     string `bun:"job_id"`
-		JobType   string `bun:"job_type"`
-		Source    string `bun:"source"`
 		JobUserID string `bun:"job_user_id"`
 	}
 	err := h.db.NewRaw(
-		`SELECT ji.job_id, j.job_type, j.source, j.user_id AS job_user_id
+		`SELECT ji.job_id, j.user_id AS job_user_id
 		 FROM job_items ji JOIN jobs j ON j.id = ji.job_id WHERE ji.id = ?`, itemID,
 	).Scan(ctx, &owner)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job item")
 	}
-	if err == nil && h.lc.Handles(owner.JobType, owner.Source) {
-		if owner.JobUserID != userID {
-			return echo.NewHTTPError(http.StatusNotFound, "not found")
+	if errors.Is(err, sql.ErrNoRows) || owner.JobUserID != userID {
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+	if _, err := h.lc.Retry(ctx, owner.JobID, []string{itemID}); err != nil {
+		if errors.Is(err, joblifecycle.ErrNotRetryable) {
+			return echo.NewHTTPError(http.StatusConflict, "item is not failed, or its job is failed or cancelled")
 		}
-		if _, err := h.lc.Retry(ctx, owner.JobID, []string{itemID}); err != nil {
-			if errors.Is(err, joblifecycle.ErrNotRetryable) {
-				return echo.NewHTTPError(http.StatusConflict, "item is not failed, or its job is failed or cancelled")
-			}
-			return lifecycleHTTPError(ctx, err, "retry item")
-		}
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+		return lifecycleHTTPError(ctx, err, "retry item")
 	}
-
-	var item models.JobItem
-	err = h.db.NewRaw(`SELECT * FROM job_items WHERE id = ? AND user_id = ?`, itemID, userID).
-		Scan(context.Background(), &item)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "not found")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job item")
-	}
-
-	if item.Status != models.JobItemStatusFailed {
-		return echo.NewHTTPError(http.StatusConflict, "item is not failed")
-	}
-
-	_, err = h.db.NewRaw(`
-		UPDATE job_items
-		SET status = ?, error_message = NULL, processed_at = NULL
-		WHERE id = ?`,
-		models.JobItemStatusPending, itemID,
-	).Exec(context.Background())
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retry item")
-	}
-
-	// Get job type to determine task type.
-	var job models.Job
-	err = h.db.NewRaw(`SELECT * FROM jobs WHERE id = ?`, item.JobID).
-		Scan(context.Background(), &job)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get parent job")
-	}
-
-	retryInsert(context.Background(), h.db, h.riverClient, job.JobType, job.Source, itemID)
-
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 

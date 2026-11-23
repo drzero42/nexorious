@@ -2,12 +2,13 @@ package tasks_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -62,10 +63,13 @@ func TestDispatchSync_BoundCredentialsError_SparesReconnectedSignIn(t *testing.T
 		wantFlag       bool
 		wantStored     string
 		wantEvents     int
+		wantStatus     string
 	}{
-		{"same sign-in", false, false, true, "loaded-ct", 1},
-		{"reconnected during sync", true, false, false, "new-ct", 0},
-		{"flag update failed", false, true, false, "loaded-ct", 0},
+		{"same sign-in", false, false, true, "loaded-ct", 1, "failed"},
+		{"reconnected during sync", true, false, false, "new-ct", 0, "failed"},
+		// The flag write fails: Fail rolls back with it, and the error goes to
+		// River, which runs the dispatch again.
+		{"flag update failed", false, true, false, "loaded-ct", 0, "processing"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			truncateAllTables(t)
@@ -76,12 +80,12 @@ func TestDispatchSync_BoundCredentialsError_SparesReconnectedSignIn(t *testing.T
 			factory := func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 				return reconnectingAdapter{t: t, reconnect: tc.reconnect, badCredentials: tc.badCredentials, userID: userID}, nil
 			}
-			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: nil}
-			if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
-			}); err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, LC: newTestLC(t)}
+			err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"}))
+			if (err != nil) != tc.badCredentials {
+				t.Fatalf("Work error = %v", err)
 			}
+			runSyncEffects(t, w.LC)
 			flag, stored, status, events := boundSyncOutcome(t, userID, jobID, "gog")
 			if flag != tc.wantFlag {
 				t.Errorf("credentials_error = %v, want %v", flag, tc.wantFlag)
@@ -89,8 +93,8 @@ func TestDispatchSync_BoundCredentialsError_SparesReconnectedSignIn(t *testing.T
 			if stored == nil || *stored != tc.wantStored {
 				t.Errorf("stored sign-in = %v, want %q", stored, tc.wantStored)
 			}
-			if status != "failed" {
-				t.Errorf("job status = %q, want failed", status)
+			if status != tc.wantStatus {
+				t.Errorf("job status = %q, want %s", status, tc.wantStatus)
 			}
 			if events != tc.wantEvents {
 				t.Errorf("expiry notifications = %d, want %d", events, tc.wantEvents)
@@ -124,12 +128,11 @@ func TestDispatchSync_FactoryCredentialsError_SparesSignInConnectedMeanwhile(t *
 				}
 				return nil, tasks.ErrCredentials
 			}
-			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: nil}
-			if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-			}); err != nil {
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, LC: newTestLC(t)}
+			if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+			runSyncEffects(t, w.LC)
 			flag, stored, status, events := boundSyncOutcome(t, userID, jobID, "steam")
 			if flag != tc.wantFlag {
 				t.Errorf("credentials_error = %v, want %v", flag, tc.wantFlag)
@@ -195,10 +198,8 @@ func TestDispatchSync_CredentialsError_FlagSetBeforeJobFails(t *testing.T) {
 	factory := func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 		return reconnectingAdapter{t: t, userID: userID}, nil
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
-	}); err != nil {
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, LC: newTestLC(t)}
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	var seen []bool
@@ -210,11 +211,43 @@ func TestDispatchSync_CredentialsError_FlagSetBeforeJobFails(t *testing.T) {
 	}
 }
 
-// The flag and its notice commit together. If the notice cannot be written,
-// the flag is not left set either: a flag without its notice would silence
-// every later sync (they see the store already flagged) and the user would
-// never hear. The job still fails.
-func TestDispatchSync_CredentialsError_NoticeAndFlagCommitTogether(t *testing.T) {
+// tryEffects runs the queued finishing effects once each and returns the
+// first error; an effect that failed stays queued, as River would retry it.
+func tryEffects(t *testing.T, lc *joblifecycle.Module) error {
+	t.Helper()
+	ctx := context.Background()
+	var rows []struct {
+		ID   int64           `bun:"id"`
+		Args json.RawMessage `bun:"args"`
+	}
+	if err := testDB.NewRaw(`SELECT id, args FROM river_job WHERE kind = ? AND state = 'available' ORDER BY id`, joblifecycle.EffectsArgs{}.Kind()).Scan(ctx, &rows); err != nil {
+		t.Fatal(err)
+	}
+	var first error
+	for _, r := range rows {
+		var args joblifecycle.EffectsArgs
+		if err := json.Unmarshal(r.Args, &args); err != nil {
+			t.Fatal(err)
+		}
+		err := (&joblifecycle.EffectsWorker{Module: lc}).Work(ctx, riverJob(r.ID, 1, args))
+		if err != nil {
+			if first == nil {
+				first = err
+			}
+			continue
+		}
+		if _, err := testDB.ExecContext(ctx, `UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = ?`, r.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return first
+}
+
+// The flag commits with the failed Job; its notice is the failed effect,
+// queued in that same transaction. A notice that cannot be written is
+// retried, not lost: a flag without its notice would silence every later
+// sync (they see the store already flagged).
+func TestDispatchSync_CredentialsError_NoticeRetriedUntilWritten(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	for _, stmt := range []string{
@@ -225,38 +258,41 @@ func TestDispatchSync_CredentialsError_NoticeAndFlagCommitTogether(t *testing.T)
 			t.Fatalf("%s: %v", stmt, err)
 		}
 	}
-	t.Cleanup(func() {
+	dropTrigger := func() {
 		_, _ = testDB.ExecContext(ctx, `DROP TRIGGER IF EXISTS r25_refuse_event ON events`)
 		_, _ = testDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS r25_refuse_event()`)
-	})
+	}
+	t.Cleanup(dropTrigger)
 
 	loaded := "loaded-ct"
 	userID, jobID := seedBoundSync(t, "gog", &loaded)
 	factory := func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 		return reconnectingAdapter{t: t, userID: userID}, nil
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
-	}); err != nil {
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, LC: newTestLC(t)}
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if err := tryEffects(t, w.LC); err == nil {
+		t.Fatal("the effect must fail while events cannot be written")
+	}
 	flag, _, status, events := boundSyncOutcome(t, userID, jobID, "gog")
-	if flag {
-		t.Error("credentials_error set although its notice was not saved")
+	if !flag || status != "failed" || events != 0 {
+		t.Errorf("flag=%v status=%q events=%d, want flag set, job failed, no notice yet", flag, status, events)
 	}
-	if events != 0 {
-		t.Errorf("events = %d, want 0", events)
+
+	dropTrigger()
+	if err := tryEffects(t, w.LC); err != nil {
+		t.Fatalf("retried effect: %v", err)
 	}
-	if status != "failed" {
-		t.Errorf("job status = %q, want failed", status)
+	if _, _, _, events := boundSyncOutcome(t, userID, jobID, "gog"); events != 1 {
+		t.Errorf("events after the retry = %d, want 1", events)
 	}
 }
 
-// Which notice to send is read before the write transaction: a failed read
-// (here the subscriptions table is unreadable) falls back to sync.failed and
-// must not abort the transaction and take the flag with it.
-func TestDispatchSync_CredentialsError_SubscriptionReadFailureKeepsFlag(t *testing.T) {
+// A subscription read that fails makes the effect fail and be retried; it
+// never drops the notice or the flag.
+func TestDispatchSync_CredentialsError_SubscriptionReadFailureRetriesNotice(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	if _, err := testDB.ExecContext(ctx, `ALTER TABLE notification_subscriptions RENAME TO notification_subscriptions_r25`); err != nil {
@@ -272,13 +308,17 @@ func TestDispatchSync_CredentialsError_SubscriptionReadFailureKeepsFlag(t *testi
 	factory := func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 		return reconnectingAdapter{t: t, userID: userID}, nil
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
-	}); err != nil {
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, LC: newTestLC(t)}
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if err := tryEffects(t, w.LC); err == nil {
+		t.Fatal("the effect must fail while subscriptions cannot be read")
+	}
 	restore()
+	if err := tryEffects(t, w.LC); err != nil {
+		t.Fatalf("retried effect: %v", err)
+	}
 	flag, _, status, events := boundSyncOutcome(t, userID, jobID, "gog")
 	if !flag || events != 1 || status != "failed" {
 		t.Errorf("flag=%v events=%d status=%q, want flag set, one sync.failed notice, job failed", flag, events, status)
@@ -288,13 +328,14 @@ func TestDispatchSync_CredentialsError_SubscriptionReadFailureKeepsFlag(t *testi
 		t.Fatalf("read event: %v", err)
 	}
 	if eventType != "sync.failed" {
-		t.Errorf("notice type = %q, want sync.failed (the fallback when the subscription read fails)", eventType)
+		t.Errorf("notice type = %q, want sync.failed (the user is not subscribed to sync.auth_expired)", eventType)
 	}
 }
 
-// An unbound failure whose flag cannot be written still tells
-// the user once, outside the failed transaction, and the job still fails.
-func TestDispatchSync_CredentialsError_UnboundFlagFailureStillNotifies(t *testing.T) {
+// A flag that cannot be written takes the failure with it: the error goes
+// to River, which runs the dispatch again; nothing is recorded meanwhile.
+// (After the last attempt recovery fails the sync, which notifies.)
+func TestDispatchSync_CredentialsError_FlagFailureRetriesDispatch(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	loaded := "loaded-ct"
@@ -314,56 +355,14 @@ func TestDispatchSync_CredentialsError_UnboundFlagFailureStillNotifies(t *testin
 	factory := func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 		return unboundFailingAdapter{}, nil
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"},
-	}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, LC: newTestLC(t)}
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"})); err == nil {
+		t.Fatal("want the flag error returned to River")
 	}
+	runSyncEffects(t, w.LC)
 	flag, _, status, events := boundSyncOutcome(t, userID, jobID, "epic-games-store")
-	if flag || events != 1 || status != "failed" {
-		t.Errorf("flag=%v events=%d status=%q, want no flag, one notice, job failed", flag, events, status)
-	}
-}
-
-// A notice whose insert fails takes its flag with it and is not sent on its
-// own afterwards: no notice without its flag. The first events insert fails;
-// a later one would succeed.
-func TestDispatchSync_CredentialsError_FailedNoticeIsNotResentAlone(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	for _, stmt := range []string{
-		// A sequence, not a table, counts the tries: nextval is not rolled back
-		// with the refused insert.
-		`CREATE SEQUENCE r25_event_tries`,
-		`CREATE FUNCTION r25_refuse_first_event() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN IF nextval(''r25_event_tries'') = 1 THEN RAISE EXCEPTION ''first event refused''; END IF; RETURN NEW; END'`,
-		`CREATE TRIGGER r25_refuse_first_event BEFORE INSERT ON events FOR EACH ROW EXECUTE FUNCTION r25_refuse_first_event()`,
-	} {
-		if _, err := testDB.ExecContext(ctx, stmt); err != nil {
-			t.Fatalf("%s: %v", stmt, err)
-		}
-	}
-	t.Cleanup(func() {
-		_, _ = testDB.ExecContext(ctx, `DROP TRIGGER IF EXISTS r25_refuse_first_event ON events`)
-		_, _ = testDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS r25_refuse_first_event()`)
-		_, _ = testDB.ExecContext(ctx, `DROP SEQUENCE IF EXISTS r25_event_tries`)
-	})
-
-	// An unbound failure takes the worker's fallback notice path.
-	loaded := "loaded-ct"
-	userID, jobID := seedBoundSync(t, "epic-games-store", &loaded)
-	factory := func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
-		return unboundFailingAdapter{}, nil
-	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"},
-	}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	flag, _, status, events := boundSyncOutcome(t, userID, jobID, "epic-games-store")
-	if flag || events != 0 || status != "failed" {
-		t.Errorf("flag=%v events=%d status=%q, want no flag, no notice, job failed", flag, events, status)
+	if flag || events != 0 || status != "processing" {
+		t.Errorf("flag=%v events=%d status=%q, want no flag, no notice, job still processing", flag, events, status)
 	}
 }
 
@@ -374,23 +373,24 @@ func (unboundFailingAdapter) GetLibrary(context.Context, int, func([]tasks.Exter
 	return tasks.ErrCredentials
 }
 
+// A refused Fail (the sync was cancelled meanwhile) leaves the flag alone.
 func TestDispatchSync_CancelledJobDoesNotFlagCredentials(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
+	lc := newTestLC(t)
 	loaded := "loaded-ct"
 	userID, jobID := seedBoundSync(t, "gog", &loaded)
 	factory := func(ctx context.Context, _ string, _ models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
-		if _, err := testDB.NewRaw("UPDATE jobs SET status = 'cancelled' WHERE id = ?", jobID).Exec(ctx); err != nil {
+		if err := lc.Cancel(ctx, jobID); err != nil {
 			t.Fatalf("cancel job: %v", err)
 		}
 		return nil, tasks.ErrCredentials
 	}
-	worker := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory}
-	if err := worker.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
-	}); err != nil {
+	worker := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, LC: lc}
+	if err := worker.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	runSyncEffects(t, lc)
 	flagged, _, status, events := boundSyncOutcome(t, userID, jobID, "gog")
 	if flagged || status != "cancelled" || events != 0 {
 		t.Errorf("cancelled sync left credentials_error=%v, status=%q, notices=%d; want false, cancelled, 0", flagged, status, events)

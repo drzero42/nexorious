@@ -238,12 +238,6 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// -------------------------------------------------------------------------
 	// River workers
 	// -------------------------------------------------------------------------
-	staleThreshold, err := time.ParseDuration(cfg.StaleJobThreshold)
-	if err != nil {
-		slog.Warn("invalid STALE_JOB_THRESHOLD, defaulting to 4h", "value", cfg.StaleJobThreshold, logging.Cat(logging.CategoryConfig))
-		staleThreshold = 4 * time.Hour
-	}
-
 	// Job lifecycle module (#1265): the one owner of Job and item status for
 	// the kinds registered with it. It inserts River jobs in its own
 	// transactions through an insert-only client on Bun's *sql.DB (ADR 0001),
@@ -264,6 +258,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
 		DB:      db,
+		LC:      lifecycle,
 		Adapter: buildAdapterFactory(db, encrypter, epicClient),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
@@ -272,10 +267,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		IGDBClient: igdbClient,
 		MinAge:     cfg.MetadataRefreshMinAgeDuration(),
 	}
-	checkPendingSyncsWorker := &scheduler.CheckPendingSyncsWorker{DB: db}
-	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
-	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, IGDBClient: igdbClient}
-	userGameWorker := &tasks.UserGameWorker{DB: db, IGDBClient: igdbClient}
+	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, LC: lifecycle, IGDBClient: igdbClient}
+	userGameWorker := &tasks.UserGameWorker{DB: db, LC: lifecycle, IGDBClient: igdbClient}
 	importMatchWorker := &tasks.ImportMatchWorker{DB: db, LC: lifecycle, IGDBClient: igdbClient}
 	storeLinkDispatchWorker := &tasks.StoreLinkRefreshDispatchWorker{DB: db, LC: lifecycle}
 	storeLinkItemWorker := &tasks.StoreLinkRefreshItemWorker{DB: db, LC: lifecycle, ResolverFor: buildStoreLinkResolverFactory(db, encrypter)}
@@ -303,10 +296,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, &scheduler.CleanupExportsWorker{DB: db, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &scheduler.CleanupUnreferencedGamesWorker{DB: db})
 	river.AddWorker(workers, &scheduler.CleanupExpiredSessionsWorker{DB: db})
-	river.AddWorker(workers, &scheduler.CleanupStaleJobsWorker{DB: db})
 	river.AddWorker(workers, &scheduler.CleanupSyncChangesWorker{DB: db})
-	river.AddWorker(workers, checkPendingSyncsWorker)
-	river.AddWorker(workers, rescueOrphanedWorker)
+	river.AddWorker(workers, &scheduler.CheckPendingSyncsWorker{DB: db, LC: lifecycle})
 	river.AddWorker(workers, &scheduler.CheckScheduledBackupWorker{DB: db, BackupSvc: backupSvc})
 	river.AddWorker(workers, &notify.NotifyWorker{DB: db, Encrypter: encrypter, Sender: notify.NewShoutrrrSender()})
 	river.AddWorker(workers, &notify.PruneEventsWorker{DB: db})
@@ -325,18 +316,15 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	quietJobKinds = append(quietJobKinds, tasks.PerItemJobKinds()...)
 	quietJobKinds = append(quietJobKinds, notify.PruneEventsArgs{}.Kind())
 
-	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), newRiverConfig(cfg, obs, workers, staleThreshold, quietJobKinds))
+	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), newRiverConfig(cfg, obs, workers, quietJobKinds))
 	if err != nil {
 		slog.ErrorContext(ctx, "serve: river client init failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return fmt.Errorf("river.NewClient: %w", err)
 	}
 	notify.SetRiverClient(riverClient)
 
-	// Wire River client into workers that submit sub-jobs.
-	dispatchSyncWorker.RiverClient = riverClient
-	checkPendingSyncsWorker.RiverClient = riverClient
-	rescueOrphanedWorker.RiverClient = riverClient
-	igdbMatchWorker.RiverClient = riverClient
+	// The write stage inserts the immediate metadata fetch, which is not Job
+	// work, through the working client.
 	userGameWorker.RiverClient = riverClient
 
 	// -------------------------------------------------------------------------
@@ -373,15 +361,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// shutting down or a restore switches it off, but starts River on riverCtx
 	// so SIGTERM doesn't hard-cancel jobs the moment they begin.
 	gate := riverStartGate{
-		ready: func() bool { return migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() },
-		runRecovery: func() {
-			recoverLifecycleAtStartup(context.Background(), lifecycle)
-			scheduler.RecoverInterruptedSyncs(context.Background(), db, riverClient)
-		},
-		start:      func() error { return riverClient.Start(riverCtx) },
-		poll:       2 * time.Second,
-		minBackoff: 2 * time.Second,
-		maxBackoff: time.Minute,
+		ready:       func() bool { return migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() },
+		runRecovery: func() { recoverLifecycleAtStartup(context.Background(), lifecycle) },
+		start:       func() error { return riverClient.Start(riverCtx) },
+		poll:        2 * time.Second,
+		minBackoff:  2 * time.Second,
+		maxBackoff:  time.Minute,
 	}
 	gateCtx, stopGate := context.WithCancel(shutdownCtx)
 	defer stopGate()
@@ -499,7 +484,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 // would never run. River places Plugins ahead of Middleware in the chain, so
 // otelriver still wraps the logging middleware and job logs keep the span's
 // trace context.
-func newRiverConfig(cfg *config.Config, obs *observability.Providers, workers *river.Workers, staleThreshold time.Duration, quietJobKinds []string) *river.Config {
+func newRiverConfig(cfg *config.Config, obs *observability.Providers, workers *river.Workers, quietJobKinds []string) *river.Config {
 	return &river.Config{
 		Logger:  logging.RiverLogger(),
 		Workers: workers,
@@ -507,7 +492,7 @@ func newRiverConfig(cfg *config.Config, obs *observability.Providers, workers *r
 			river.QueueDefault:         {MaxWorkers: cfg.WorkerCount},
 			tasks.QueueMetadataRefresh: {MaxWorkers: cfg.MetadataRefreshWorkers},
 		},
-		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
+		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg),
 		Plugins: []rivertype.Plugin{
 			otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
 				MeterProvider:  obs.MeterProvider,
@@ -519,16 +504,16 @@ func newRiverConfig(cfg *config.Config, obs *observability.Providers, workers *r
 			logging.NewWorkerMiddleware(quietJobKinds...),
 		},
 		ErrorHandler: &logging.WorkerErrorHandler{},
-		// Above the longest timeout of any Job lifecycle River kind (an
-		// export or a store-link item, 30 minutes), so River's rescuer never
-		// acts at the same moment as a timeout (docs/job-lifecycle.md).
+		// Above the longest timeout of any Job lifecycle River kind (a sync
+		// dispatch, 2 hours), so River's rescuer never acts at the same
+		// moment as a timeout (docs/job-lifecycle.md).
 		RescueStuckJobsAfter: riverRescueStuckJobsAfter,
 	}
 }
 
 // riverRescueStuckJobsAfter is how long a River job may run before River's
 // rescuer retries or discards it.
-const riverRescueStuckJobsAfter = time.Hour
+const riverRescueStuckJobsAfter = 3 * time.Hour
 
 // newInsertOnlyRiverConfig is the config of the insert-only River client the
 // Job lifecycle module inserts through: no queues and no workers, but the same

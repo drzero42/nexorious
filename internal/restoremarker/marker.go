@@ -17,9 +17,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/uptrace/bun"
-
-	"github.com/drzero42/nexorious/internal/db/models"
 )
 
 // Phase is the stage a restore had reached. It is stored as text so a row
@@ -121,8 +120,8 @@ var ErrStillRestoring = errors.New("restore marker says restoring")
 //
 //   - river_job and river_leader are emptied (without RESTART IDENTITY, so job
 //     ids keep increasing);
-//   - every active Job (pending, processing) is failed with InterruptedMessage;
-//   - their unfinished items (pending, processing, pending_review) are cancelled.
+//   - every active Job (pending, processing) is failed with InterruptedMessage
+//     and its unfinished items are cancelled, by joblifecycle.FailAllAfterRestore.
 //
 // With no marker it does nothing and reports false. It reports true when it
 // cleared. With the marker at restoring it changes nothing and returns
@@ -154,19 +153,10 @@ func Clear(ctx context.Context, db *bun.DB) (bool, error) {
 		if _, err := tx.ExecContext(ctx, `TRUNCATE river_job, river_leader`); err != nil {
 			return fmt.Errorf("empty the queue: %w", err)
 		}
-		active := []string{models.JobStatusPending, models.JobStatusProcessing}
-		unfinished := []string{models.JobItemStatusPending, models.JobItemStatusProcessing, models.JobItemStatusPendingReview}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE job_items SET status = ?
-			WHERE status IN (?) AND job_id IN (SELECT id FROM jobs WHERE status IN (?))`,
-			models.JobItemStatusCancelled, bun.List(unfinished), bun.List(active)); err != nil {
-			return fmt.Errorf("cancel unfinished items: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE jobs SET status = ?, error_message = ?, completed_at = now()
-			WHERE status IN (?)`,
-			models.JobStatusFailed, InterruptedMessage, bun.List(active)); err != nil {
-			return fmt.Errorf("fail active jobs: %w", err)
+		// The Job lifecycle module is the one writer of Job and item status,
+		// also here; it queues no finishing effects for a restore.
+		if err := joblifecycle.FailAllAfterRestore(ctx, tx, InterruptedMessage); err != nil {
+			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM nexorious_restore.marker`); err != nil {
 			return fmt.Errorf("delete restore marker: %w", err)

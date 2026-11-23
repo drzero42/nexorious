@@ -67,6 +67,13 @@ Both objects are opt-in (default off) and independent of each other. The dashboa
 panels and alert rules reference the OTel→Prometheus exporter metric names defined in
 [`deploy/observability/prometheus-rules.yaml`](../deploy/observability/prometheus-rules.yaml).
 
+The two sync metrics count different things. `nexorious_sync_items_total{source,outcome}`
+counts each sync item once, as it finishes (`completed`, `failed` or `skipped`). That
+includes items of a sync that later fails or is cancelled; cancelled items are not
+counted. `nexorious_sync_total{source,status}` counts a sync once, on its first finish
+(`completed`, `completed_with_errors` or `failed`). A cancelled sync is not counted, and
+a sync that a retry completes again is not counted twice.
+
 ### ServiceMonitor
 
 Enable with one values key:
@@ -140,13 +147,13 @@ severity (`critical` / `warning`):
 | `NexoriousPanicRecovered` | generic | critical | any recovered panic in 5m |
 | `NexoriousCredentialFailures` | credentials | warning | > 3 auth failures per source in 15m |
 | `NexoriousSyncErrors` | sync/job | warning | > 3 external-API failures per source in 15m |
-| `NexoriousStuckJobs` | sync/job | warning | any stuck-job reaping (`marked stale`, sync) or Job recovery failing interrupted work (`job recovery: failed interrupted work`) in 15m |
-| `NexoriousJobDispatchFailures` | sync/job | warning | any enqueue/dispatch failure (`enqueue`, kinds not yet on the Job lifecycle module), failed Job transition (`job lifecycle: transition failed`) or finishing effect that used its last attempt (`job lifecycle: finishing effects failed`) in 10m |
+| `NexoriousStuckJobs` | sync/job | warning | any Job recovery failing an item or a Job whose worker gave up (`job recovery: failed interrupted work`) in 15m |
+| `NexoriousJobDispatchFailures` | sync/job | warning | any failed Job transition (`job lifecycle: transition failed`) or finishing effect that used its last attempt (`job lifecycle: finishing effects failed`) in 10m |
 | `NexoriousHighErrorRate` | generic | warning | > 10 ERROR lines in 10m |
 
 Thresholds and windows are conservative starting points — **tune to your volume.**
 Most rules filter on the low-cardinality `category` field; a few (DBUnavailable,
-migration/startup, stuck jobs, enqueue failures) also match on `msg` because they
+migration/startup, stuck jobs, transition failures) also match on `msg` because they
 share `category=db` and are only distinguishable by message.
 
 ## Grafana Loki (LogQL → ruler → Alertmanager)

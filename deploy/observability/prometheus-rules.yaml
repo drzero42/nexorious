@@ -40,7 +40,9 @@ groups:
           description: "Over 50% of {{ $labels.source }} sync jobs in the last 15m finished with errors ({{ $value | humanizePercentage }})."
 
       - alert: NexoriousSyncItemFailuresHigh
-        # Share of synced items that failed, per source.
+        # Share of synced items that failed, per source. Items are counted as
+        # they finish, including those of a sync that later fails or is
+        # cancelled; cancelled items are not counted.
         expr: |
           sum by (source) (rate(nexorious_sync_items_total{outcome="failed"}[30m]))
             /

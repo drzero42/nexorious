@@ -214,8 +214,8 @@ func failMaintDispatch(ctx context.Context, lc *joblifecycle.Module, jobID strin
 	return exitOrRetry(ctx, lc.Fail(ctx, jobID, joblifecycle.Failure{
 		Message:          msg,
 		CallerRiverJobID: rj.ID,
-		Own: func(ctx context.Context, tx bun.Tx) error {
-			return notify.EmitTx(ctx, tx, maintFailedNotice(rj.ID, action, msg))
+		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
+			return nil, notify.EmitTx(ctx, tx, maintFailedNotice(rj.ID, action, msg))
 		},
 	}))
 }

@@ -14,9 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
-	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/api"
@@ -49,7 +47,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.Pla
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), newTestLifecycle(t), steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1504,7 +1502,7 @@ func TestResetSyncData_CancelsActiveJob(t *testing.T) {
 
 	insertJob(t, testDB, "job-reset-active", userID, "sync", "steam", "processing")
 	insertJobItem(t, testDB, "ji-reset-active", "job-reset-active", userID, "key-1", "Game 1", "pending")
-	riverID := insertRiverJob(t, testDB, "import_item", "available", "ji-reset-active")
+	riverID := insertRiverJob(t, testDB, "igdb_match", "available", "ji-reset-active")
 
 	rec := deleteAuth(t, e, "/api/sync/steam/data", token)
 	if rec.Code != http.StatusNoContent {
@@ -1766,7 +1764,7 @@ func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam api.SteamC
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, epic, (api.GOGClient)(nil), (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), newTestLifecycle(t), steam, psn, epic, (api.GOGClient)(nil), (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1791,32 +1789,44 @@ func (s *stubGOGClient) ExchangeCode(_ context.Context, code string) (*api.GOGTo
 	return s.token, s.err
 }
 
-func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PlaystationStoreClient, rc *river.Client[pgx.Tx]) interface {
-	ServeHTTP(http.ResponseWriter, *http.Request)
-} {
-	t.Helper()
-	cfg := testCfg()
-	e := echo.New()
-	ah := api.NewAuthHandler(testDB, cfg)
-	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
-	g := e.Group("/api/sync", auth.AuthMiddleware(db))
-	synch.RegisterRoutes(g)
-	return e
-}
-
-// TestHandleTriggerSync_RiverInsertFails_Returns500 locks in the contract that
-// HandleTriggerSync returns 500 when the River enqueue fails, rather than
-// silently succeeding with an orphaned job.
-func TestHandleTriggerSync_RiverInsertFails_Returns500(t *testing.T) {
+// The trigger creates the Job and its dispatch River job in one transaction
+// (through the module): the Job records the dispatch as its owner, so there is
+// never a Job without a dispatch.
+func TestSyncTrigger_CreatesJobWithItsDispatch(t *testing.T) {
 	truncateAllTables(t)
-	rc := newFailingRiverClient(t)
-	e := newSyncTestAppWithRiverClient(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, rc)
-	_, token := setupTagUser(t, testDB, e, "trigger-river-fail")
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+	_, token := setupTagUser(t, testDB, e, "trigger-dispatch")
 
 	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500 when River insert fails, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	var job struct {
+		Status           string `bun:"status"`
+		Priority         string `bun:"priority"`
+		DispatchComplete bool   `bun:"dispatch_complete"`
+		RiverJobID       *int64 `bun:"river_job_id"`
+	}
+	if err := testDB.NewRaw(`SELECT status, priority, dispatch_complete, river_job_id FROM jobs WHERE id = ?`, resp.JobID).
+		Scan(context.Background(), &job); err != nil {
+		t.Fatalf("load job: %v", err)
+	}
+	if job.Status != "pending" || job.Priority != "high" || job.DispatchComplete || job.RiverJobID == nil {
+		t.Fatalf("job = %+v, want pending, high, dispatch not done, with an owner", job)
+	}
+	var kind, jobArg string
+	if err := testDB.NewRaw(`SELECT kind, args->>'job_id' FROM river_job WHERE id = ?`, *job.RiverJobID).
+		Scan(context.Background(), &kind, &jobArg); err != nil {
+		t.Fatalf("load dispatch: %v", err)
+	}
+	if kind != "dispatch_sync" || jobArg != resp.JobID {
+		t.Errorf("dispatch = %s for %s, want dispatch_sync for %s", kind, jobArg, resp.JobID)
 	}
 }
 
@@ -1828,7 +1838,7 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, (api.EpicGamesStoreClient)(nil), gog, (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), newTestLifecycle(t), steam, psn, (api.EpicGamesStoreClient)(nil), gog, (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -2135,7 +2145,7 @@ func newSyncTestAppWithAmazonGames(t *testing.T, amazon *stubAmazonGamesClient) 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, testCfg())
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, testDB, newTestRiverClient(t), &stubSteamClient{}, &stubPlaystationStoreClient{}, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil), amazon)
+	synch := api.NewSyncHandler(testEncrypter, testDB, newTestRiverClient(t), newTestLifecycle(t), &stubSteamClient{}, &stubPlaystationStoreClient{}, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil), amazon)
 	g := e.Group("/api/sync", auth.AuthMiddleware(testDB))
 	synch.RegisterRoutes(g)
 	return e, synch

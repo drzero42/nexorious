@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,13 +15,13 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
-	"github.com/drzero42/nexorious/internal/notify"
-	"github.com/drzero42/nexorious/internal/observability"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/matching"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
+	"github.com/drzero42/nexorious/internal/usergame"
 )
 
 // ExternalGameEntry is the normalised game representation yielded by any storefront adapter.
@@ -65,17 +64,31 @@ func (DispatchSyncArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{MaxAttempts: 3, Priority: 1}
 }
 
-// Timeout overrides River's 1-minute default so large libraries (hundreds of
-// games needing sequential appdetails calls) can complete in a single run.
-func (w *DispatchSyncWorker) Timeout(*river.Job[DispatchSyncArgs]) time.Duration { return -1 }
+// syncDispatchTimeout bounds one run of a sync dispatch. It is generous (a
+// large library needs many sequential storefront calls) but finite, so a hung
+// dispatch is cancelled, uses an attempt and runs again; after the last
+// attempt recovery fails the sync (docs/job-lifecycle.md, "Recovery").
+const syncDispatchTimeout = 2 * time.Hour
 
-// DispatchSyncWorker is a River worker that drives a full sync run for one
-// (user, storefront) pair using a unified StorefrontAdapter.
+// Timeout is RunTimeout, or syncDispatchTimeout when that is zero.
+func (w *DispatchSyncWorker) Timeout(*river.Job[DispatchSyncArgs]) time.Duration {
+	if w.RunTimeout > 0 {
+		return w.RunTimeout
+	}
+	return syncDispatchTimeout
+}
+
+// DispatchSyncWorker drives a full sync run for one (user, storefront) pair
+// using a unified StorefrontAdapter. It is the dispatch owner of its Job: it
+// starts the dispatch, adds the library's games in batches and marks the
+// dispatch done through the Job lifecycle module.
 type DispatchSyncWorker struct {
 	river.WorkerDefaults[DispatchSyncArgs]
-	DB          *bun.DB
-	Adapter     func(ctx context.Context, storefront string, cfg models.UserSyncConfig) (StorefrontAdapter, error)
-	RiverClient *river.Client[pgx.Tx]
+	DB      *bun.DB
+	LC      *joblifecycle.Module
+	Adapter func(ctx context.Context, storefront string, cfg models.UserSyncConfig) (StorefrontAdapter, error)
+	// RunTimeout overrides syncDispatchTimeout (tests).
+	RunTimeout time.Duration
 }
 
 // nullableJSON returns nil when b is empty so the column is written as SQL NULL.
@@ -87,7 +100,69 @@ func nullableJSON(b []byte) any {
 	return json.RawMessage(b)
 }
 
-func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p DispatchSyncArgs) (egID string, isSkipped bool) {
+// errSyncStopped means the sync's Job is no longer active (cancelled, failed,
+// or its storefront data reset): the dispatch stops and exits cleanly.
+var errSyncStopped = errors.New("dispatch_sync: the sync is no longer active")
+
+// batchError is a database error while a batch's items were added. The
+// dispatch returns it to River, which runs the dispatch again.
+type batchError struct{ err error }
+
+func (e *batchError) Error() string { return "dispatch_sync: add batch: " + e.err.Error() }
+func (e *batchError) Unwrap() error { return e.err }
+
+// shareLockActiveJob takes a share lock on the sync's Job row while it is
+// active, or returns errSyncStopped. Writes that a Cancel or a reset must not
+// be overtaken by (the batch's games, the sweeps' rows) take it first, which
+// also keeps the module's lock order: the Job row, then everything else.
+func shareLockActiveJob(ctx context.Context, tx bun.Tx, jobID string) error {
+	var one []int
+	if err := tx.NewRaw(
+		`SELECT 1 FROM jobs WHERE id = ? AND status IN ('pending', 'processing') FOR KEY SHARE`, jobID,
+	).Scan(ctx, &one); err != nil {
+		return fmt.Errorf("lock job: %w", err)
+	}
+	if len(one) == 0 {
+		return errSyncStopped
+	}
+	return nil
+}
+
+// upsertGame writes one fetched game, in a short transaction that first
+// share-locks the active Job: the external game, its platforms, and for a
+// skipped game its 'skipped' row. These are progress writes, safe to repeat.
+func upsertGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p DispatchSyncArgs, platforms []string) (egID string, isSkipped bool, err error) {
+	err = db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := shareLockActiveJob(ctx, tx, p.JobID); err != nil {
+			return err
+		}
+		var err error
+		if egID, isSkipped, err = upsertExternalGame(ctx, tx, e, p); err != nil {
+			return err
+		}
+		if err := upsertPlatforms(ctx, tx, egID, platforms, e.PlaytimeHours, e.AchievementsUnlocked, e.AchievementsTotal); err != nil {
+			return err
+		}
+		if !isSkipped {
+			return nil
+		}
+		// NOT EXISTS: a dispatch run again sees the same skipped games;
+		// changes has no unique constraint.
+		if _, err := tx.NewRaw(
+			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			 SELECT ?, ?, ?, ?, 'skipped', ?, now()
+			 WHERE NOT EXISTS (
+			   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
+			uuid.NewString(), p.JobID, p.UserID, egID, e.Title, p.JobID, egID,
+		).Exec(ctx); err != nil {
+			return fmt.Errorf("insert sync_change (skipped): %w", err)
+		}
+		return nil
+	})
+	return egID, isSkipped, err
+}
+
+func upsertExternalGame(ctx context.Context, db bun.IDB, e ExternalGameEntry, p DispatchSyncArgs) (egID string, isSkipped bool, err error) {
 	var row struct {
 		ID        string `bun:"id"`
 		IsSkipped bool   `bun:"is_skipped"`
@@ -111,8 +186,7 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 		uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
 		e.IsSubscription, e.OwnershipStatus, nullableJSON(sourceMetaJSON),
 	).Scan(ctx, &row); err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: upsert external_game failed", logging.KeyErr, err, "external_id", e.ExternalID, logging.Cat(logging.CategoryDB))
-		return "", false
+		return "", false, fmt.Errorf("upsert external_game: %w", err)
 	}
 
 	if row.IsNew {
@@ -143,14 +217,14 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 		case err == nil:
 			row.IsSkipped = inheritedSkip
 		case !errors.Is(err, sql.ErrNoRows):
-			slog.WarnContext(ctx, "dispatch_sync: set parent_id failed", logging.KeyErr, err, logging.KeyExternalGameID, row.ID, logging.Cat(logging.CategoryDB))
+			return "", false, fmt.Errorf("set parent_id: %w", err)
 		}
 	}
 
-	return row.ID, row.IsSkipped
+	return row.ID, row.IsSkipped, nil
 }
 
-func upsertPlatforms(ctx context.Context, db *bun.DB, egID string, platforms []string, playtimeHours float64, achievementsUnlocked, achievementsTotal *int) {
+func upsertPlatforms(ctx context.Context, db bun.IDB, egID string, platforms []string, playtimeHours float64, achievementsUnlocked, achievementsTotal *int) error {
 	for i, platform := range platforms {
 		hours := 0.0
 		var unlocked, total *int
@@ -168,104 +242,74 @@ func upsertPlatforms(ctx context.Context, db *bun.DB, egID string, platforms []s
 				achievements_total = COALESCE(EXCLUDED.achievements_total, external_game_platforms.achievements_total)`,
 			uuid.NewString(), egID, platform, hours, unlocked, total,
 		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "dispatch_sync: upsert platform failed", logging.KeyErr, err, logging.KeyExternalGameID, egID, "platform", platform, logging.Cat(logging.CategoryDB))
+			return fmt.Errorf("upsert platform %s: %w", platform, err)
 		}
 	}
+	return nil
 }
 
-func insertJobItem(ctx context.Context, db *bun.DB, egID string, e ExternalGameEntry, p DispatchSyncArgs) string {
-	var row struct {
-		ID string `bun:"id"`
-	}
-	if err := db.NewRaw(`
-		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())
-		ON CONFLICT (job_id, item_key) DO NOTHING
-		RETURNING id`,
-		uuid.NewString(), p.JobID, p.UserID, e.ExternalID, e.Title, egID,
-	).Scan(ctx, &row); err != nil {
-		// sql.ErrNoRows means ON CONFLICT fired — item already exists; skip silently.
-		if !errors.Is(err, sql.ErrNoRows) {
-			slog.ErrorContext(ctx, "dispatch_sync: insert job_item failed", logging.KeyErr, err, "external_id", e.ExternalID, logging.Cat(logging.CategoryDB))
-		}
-		return ""
-	}
-	return row.ID
-}
-
-func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSyncArgs]) error {
-	p := job.Args
+func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyncArgs]) error {
+	p := rj.Args
 	// Seed the application job id so every in-job log line (and the helpers below
 	// that receive this ctx) is correlated to the user-facing jobs.id.
 	ctx = logging.WithJobID(ctx, p.JobID)
 
-	// Mark job as processing — only while it is still active. A dispatch can
-	// outlive its Job (cancel and reset leave a queued dispatch in River, and a
-	// restart re-runs one): it must never turn a cancelled or failed Job back
-	// into a running sync (#1302).
-	now := time.Now().UTC()
-	res, err := w.DB.NewRaw(
-		`UPDATE jobs SET status = 'processing', started_at = ?, dispatch_complete = false
-		 WHERE id = ? AND status IN ('pending', 'processing')`,
-		now, p.JobID,
-	).Exec(ctx)
-	if dispatchInterrupted(ctx) {
-		return nil
-	}
-	if err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: mark processing failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	} else if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // advisory RowsAffected
-		slog.InfoContext(ctx, "dispatch_sync: job is no longer active; nothing to do", logging.KeySource, p.Storefront)
-		return nil
+	// Refused when the Job is finished, when this River job is not its
+	// dispatch owner, or when the dispatch is already done: a dispatch
+	// hard-killed after marking done must not fetch the library again.
+	if _, err := w.LC.StartDispatch(ctx, p.JobID, rj.ID); err != nil {
+		return exitOrRetry(ctx, err)
 	}
 
 	// Child games (#1339): give every child its parent's skip, then promote the
 	// children of parents that left in an earlier sync, so a new edition in this
 	// fetch finds the promoted game as its parent. Failures are logged: the next
-	// dispatch repairs what this one missed, and a child that cannot wait is
-	// failed rather than left hanging.
-	if err := repairChildSkips(ctx, w.DB, p.UserID, p.Storefront); err != nil {
+	// dispatch repairs what this one missed.
+	if err := repairChildSkips(ctx, w.DB, p.UserID, p.Storefront); err != nil && ctx.Err() == nil {
 		slog.WarnContext(ctx, "dispatch_sync: repair child skips failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 	promoteOrphanedChildren(ctx, w.DB, p.UserID, p.Storefront)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
-	// Load sync config.
 	var cfg models.UserSyncConfig
 	if err := w.DB.NewSelect().Model(&cfg).
 		Where("user_id = ? AND storefront = ?", p.UserID, p.Storefront).
 		Scan(ctx); err != nil {
-		if dispatchInterrupted(ctx) {
-			return nil
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
-		FailSyncJob(ctx, w.DB, p.JobID, "no sync config found")
-		return nil
+		if errors.Is(err, sql.ErrNoRows) {
+			return w.fail(ctx, rj, "no sync config found", nil)
+		}
+		return fmt.Errorf("dispatch_sync: load sync config: %w", err)
 	}
 
 	// Build adapter (credential loading, decryption, and token refresh happen inside).
 	adapter, err := w.Adapter(ctx, p.Storefront, cfg)
-	if dispatchInterrupted(ctx) {
-		return nil
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	if errors.Is(err, ErrCredentials) {
 		// Nothing has written the stored sign-in yet, so the failure belongs
 		// to exactly the one loaded above (none, when it is NULL).
-		handleCredentialError(ctx, w.DB, p, cfg.CredentialsError, &CredentialsErrorFor{Credentials: cfg.StorefrontCredentials, Err: err})
-		return nil
+		return w.failCredentials(ctx, rj, cfg.CredentialsError, &CredentialsErrorFor{Credentials: cfg.StorefrontCredentials, Err: err})
 	}
 	if err != nil {
-		FailSyncJob(ctx, w.DB, p.JobID, err.Error())
-		return nil
+		return w.fail(ctx, rj, err.Error(), nil)
 	}
 
 	fetchedIDs := make(map[string]struct{})
 	seenPlatforms := make(map[string][]string)
 
-	// Fetch library; upsert external_games + platforms; insert job_items;
-	//    enqueue Stage 2 (IGDBMatch) per batch as each batch completes.
 	slog.InfoContext(ctx, "dispatch_sync: starting library fetch", logging.KeyUserID, p.UserID, logging.KeySource, p.Storefront)
 	totalProcessed := 0
 	fetchErr := adapter.GetLibrary(ctx, 10, func(batch []ExternalGameEntry) error {
-		var batchItemIDs []string
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		newItems := make([]joblifecycle.NewItem, 0, len(batch))
 		skippedInBatch := 0
 		for _, e := range batch {
 			fetchedIDs[e.ExternalID] = struct{}{}
@@ -277,65 +321,70 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			if len(platforms) == 0 {
 				platforms = []string{"pc-windows"}
 			}
-			egID, isSkipped := upsertExternalGame(ctx, w.DB, e, p)
-			if egID == "" {
+			egID, isSkipped, err := upsertGame(ctx, w.DB, e, p, platforms)
+			switch {
+			case ctx.Err() != nil:
+				return ctx.Err()
+			case errors.Is(err, errSyncStopped):
+				return errSyncStopped
+			case err != nil:
+				// Best effort, as for every progress write: the next sync
+				// writes the game again.
+				slog.WarnContext(ctx, "dispatch_sync: write game failed", logging.KeyErr, err, "external_id", e.ExternalID, logging.Cat(logging.CategoryDB))
 				continue
 			}
 			seenPlatforms[egID] = append(seenPlatforms[egID], platforms...)
-			upsertPlatforms(ctx, w.DB, egID, platforms, e.PlaytimeHours, e.AchievementsUnlocked, e.AchievementsTotal)
 			if isSkipped {
 				skippedInBatch++
-				slog.DebugContext(ctx, "dispatch_sync: game is user-skipped, not enqueuing for matching",
-					"external_id", e.ExternalID, "title", e.Title)
-				// NOT EXISTS: a dispatch re-run after an interrupt sees the same
-				// skipped games again; changes has no unique constraint.
-				if _, err := w.DB.NewRaw(
-					`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-					 SELECT ?, ?, ?, ?, 'skipped', ?, now()
-					 WHERE NOT EXISTS (
-					   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
-					uuid.NewString(), p.JobID, p.UserID, egID, e.Title, p.JobID, egID,
-				).Exec(ctx); err != nil {
-					slog.WarnContext(ctx, "dispatch_sync: insert sync_change (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-				}
-			} else {
-				if itemID := insertJobItem(ctx, w.DB, egID, e, p); itemID != "" {
-					batchItemIDs = append(batchItemIDs, itemID)
-				}
+				continue
 			}
+			id := egID
+			newItems = append(newItems, joblifecycle.NewItem{
+				UserID: p.UserID, ItemKey: e.ExternalID, SourceTitle: e.Title, ExternalGameID: &id,
+			})
+		}
+		added, err := w.LC.AddNewItems(ctx, p.JobID, rj.ID, newItems)
+		switch {
+		case ctx.Err() != nil:
+			return ctx.Err()
+		case joblifecycle.IsRefusal(err):
+			return errSyncStopped
+		case err != nil:
+			return &batchError{err: err}
 		}
 		totalProcessed += len(batch)
 		slog.DebugContext(ctx, "dispatch_sync: batch complete",
 			"batch_size", len(batch),
-			"enqueued_for_matching", len(batchItemIDs),
+			"enqueued_for_matching", added,
 			"skipped_by_user", skippedInBatch,
 			"total_processed_so_far", totalProcessed,
 		)
-		for _, itemID := range batchItemIDs {
-			_ = EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, IGDBMatchArgs{JobItemID: itemID}) //nolint:errcheck // EnqueueOrFail records its own failure on the job_item
-		}
 		return nil
 	})
-	// An interrupted fetch is neither a failure nor a full fetch, whatever it
-	// returned: its batch writes may have failed on the cancelled ctx. Stop
-	// before FailSyncJob, the sweeps and the last_synced_at/dispatch_complete
-	// writes below (those two use context.Background() and would succeed).
-	if dispatchInterrupted(ctx) {
-		return nil
+	// Checked first, whatever the fetch returned: a fetch can return without
+	// an error under a cancelled context with a partial library, and an error
+	// it returns then (an authentication error from a cancelled request, for
+	// one) is not the storefront's answer. Nothing is recorded.
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
-	if err := fetchErr; err != nil {
-		if errors.Is(err, ErrCredentials) {
-			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError, err)
+	if fetchErr != nil {
+		var be *batchError
+		switch {
+		case errors.Is(fetchErr, errSyncStopped):
+			slog.InfoContext(ctx, "dispatch_sync: the sync is no longer active; stopping", logging.KeySource, p.Storefront)
 			return nil
+		case errors.As(fetchErr, &be):
+			return be
+		case errors.Is(fetchErr, ErrCredentials):
+			return w.failCredentials(ctx, rj, cfg.CredentialsError, fetchErr)
 		}
-		if incomplete := new(*storefrontadapter.IncompleteLibraryError); errors.As(err, incomplete) {
-			slog.WarnContext(ctx, "dispatch_sync: incomplete library", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-			FailSyncJob(ctx, w.DB, p.JobID, err.Error())
-			return nil
+		if incomplete := new(*storefrontadapter.IncompleteLibraryError); errors.As(fetchErr, incomplete) {
+			slog.WarnContext(ctx, "dispatch_sync: incomplete library", logging.KeySource, p.Storefront, logging.KeyErr, fetchErr, logging.Cat(logging.CategoryExternalAPI))
+		} else {
+			slog.ErrorContext(ctx, "dispatch_sync: library fetch failed", logging.KeySource, p.Storefront, logging.KeyErr, fetchErr, logging.Cat(logging.CategoryExternalAPI))
 		}
-		slog.ErrorContext(ctx, "dispatch_sync: library fetch failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-		FailSyncJob(ctx, w.DB, p.JobID, err.Error())
-		return nil
+		return w.fail(ctx, rj, fetchErr.Error(), nil)
 	}
 
 	// Empty-fetch guard (#1324): a fetch that returns nothing while games are
@@ -350,21 +399,51 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			Where("user_id = ? AND storefront = ? AND is_available = true", p.UserID, p.Storefront).
 			Count(ctx)
 		if err != nil {
-			slog.ErrorContext(ctx, "dispatch_sync: count available games failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			FailSyncJob(ctx, w.DB, p.JobID, "could not verify an empty library fetch; nothing was marked removed")
-			return nil
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return fmt.Errorf("dispatch_sync: count available games: %w", err)
 		}
 		if known > 0 {
 			slog.ErrorContext(ctx, "dispatch_sync: empty library fetch with known games; refusing to mark them removed",
 				logging.KeySource, p.Storefront, "known_games", known, logging.Cat(logging.CategoryExternalAPI))
-			FailSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf(
+			return w.fail(ctx, rj, fmt.Sprintf(
 				"the storefront returned an empty library while %d games are known; nothing was marked removed. "+
-					"If the library really is empty, reset this storefront's sync data or disconnect it.", known))
-			return nil
+					"If the library really is empty, reset this storefront's sync data or disconnect it.", known), nil)
 		}
 	}
 
-	// Stale platform sweep: remove platform rows no longer present upstream.
+	w.sweep(ctx, p, fetchedIDs, seenPlatforms)
+
+	// Parents that left in this sync: promote their children (#1339).
+	promoteOrphanedChildren(ctx, w.DB, p.UserID, p.Storefront)
+
+	// The sweeps ran on ctx: if it was cancelled meanwhile they may be
+	// unfinished, so the dispatch must not be marked done.
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Mark the dispatch done, with last_synced_at and the cleared
+	// credentials flag as this sync's own writes. The module then queues the
+	// items that can no longer wait and evaluates completion (an empty
+	// library completes here).
+	return exitOrRetry(ctx, w.LC.MarkDispatched(ctx, p.JobID, rj.ID, joblifecycle.Dispatched{
+		Own: func(ctx context.Context, tx bun.Tx) error {
+			_, err := tx.NewRaw(
+				`UPDATE user_sync_configs SET last_synced_at = ?, credentials_error = false, updated_at = now() WHERE user_id = ? AND storefront = ?`,
+				time.Now().UTC(), p.UserID, p.Storefront,
+			).Exec(ctx)
+			return err
+		},
+	}))
+}
+
+// sweep runs after a full, uninterrupted fetch: it removes platform rows no
+// longer present upstream, and marks the games that left the library
+// unavailable with their 'removed' rows. Every error is logged and the
+// dispatch carries on; a sweep that finds the Job no longer active stops.
+func (w *DispatchSyncWorker) sweep(ctx context.Context, p DispatchSyncArgs, fetchedIDs map[string]struct{}, seenPlatforms map[string][]string) {
 	for egID, platforms := range seenPlatforms {
 		if _, err := w.DB.NewRaw(`
 			DELETE FROM external_game_platforms
@@ -375,264 +454,80 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 	}
 
-	// Mark removed games as unavailable and write changes('removed').
 	var available []models.ExternalGame
 	if err := w.DB.NewSelect().Model(&available).
 		Where("user_id = ? AND storefront = ? AND is_available = true", p.UserID, p.Storefront).
 		Scan(ctx); err != nil {
 		slog.WarnContext(ctx, "dispatch_sync: query available games failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return
 	}
 	for _, eg := range available {
-		if _, found := fetchedIDs[eg.ExternalID]; !found {
-			if _, err := w.DB.NewRaw(
-				`UPDATE external_games SET is_available = false, updated_at = now() WHERE id = ?`,
-				eg.ID,
-			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "dispatch_sync: mark game unavailable failed", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
+		if _, found := fetchedIDs[eg.ExternalID]; found {
+			continue
+		}
+		// One transaction per game (#1329): the share lock on the Job row
+		// first (the changes insert would take one through its foreign key
+		// anyway), then the game, and the 'removed' row only when this run
+		// changed it, so a second run writes nothing twice.
+		err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+			if err := shareLockActiveJob(ctx, tx, p.JobID); err != nil {
+				return err
 			}
-			if _, err := w.DB.NewRaw(
+			res, err := tx.NewRaw(
+				`UPDATE external_games SET is_available = false, updated_at = now() WHERE id = ? AND is_available = true`, eg.ID,
+			).Exec(ctx)
+			if err != nil {
+				return fmt.Errorf("mark game unavailable: %w", err)
+			}
+			if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // pgdriver always reports RowsAffected
+				return nil
+			}
+			if _, err := tx.NewRaw(
 				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 				 VALUES (?, ?, ?, ?, 'removed', ?, now())`,
 				uuid.NewString(), p.JobID, p.UserID, eg.ID, eg.Title,
 			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "dispatch_sync: insert sync_change (removed) failed", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
+				return fmt.Errorf("insert sync_change (removed): %w", err)
 			}
-		}
-	}
-
-	// Parents that left in this sync: promote their children (#1339).
-	promoteOrphanedChildren(ctx, w.DB, p.UserID, p.Storefront)
-
-	// The sweeps above ran on ctx: if it was cancelled meanwhile they may be
-	// unfinished, so the run must not be marked complete.
-	if dispatchInterrupted(ctx) {
-		return nil
-	}
-
-	// Update last_synced_at and clear any prior credentials_error flag.
-	syncedNow := time.Now().UTC()
-	if _, err := w.DB.NewRaw(
-		`UPDATE user_sync_configs SET last_synced_at = ?, credentials_error = false, updated_at = now() WHERE user_id = ? AND storefront = ?`,
-		syncedNow, p.UserID, p.Storefront,
-	).Exec(context.Background()); err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: update last_synced_at failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-
-	// Dispatch is fully complete — every batch has been streamed and enqueued.
-	//    Open the completion gate and run the authoritative check: this finalizes
-	//    the job when all items already drained during dispatch (including an
-	//    empty library), and lets per-item checks finalize it from here on.
-	if _, err := w.DB.NewRaw(
-		`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, p.JobID,
-	).Exec(context.Background()); err != nil {
-		// The gate write failed, so the gate stays closed and the completion
-		// check below would be a guaranteed no-op — skip it. The job stays in
-		// 'processing'; the user can cancel the stuck sync (recovery of such
-		// jobs is out of scope for #642).
-		slog.ErrorContext(ctx, "dispatch_sync: mark dispatch_complete failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return nil
-	}
-	// Look again at items with nothing running them: children that waited while
-	// the dispatch could still add their parent's item, and games promoted
-	// during the sweep. Their igdb_match now matches, inherits or fails them
-	// (#1339). The query only selects items of an active Job, so a sync
-	// cancelled during its dispatch is not restarted. Background ctx, like the
-	// dispatch_complete write above: the shutdown must not cut it off.
-	if _, _, err := RequeueOrphanedPendingItems(context.Background(), w.DB, w.RiverClient, p.JobID, 0); err != nil {
-		slog.ErrorContext(ctx, "dispatch_sync: re-queue waiting items failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, p.JobID)
-
-	return nil
-}
-
-// dispatchInterrupted reports whether the dispatch's ctx was cancelled, which
-// (dispatch_sync has no timeout) means the server is shutting down. An
-// interrupted dispatch stops without recording anything: the Job stays
-// 'processing' with dispatch_complete = false, which is how the startup
-// recovery (scheduler.RecoverInterruptedSyncs) finds and re-runs it (#1302).
-func dispatchInterrupted(ctx context.Context) bool {
-	if ctx.Err() == nil {
-		return false
-	}
-	slog.InfoContext(ctx, "dispatch_sync: interrupted; the sync resumes at the next startup")
-	return true
-}
-
-// markSyncJobFailed marks a job as failed with the given error message and
-// cancels any pending job_items for that job so they are not left orphaned. It
-// performs no notification — callers decide which event (if any) to emit.
-// msg is scrubbed of URL query strings before persisting: a fetch failure's
-// *url.Error embeds the full request URL, query-string credentials included.
-//
-// The write only applies to a Job that is still active, so a dispatch that
-// fails after a cancel does not turn 'cancelled' into 'failed' (#1302). It
-// reports whether it changed the Job; when it did not, the caller must skip its
-// own side effects (notification, metric, credentials_error flag).
-func markSyncJobFailed(ctx context.Context, db bun.IDB, jobID, msg string) bool {
-	msg = logging.ScrubURLQueries(msg)
-	now := time.Now().UTC()
-	res, err := db.NewRaw(
-		`UPDATE jobs SET status = 'failed', error_message = ?, completed_at = ?
-		 WHERE id = ? AND status IN ('pending', 'processing')`,
-		msg, now, jobID,
-	).Exec(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: fail job update failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return false
-	}
-	if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // advisory RowsAffected
-		slog.InfoContext(ctx, "dispatch_sync: job is no longer active; failure not recorded")
-		return false
-	}
-	if _, err := db.NewRaw(
-		`UPDATE job_items SET status = 'cancelled' WHERE job_id = ? AND status = 'pending'`,
-		jobID,
-	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: cancel pending items failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-	return true
-}
-
-// credentialsErrorMessage is the error_message of a sync Job failed by
-// handleCredentialError.
-const credentialsErrorMessage = "credentials error"
-
-// FailSyncJob marks a job as failed (see markSyncJobFailed) and emits the
-// generic sync.failed notification, once per outage: only the first failure
-// since the store's last successful sync notifies (#1344). Used for all
-// non-credential failures; credential failures go through
-// handleCredentialError instead.
-func FailSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
-	msg = logging.ScrubURLQueries(msg) // never leak URL query credentials into the event payload
-	if !markSyncJobFailed(ctx, db, jobID, msg) {
-		return
-	}
-	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
-	// Record the hard failure so it surfaces in nexorious_sync_total alongside
-	// completed / completed_with_errors; without this a storefront that always
-	// hard-fails produces zero metric signal. Guard empty storefront (lookup
-	// failure) to avoid a polluting source="" series, matching finalizeJobCompleted.
-	if storefront != "" {
-		observability.RecordSyncOutcome(ctx, storefront, "failed")
-	}
-	if previousSyncFailure(ctx, db, jobID) {
-		slog.InfoContext(ctx, "dispatch_sync: store is still failing; sync.failed already sent for this outage", logging.KeySource, storefront)
-		return
-	}
-	notify.Emit(ctx, db, notify.EmitParams{
-		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: userID,
-		Payload:  notify.SyncFailedPayload{Storefront: storefront, Error: msg, JobID: jobID},
-		DedupKey: jobID + ":" + notify.TypeSyncFailed,
-	})
-}
-
-// previousSyncFailure reports whether an earlier sync of the same store failed
-// since its last successful sync, which means this outage has already been
-// notified. The error text need not match: messages often carry varying
-// details, so matching would notify on every attempt again. Credential
-// failures do not count, since they send their own notice. Comparing
-// completion times ignores newer jobs.
-func previousSyncFailure(ctx context.Context, db *bun.DB, jobID string) bool {
-	var repeated bool
-	if err := db.NewRaw(`
-		SELECT EXISTS (
-			SELECT 1
-			FROM jobs AS current_job
-			JOIN jobs AS previous_job ON previous_job.user_id = current_job.user_id
-				AND previous_job.source = current_job.source
-			LEFT JOIN user_sync_configs AS cfg ON cfg.user_id = current_job.user_id
-				AND cfg.storefront = current_job.source
-			WHERE current_job.id = ?
-				AND previous_job.job_type = 'sync' AND previous_job.status = 'failed'
-				AND previous_job.error_message IS DISTINCT FROM ?
-				AND previous_job.completed_at < current_job.completed_at
-				AND (cfg.last_synced_at IS NULL OR previous_job.completed_at > cfg.last_synced_at)
-		)`, jobID, credentialsErrorMessage).Scan(ctx, &repeated); err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: check previous sync failure", logging.KeyJobID, jobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return false
-	}
-	return repeated
-}
-
-// handleCredentialError handles a credentials failure during sync: it fails the
-// job, flags credentials_error, and — only on the healthy→expired transition
-// (priorErr == false) — notifies the user. Subscribers to sync.auth_expired get
-// that actionable event; everyone else falls back to sync.failed so they are
-// not left silent. While the storefront stays broken (priorErr == true) no
-// notification is sent, so repeated scheduled syncs do not nag.
-func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, priorErr bool, cause error) {
-	var bound *CredentialsErrorFor
-	isBound := errors.As(cause, &bound)
-
-	// The flag and its notice are written in one transaction: either both
-	// happen or neither does. A notice that failed to save after the flag did
-	// would be lost for good, since later syncs see priorErr and stay quiet.
-	// Which notice to send is read before the transaction opens: a failed read
-	// inside it would abort the transaction and take the flag with it.
-	notice := credentialsNotice(ctx, db, p)
-	var flagErr error
-	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		flagged, err := flagCredentialsError(ctx, tx, p, bound)
-		if err != nil {
-			flagErr = err
-			return err
-		}
-		if flagged && !priorErr {
-			if err := notify.EmitTx(ctx, tx, notice); err != nil {
-				return err
-			}
-		}
-		// Write the flag before changing job status so the status poll can
-		// refresh the connection as soon as a failed job is visible. Roll
-		// back both writes if the job stopped being active in the meantime.
-		if !markSyncJobFailed(ctx, tx, p.JobID, credentialsErrorMessage) {
-			return sql.ErrNoRows
-		}
-		return nil
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return
-	}
-	if err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: flag credentials_error failed", logging.KeyErr, err, logging.KeyUserID, p.UserID, logging.KeySource, p.Storefront, logging.Cat(logging.CategoryDB))
-		if !markSyncJobFailed(ctx, db, p.JobID, credentialsErrorMessage) {
+			return nil
+		})
+		if errors.Is(err, errSyncStopped) {
 			return
 		}
-	}
-	// A credentials failure is a hard sync failure; record it so it is visible
-	// in nexorious_sync_total rather than silently absent (see FailSyncJob).
-	if p.Storefront != "" {
-		observability.RecordSyncOutcome(ctx, p.Storefront, "failed")
-	}
-
-	if flagErr != nil && !isBound && !priorErr {
-		// An unbound failure whose flag could not be written still tells the
-		// user, as before; a bound one sends nothing, since which sign-in is
-		// stored was never established. A notice that failed to save is not
-		// retried on its own: its flag rolled back with it, so the next sync
-		// sends it.
-		notify.Emit(ctx, db, notice)
-	}
-}
-
-// credentialsNotice is the notice for a credentials failure: sync.auth_expired
-// for users subscribed to that actionable event, else sync.failed so nobody is
-// left silent.
-func credentialsNotice(ctx context.Context, db bun.IDB, p DispatchSyncArgs) notify.EmitParams {
-	if userSubscribed(ctx, db, p.UserID, notify.TypeSyncAuthExpired) {
-		return notify.EmitParams{
-			Type: notify.TypeSyncAuthExpired, Scope: notify.ScopeUser, ActorUserID: p.UserID,
-			Payload:  notify.SyncAuthExpiredPayload{Storefront: p.Storefront},
-			DedupKey: p.JobID + ":" + notify.TypeSyncAuthExpired,
+		if err != nil {
+			slog.WarnContext(ctx, "dispatch_sync: mark game removed failed", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
 		}
 	}
-	return notify.EmitParams{
-		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: p.UserID,
-		Payload:  notify.SyncFailedPayload{Storefront: p.Storefront, Error: credentialsErrorMessage, JobID: p.JobID},
-		DedupKey: p.JobID + ":" + notify.TypeSyncFailed,
-	}
 }
+
+// fail fails the sync for its dispatch owner. own, when set, is the
+// caller's own write in Fail's transaction and returns the kind data.
+func (w *DispatchSyncWorker) fail(ctx context.Context, rj *river.Job[DispatchSyncArgs], msg string, own func(ctx context.Context, tx bun.Tx) (json.RawMessage, error)) error {
+	return exitOrRetry(ctx, w.LC.Fail(ctx, rj.Args.JobID, joblifecycle.Failure{
+		Message: msg, CallerRiverJobID: rj.ID, Own: own,
+	}))
+}
+
+// failCredentials fails the sync for a credentials failure. The
+// credentials_error flag is set in Fail's transaction, so a refused Fail
+// leaves it alone. A failure bound to one stored sign-in (#1347) sets it only
+// while that sign-in is still stored; the effect notifies only when this
+// failure set the flag on a store that was healthy (priorErr false).
+func (w *DispatchSyncWorker) failCredentials(ctx context.Context, rj *river.Job[DispatchSyncArgs], priorErr bool, cause error) error {
+	var bound *CredentialsErrorFor
+	errors.As(cause, &bound)
+	return w.fail(ctx, rj, credentialsErrorMessage, func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
+		flagged, err := flagCredentialsError(ctx, tx, rj.Args, bound)
+		if err != nil {
+			return nil, fmt.Errorf("flag credentials_error: %w", err)
+		}
+		return json.Marshal(syncFailure{Credentials: true, Notify: flagged && !priorErr})
+	})
+}
+
+// credentialsErrorMessage is the error_message of a sync Job failed by a
+// credentials failure.
+const credentialsErrorMessage = "credentials error"
 
 // flagCredentialsError sets credentials_error for the sync's store. A failure
 // bound to the sign-in the sync loaded flags the store only while that
@@ -661,21 +556,6 @@ func flagCredentialsError(ctx context.Context, db bun.IDB, p DispatchSyncArgs, b
 	return true, nil
 }
 
-// userSubscribed reports whether the user is subscribed to eventType. On query
-// error it returns false, so a credential failure still falls back to the
-// default-on sync.failed event rather than going silent.
-func userSubscribed(ctx context.Context, db bun.IDB, userID, eventType string) bool {
-	var subscribed bool
-	if err := db.NewRaw(
-		`SELECT EXISTS(SELECT 1 FROM notification_subscriptions WHERE user_id = ? AND event_type = ?)`,
-		userID, eventType,
-	).Scan(ctx, &subscribed); err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: subscription check failed", logging.KeyErr, err, logging.KeyUserID, userID, "event_type", eventType, logging.Cat(logging.CategoryDB))
-		return false
-	}
-	return subscribed
-}
-
 // boolptr returns a pointer to b.
 func boolptr(b bool) *bool { return &b }
 
@@ -691,242 +571,99 @@ func (IGDBMatchArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{MaxAttempts: 5, Priority: 1}
 }
 
+// IGDBMatchWorker matches a sync item's game to IGDB, or hands it straight to
+// the write stage when it is already matched or skipped. It is also what the
+// module queues by itself for a sync item (Retry, recovery, an item that
+// stops waiting).
 type IGDBMatchWorker struct {
 	river.WorkerDefaults[IGDBMatchArgs]
-	DB          *bun.DB
-	IGDBClient  *igdbsvc.Client
-	RiverClient *river.Client[pgx.Tx]
+	DB         *bun.DB
+	LC         *joblifecycle.Module
+	IGDBClient *igdbsvc.Client
 }
 
-func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs]) error {
-	p := job.Args
+// maxChildWaitTries bounds how often a child that was told "cannot wait"
+// starts again from loading its game (it may have been re-pointed to another
+// parent meanwhile); after that the error goes to River.
+const maxChildWaitTries = 3
 
-	var item models.JobItem
-	if err := w.DB.NewSelect().Model(&item).Where("id = ?", p.JobItemID).Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "igdb_match: load job_item", "id", p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+func (w *IGDBMatchWorker) Work(ctx context.Context, rj *river.Job[IGDBMatchArgs]) error {
+	item, done, err := loadOwnedItem(ctx, w.DB, w.LC, rj.Args.JobItemID, rj.ID)
+	if done || err != nil {
 		return err
 	}
-	// Correlate every line below to the user-facing job once the item is loaded.
 	ctx = logging.WithJobID(ctx, item.JobID)
-	// A late or duplicate River job for an item that is no longer pending
-	// (finished, in review, or cancelled) must change nothing (#1339).
-	if item.Status != models.JobItemStatusPending {
-		slog.DebugContext(ctx, "igdb_match: item is not pending, nothing to do", logging.KeyJobItemID, item.ID, "status", item.Status)
-		return nil
-	}
-
 	if item.ExternalGameID == nil {
-		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-		return nil
+		return failItem(ctx, w.LC, item.ID, rj.ID, "external_game_id not set on job_item")
 	}
 
-	var eg models.ExternalGame
-	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
-		markItemFailed(ctx, w.DB, &item, "external game not found", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-		return nil
-	}
-
-	slog.DebugContext(ctx, "igdb_match: processing",
-		logging.KeyJobItemID, p.JobItemID,
-		"title", eg.Title,
-		logging.KeySource, eg.Storefront,
-		logging.KeyExternalGameID, eg.ID,
-		"attempt", job.Attempt,
-	)
-
-	// Fast-path: skipped games go straight to UserGameWorker.
-	if eg.IsSkipped {
-		slog.DebugContext(ctx, "igdb_match: game is skipped, fast-path to user_game_write", logging.KeyJobItemID, p.JobItemID, "title", eg.Title)
-		return w.enqueueUserGame(ctx, item.ID, item.JobID)
-	}
-
-	// Fast-path: already resolved (manual or prior run).
-	if eg.ResolvedIGDBID != nil {
-		slog.DebugContext(ctx, "igdb_match: already resolved, fast-path to user_game_write",
-			logging.KeyJobItemID, p.JobItemID, "title", eg.Title, "igdb_id", *eg.ResolvedIGDBID)
-		return w.enqueueUserGame(ctx, item.ID, item.JobID)
-	}
-
-	// Child check: if this row has a parent, inherit, wait, or fail.
-	if eg.ParentID != nil {
-		var parent models.ExternalGame
-		err := w.DB.NewSelect().Model(&parent).Where("id = ?", *eg.ParentID).Scan(ctx)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("igdb_match: load parent: %w", err)
-		}
-		if err == nil && parent.ResolvedIGDBID != nil {
-			return w.inheritFromParent(ctx, &item, &eg)
+	cannotWaitOn := ""
+	for range maxChildWaitTries {
+		var eg models.ExternalGame
+		if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if errors.Is(err, sql.ErrNoRows) {
+				return failItem(ctx, w.LC, item.ID, rj.ID, "external game not found")
+			}
+			return fmt.Errorf("igdb_match: load external game: %w", err)
 		}
 
-		// The parent is unmatched (or gone): wait only if the wait can end.
-		res, err := decideChildWait(ctx, w.DB, item.ID, item.JobID, eg.ID, *eg.ParentID)
-		if err != nil {
+		// Fast path: a skipped or matched game goes straight to the write stage.
+		if eg.IsSkipped || eg.ResolvedIGDBID != nil {
+			return w.toWrite(ctx, rj, item.ID, nil)
+		}
+		if eg.ParentID == nil {
+			return w.search(ctx, rj, item, &eg)
+		}
+
+		// A child of a parent that is matched now takes its match.
+		err := w.toWrite(ctx, rj, item.ID, inheritParentMatch(&eg))
+		if !errors.Is(err, errParentUnmatched) {
 			return err
 		}
-		switch res.action {
-		case childWait:
-			slog.DebugContext(ctx, "igdb_match: parent unresolved, waiting",
-				logging.KeyJobItemID, p.JobItemID, "parent_id", *eg.ParentID)
-			return nil
-		case childFailed:
-			slog.InfoContext(ctx, "igdb_match: child cannot wait for its parent; item failed",
-				logging.KeyJobItemID, p.JobItemID, "parent_id", *eg.ParentID)
-			SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-			return nil
+		// Told "cannot wait" on this parent before and it is still
+		// unmatched: the child cannot follow it.
+		if *eg.ParentID == cannotWaitOn {
+			slog.InfoContext(ctx, "igdb_match: child cannot wait for its unmatched parent; item failed",
+				logging.KeyJobItemID, item.ID, "parent_id", *eg.ParentID)
+			return failItem(ctx, w.LC, item.ID, rj.ID, childUnmatchedParentMsg)
 		}
-		// childProceed: the facts changed while we looked. Carry on with them.
-		eg.IsSkipped = res.isSkipped
-		eg.ResolvedIGDBID = res.resolvedIGDBID
-		eg.ParentID = res.parentID
-		if eg.IsSkipped || eg.ResolvedIGDBID != nil {
-			return w.enqueueUserGame(ctx, item.ID, item.JobID)
-		}
-		if eg.ParentID != nil && res.parentIGDBID != nil {
-			return w.inheritFromParent(ctx, &item, &eg)
-		}
-		// No longer a child (promoted): searched like any other game.
-	}
-
-	// IGDB search.
-	if w.IGDBClient != nil && w.IGDBClient.Configured() {
-		platformIDs, perErr := platformresolution.IGDBPlatformIDsForExternalGame(ctx, w.DB, eg.ID)
-		if perErr != nil {
-			slog.DebugContext(ctx, "igdb_match: platform resolution failed, falling back to unfiltered",
-				logging.KeyJobItemID, p.JobItemID, logging.KeyExternalGameID, eg.ID, logging.KeyErr, perErr)
-			platformIDs = nil
-		}
-		candidates, err := w.IGDBClient.SearchGames(ctx, eg.Title, 10, platformIDs)
+		waiting, err := w.LC.Wait(ctx, item.ID, rj.ID)
 		if err != nil {
-			if job.Attempt >= job.MaxAttempts {
-				slog.WarnContext(ctx, "igdb_match: IGDB failed on final attempt, marking pending_review",
-					logging.KeyJobItemID, p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-				return w.toPendingReview(ctx, &item, eg.ID)
-			}
-			return fmt.Errorf("igdb_match: search failed (will retry): %w", err)
+			return exitOrRetry(ctx, err)
 		}
-
-		cands := make([]matching.Candidate, len(candidates))
-		for i, c := range candidates {
-			cands[i] = matching.Candidate{ID: int32(c.IgdbID), Title: c.Title} //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
+		if waiting {
+			slog.DebugContext(ctx, "igdb_match: parent unmatched, waiting", logging.KeyJobItemID, item.ID, "parent_id", *eg.ParentID)
+			return nil
 		}
-		decision := matching.Decide(eg.Title, cands)
-
-		slog.DebugContext(ctx, "igdb_match: search results",
-			logging.KeyJobItemID, p.JobItemID,
-			"title", eg.Title,
-			"candidate_count", len(candidates),
-			"best_score", decision.BestScore,
-			"second_best_score", decision.SecondBest,
-			"best_igdb_id", decision.ResolvedID,
-		)
-
-		if decision.Confident {
-			bestID := decision.ResolvedID
-			slog.DebugContext(ctx, "igdb_match: auto-resolved",
-				logging.KeyJobItemID, p.JobItemID, "title", eg.Title, "igdb_id", bestID, "score", decision.BestScore)
-			if _, err := w.DB.NewRaw(
-				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
-				bestID, eg.Title,
-			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "igdb_match: insert game row (auto-resolve)", logging.KeyErr, err, "igdb_id", bestID, logging.Cat(logging.CategoryDB))
-			}
-			// IS NULL: a rematch that committed during the search wins (#1338);
-			// either way the write stage writes whatever match the game has.
-			if _, err := w.DB.NewRaw(
-				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL`,
-				bestID, eg.ID,
-			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "igdb_match: auto-resolve external_game", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
-			}
-			return w.enqueueUserGame(ctx, item.ID, item.JobID)
-		}
-
-		// Low confidence or tie — store candidates, mark pending_review.
-		slog.DebugContext(ctx, "igdb_match: low confidence, marking pending_review",
-			logging.KeyJobItemID, p.JobItemID,
-			"title", eg.Title,
-			"best_score", decision.BestScore,
-			"threshold", matching.AutoResolveThreshold,
-			"tie_gap", decision.BestScore-decision.SecondBest,
-			"candidate_count", len(candidates),
-		)
-		candidatesJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling the candidates slice cannot fail
-		item.IGDBCandidates = candidatesJSON
-		bs := decision.BestScore
-		item.MatchConfidence = &bs
-		return w.toPendingReview(ctx, &item, eg.ID)
+		// Cannot wait: the parent's item has finished, or it has none and the
+		// dispatch is done, or the game is no longer a child. Decide on the
+		// game as it is now.
+		cannotWaitOn = *eg.ParentID
 	}
-
-	// No IGDB client configured — mark pending_review.
-	slog.DebugContext(ctx, "igdb_match: no IGDB client configured, marking pending_review", logging.KeyJobItemID, p.JobItemID, "title", eg.Title)
-	return w.toPendingReview(ctx, &item, eg.ID)
+	return fmt.Errorf("igdb_match: child game kept changing parent; retrying")
 }
 
-// toPendingReview puts the item in Pending review, unless the game was matched
-// meanwhile (a rematch committed during the search): then the item goes on to
-// the write stage. The game is read FOR SHARE first, so a rematch in progress
-// is waited for (#1338).
-func (w *IGDBMatchWorker) toPendingReview(ctx context.Context, item *models.JobItem, externalGameID string) error {
-	matched, marked := false, false
-	err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		var resolved *int32
-		if err := tx.NewRaw(
-			`SELECT resolved_igdb_id FROM external_games WHERE id = ? FOR SHARE`, externalGameID,
-		).Scan(ctx, &resolved); err != nil {
-			return fmt.Errorf("lock external game: %w", err)
-		}
-		if resolved != nil {
-			matched = true
-			return nil
-		}
-		upd := *item
-		upd.Status = models.JobItemStatusPendingReview
-		res, err := tx.NewUpdate().Model(&upd).
-			Column("status", "igdb_candidates", "match_confidence").
-			Where("id = ? AND status = ?", item.ID, models.JobItemStatusPending).
-			Exec(ctx)
-		if err != nil {
-			return fmt.Errorf("mark pending_review: %w", err)
-		}
-		n, _ := res.RowsAffected() //nolint:errcheck // pgdriver always reports RowsAffected
-		marked = n > 0
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("igdb_match: %w", err)
-	}
-	if matched {
-		slog.DebugContext(ctx, "igdb_match: game matched meanwhile, going to the write stage", logging.KeyJobItemID, item.ID)
-		return w.enqueueUserGame(ctx, item.ID, item.JobID)
-	}
-	if marked {
-		item.Status = models.JobItemStatusPendingReview
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-	}
-	return nil
-}
+// errParentUnmatched rolls back an inherit whose parent has no match.
+var errParentUnmatched = errors.New("igdb_match: parent game is unmatched")
 
-// inheritFromParent gives a child its parent's match and hands it to the write
-// stage. The parent is read FOR SHARE in the same transaction, so a child never
-// takes a match a rematch in progress is replacing; and the child only takes it
-// while it has none (a rematch sets the whole family's match itself) (#1338).
-func (w *IGDBMatchWorker) inheritFromParent(ctx context.Context, item *models.JobItem, eg *models.ExternalGame) error {
-	err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+// inheritParentMatch is the own write that gives a child its parent's match:
+// the parent is read FOR SHARE in the transition, so a child never takes a
+// match a rematch in progress is replacing, and the child only takes it while
+// it has none (#1338).
+func inheritParentMatch(eg *models.ExternalGame) joblifecycle.OwnWrite {
+	return func(ctx context.Context, tx bun.Tx) error {
 		var parentMatch *int32
 		if err := tx.NewRaw(
 			`SELECT resolved_igdb_id FROM external_games WHERE id = ? FOR SHARE`, *eg.ParentID,
-		).Scan(ctx, &parentMatch); err != nil {
+		).Scan(ctx, &parentMatch); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("lock parent: %w", err)
 		}
 		if parentMatch == nil {
-			// Not reachable while rematch never unsets a match; the write
-			// stage fails the item if the child has none either.
-			return nil
+			return joblifecycle.Abort(errParentUnmatched)
 		}
-		slog.DebugContext(ctx, "igdb_match: child inheriting from resolved parent",
-			logging.KeyJobItemID, item.ID, "title", eg.Title, "igdb_id", *parentMatch, "parent_id", *eg.ParentID)
 		if err := EnsureGameRow(ctx, tx, *parentMatch, eg.Title); err != nil {
 			return err
 		}
@@ -937,19 +674,103 @@ func (w *IGDBMatchWorker) inheritFromParent(ctx context.Context, item *models.Jo
 			return fmt.Errorf("apply child inherit: %w", err)
 		}
 		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("igdb_match: inherit from parent: %w", err)
 	}
-	return w.enqueueUserGame(ctx, item.ID, item.JobID)
 }
 
-func (w *IGDBMatchWorker) enqueueUserGame(ctx context.Context, jobItemID, jobID string) error {
-	if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, jobItemID, UserGameArgs{JobItemID: jobItemID}); err != nil {
-		slog.WarnContext(ctx, "igdb_match: enqueue user_game_write failed", logging.KeyJobItemID, jobItemID, logging.KeyErr, err)
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, jobID)
+// toWrite hands the item to the write stage, with own as the transition's
+// own write. errParentUnmatched is returned as is, for the caller to decide.
+func (w *IGDBMatchWorker) toWrite(ctx context.Context, rj *river.Job[IGDBMatchArgs], itemID string, own joblifecycle.OwnWrite) error {
+	err := w.LC.NextStage(ctx, itemID, rj.ID, joblifecycle.Stage{Args: UserGameArgs{JobItemID: itemID}, Own: own})
+	if errors.Is(err, errParentUnmatched) {
+		return err
 	}
-	return nil
+	return exitOrRetry(ctx, err)
+}
+
+// search matches a top-level game through IGDB: a confident match goes to
+// the write stage, anything else to Pending review.
+func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArgs], item *models.JobItem, eg *models.ExternalGame) error {
+	if w.IGDBClient == nil || !w.IGDBClient.Configured() {
+		slog.DebugContext(ctx, "igdb_match: no IGDB client configured, marking pending_review", logging.KeyJobItemID, item.ID, "title", eg.Title)
+		return w.toReview(ctx, rj, item.ID, eg.ID, nil, nil)
+	}
+	platformIDs, perErr := platformresolution.IGDBPlatformIDsForExternalGame(ctx, w.DB, eg.ID)
+	if perErr != nil {
+		slog.DebugContext(ctx, "igdb_match: platform resolution failed, falling back to unfiltered",
+			logging.KeyJobItemID, item.ID, logging.KeyExternalGameID, eg.ID, logging.KeyErr, perErr)
+		platformIDs = nil
+	}
+	candidates, err := w.IGDBClient.SearchGames(ctx, eg.Title, 10, platformIDs)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if lastAttempt(rj.JobRow) {
+			slog.WarnContext(ctx, "igdb_match: IGDB failed on final attempt, marking pending_review",
+				logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+			return w.toReview(ctx, rj, item.ID, eg.ID, nil, nil)
+		}
+		return fmt.Errorf("igdb_match: search failed (will retry): %w", err)
+	}
+
+	cands := make([]matching.Candidate, len(candidates))
+	for i, c := range candidates {
+		cands[i] = matching.Candidate{ID: int32(c.IgdbID), Title: c.Title} //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
+	}
+	decision := matching.Decide(eg.Title, cands)
+	slog.DebugContext(ctx, "igdb_match: search results",
+		logging.KeyJobItemID, item.ID,
+		"title", eg.Title,
+		"candidate_count", len(candidates),
+		"best_score", decision.BestScore,
+		"second_best_score", decision.SecondBest,
+		"best_igdb_id", decision.ResolvedID,
+	)
+
+	if decision.Confident {
+		bestID := decision.ResolvedID
+		// The games row and the match are this transition's own writes. IS
+		// NULL: a rematch that committed during the search wins (#1338);
+		// either way the write stage writes whatever match the game has.
+		return w.toWrite(ctx, rj, item.ID, func(ctx context.Context, tx bun.Tx) error {
+			if err := EnsureGameRow(ctx, tx, bestID, eg.Title); err != nil {
+				return err
+			}
+			if _, err := tx.NewRaw(
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL`,
+				bestID, eg.ID,
+			).Exec(ctx); err != nil {
+				return fmt.Errorf("auto-resolve external_game: %w", err)
+			}
+			return nil
+		})
+	}
+
+	candidatesJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling the candidates slice cannot fail
+	bs := decision.BestScore
+	return w.toReview(ctx, rj, item.ID, eg.ID, candidatesJSON, &bs)
+}
+
+// toReview puts the item in Pending review, unless the game was matched
+// meanwhile (a rematch committed during the search): then it goes on to the
+// write stage. The game is read FOR SHARE in the transition, so a rematch in
+// progress is waited for (#1338).
+func (w *IGDBMatchWorker) toReview(ctx context.Context, rj *river.Job[IGDBMatchArgs], itemID, externalGameID string, candidates json.RawMessage, confidence *float64) error {
+	return exitOrRetry(ctx, w.LC.AwaitReview(ctx, itemID, rj.ID, joblifecycle.Review{
+		Candidates: candidates, MatchConfidence: confidence,
+		Divert: func(ctx context.Context, tx bun.Tx) (river.JobArgs, error) {
+			var resolved *int32
+			if err := tx.NewRaw(
+				`SELECT resolved_igdb_id FROM external_games WHERE id = ? FOR SHARE`, externalGameID,
+			).Scan(ctx, &resolved); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return nil, fmt.Errorf("lock external game: %w", err)
+			}
+			if resolved != nil {
+				return UserGameArgs{JobItemID: itemID}, nil
+			}
+			return nil, nil
+		},
+	}))
 }
 
 // ── UserGameWorker — Stage 3 ──────────────────────────────────────────────────
@@ -964,365 +785,108 @@ func (UserGameArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{MaxAttempts: 5, Priority: 1}
 }
 
-// UserGameWorker writes the user_game and user_game_platform rows for a resolved sync item.
+// UserGameWorker writes the library state of a sync item's game. The library
+// write, its diff rows and the item's completion commit together (#1329).
 type UserGameWorker struct {
 	river.WorkerDefaults[UserGameArgs]
-	DB          *bun.DB
-	IGDBClient  *igdbsvc.Client
+	DB         *bun.DB
+	LC         *joblifecycle.Module
+	IGDBClient *igdbsvc.Client
+	// RiverClient inserts the immediate metadata fetch, which is not Job work.
 	RiverClient *river.Client[pgx.Tx]
 }
 
-func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs]) error {
-	p := job.Args
+// cannotWrite reports whether err means the game cannot be written, which
+// fails the item, as opposed to an error that might go away by trying again.
+func cannotWrite(err error) bool {
+	return errors.Is(err, ErrExternalGameNotFound) || errors.Is(err, ErrExternalGameUnmatched) ||
+		errors.Is(err, ErrExternalGameNoPlatforms) || errors.Is(err, usergame.ErrValidation) ||
+		errors.Is(err, usergame.ErrNotFound) || errors.Is(err, usergame.ErrConflict) ||
+		errors.Is(err, usergame.ErrUnprocessable)
+}
 
-	var item models.JobItem
-	if err := w.DB.NewSelect().Model(&item).Where("id = ?", p.JobItemID).Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "user_game_write: load job_item", "id", p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+func (w *UserGameWorker) Work(ctx context.Context, rj *river.Job[UserGameArgs]) error {
+	item, done, err := loadOwnedItem(ctx, w.DB, w.LC, rj.Args.JobItemID, rj.ID)
+	if done || err != nil {
 		return err
 	}
-	// Correlate every line below to the user-facing job once the item is loaded.
 	ctx = logging.WithJobID(ctx, item.JobID)
-	// A late or duplicate River job for an item that is no longer pending
-	// (finished, in review, or cancelled) must change nothing (#1339).
-	if item.Status != models.JobItemStatusPending {
-		slog.DebugContext(ctx, "user_game_write: item is not pending, nothing to do", logging.KeyJobItemID, item.ID, "status", item.Status)
-		return nil
-	}
-
 	if item.ExternalGameID == nil {
-		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-		return nil
+		return failItem(ctx, w.LC, item.ID, rj.ID, "external_game_id not set on job_item")
 	}
-
 	var eg models.ExternalGame
 	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
-		markItemFailed(ctx, w.DB, &item, "external game not found", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-		return nil
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return failItem(ctx, w.LC, item.ID, rj.ID, "external game not found")
+		}
+		return fmt.Errorf("user_game_write: load external game: %w", err)
 	}
-
-	// Skipped games: record the outcome, mark the item skipped, and check completion.
 	if eg.IsSkipped {
-		w.finishSkipped(ctx, &item, &eg)
-		return nil
+		return w.finishSkipped(ctx, rj, item, &eg)
 	}
 
-	// Manual resolution propagation: job_item has resolved_igdb_id but external_game doesn't.
-	// Only an unmatched game takes it: a rematch that committed meanwhile wins.
-	if eg.ResolvedIGDBID == nil && item.ResolvedIGDBID != nil {
-		igdbID := int32(*item.ResolvedIGDBID) //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
-		if err := EnsureGameRow(ctx, w.DB, igdbID, eg.Title); err != nil {
-			slog.WarnContext(ctx, "user_game_write: insert game row (manual resolve)", logging.KeyErr, err, "igdb_id", igdbID, logging.Cat(logging.CategoryDB))
-		}
-		if _, err := w.DB.NewRaw(
-			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL`,
-			igdbID, eg.ID,
-		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "user_game_write: apply manual resolution", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
-		}
-	}
-
-	// The library write, its diff rows and the item's completion commit
-	// together. The write re-reads the match and skip flag under the game's
-	// row lock, so a rematch that committed after we loaded eg wins.
+	// The write runs after the module checked ownership in the same
+	// transaction, so a second River job for the item, or this one run again
+	// after its commit, is refused before it writes anything. The write
+	// re-reads the match and skip flag under the game's row lock, so a
+	// rematch that committed after eg was loaded wins.
 	var lw LibraryWrite
-	err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		var err error
-		if lw, err = WriteExternalGameToLibrary(ctx, tx, item.UserID, eg.ID); err != nil {
-			return err
-		}
-		if err := InsertLibraryWriteChanges(ctx, tx, item.JobID, item.UserID, lw, lw.Result.Created); err != nil {
-			return err
-		}
-		res, err := tx.NewRaw(
-			`UPDATE job_items SET status = 'completed', processed_at = now() WHERE id = ? AND status = 'pending'`, item.ID,
-		).Exec(ctx)
-		if err != nil {
-			return fmt.Errorf("complete item: %w", err)
-		}
-		if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // pgdriver always reports RowsAffected
-			return errItemNotPending
-		}
-		return nil
+	err = w.LC.FinishItem(ctx, item.ID, rj.ID, joblifecycle.ItemResult{
+		Status: models.JobItemStatusCompleted,
+		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
+			var err error
+			if lw, err = WriteExternalGameToLibrary(ctx, tx, item.UserID, eg.ID); err != nil {
+				if errors.Is(err, ErrExternalGameSkipped) || cannotWrite(err) {
+					return nil, joblifecycle.Abort(err)
+				}
+				return nil, err
+			}
+			return nil, InsertLibraryWriteChanges(ctx, tx, item.JobID, item.UserID, lw, lw.Result.Created)
+		},
 	})
 	switch {
-	case errors.Is(err, errItemNotPending):
-		slog.DebugContext(ctx, "user_game_write: item stopped being pending during the write, nothing written", logging.KeyJobItemID, item.ID)
-		return nil
+	case err == nil:
+	case ctx.Err() != nil:
+		return ctx.Err()
+	case joblifecycle.IsRefusal(err):
+		return exitOrRetry(ctx, err)
 	case errors.Is(err, ErrExternalGameSkipped):
-		w.finishSkipped(ctx, &item, &eg)
-		return nil
-	case err != nil:
-		markItemFailed(ctx, w.DB, &item, err.Error(), "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-		return nil
+		return w.finishSkipped(ctx, rj, item, &eg)
+	case cannotWrite(err), lastAttempt(rj.JobRow):
+		return failItem(ctx, w.LC, item.ID, rj.ID, err.Error())
+	default:
+		return err
 	}
 
-	// Immediate metadata fetch for a game with no description yet. Checked
-	// here so an instance without IGDB does not queue a no-op per game.
+	// Immediate metadata fetch for a game with no description yet: not Job
+	// work, inserted after the commit. Checked here so an instance without
+	// IGDB does not queue a no-op per game.
 	if w.IGDBClient != nil && w.IGDBClient.Configured() {
 		EnqueueImmediateMetadataFetch(ctx, w.DB, w.RiverClient, lw.IGDBID)
 	}
-
-	// Sibling trigger: re-enqueue Stage 2 for children waiting on this parent.
-	if w.RiverClient != nil {
-		var childItems []struct {
-			JobItemID      string `bun:"job_item_id"`
-			ExternalGameID string `bun:"external_game_id"`
-		}
-		if err := w.DB.NewRaw(`
-			SELECT ji.id AS job_item_id, eg.id AS external_game_id
-			FROM external_games eg
-			JOIN job_items ji ON ji.external_game_id = eg.id
-			WHERE eg.parent_id = ?
-			  AND eg.resolved_igdb_id IS NULL
-			  AND NOT eg.is_skipped
-			  AND ji.status = 'pending'
-			ORDER BY ji.created_at DESC`,
-			eg.ID,
-		).Scan(ctx, &childItems); err == nil {
-			for _, child := range childItems {
-				if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, child.JobItemID, IGDBMatchArgs{JobItemID: child.JobItemID}); err != nil {
-					slog.WarnContext(ctx, "user_game_write: enqueue sibling Stage 2",
-						logging.KeyErr, err, "child_eg_id", child.ExternalGameID, logging.KeyJobItemID, child.JobItemID)
-				}
-			}
-		}
-	}
-
-	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 	return nil
 }
 
-// errItemNotPending rolls back a write whose item a Skip or a cancel finished
-// meanwhile.
-var errItemNotPending = errors.New("job item is no longer pending")
-
-// finishSkipped records a skipped game in the Job's diff, marks the item
-// skipped, and checks completion.
-func (w *UserGameWorker) finishSkipped(ctx context.Context, item *models.JobItem, eg *models.ExternalGame) {
-	if _, err := w.DB.NewRaw(
-		`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
-	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "user_game_write: update external_game updated_at (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-	// NOT EXISTS: this item can run twice across a restart (see the dispatch's
-	// 'skipped' insert).
-	if _, err := w.DB.NewRaw(
-		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-		 SELECT ?, ?, ?, ?, 'skipped', ?, now()
-		 WHERE NOT EXISTS (
-		   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
-		uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title, item.JobID, eg.ID,
-	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "user_game_write: insert sync_change (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-	markItemSkipped(ctx, w.DB, item, "process_sync_item: markItemSkipped")
-	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-}
-
-// SyncCheckJobCompletion checks whether active processing of job_items is complete and
-// drives the job to its terminal state.
-//
-// "Active" means pending or processing. pending_review items require user action and
-// do not count as active, but they DO block job termination — the job stays in
-// 'processing' until every item has been resolved by the user, auto-matched, or failed.
-//
-// Once no active items remain:
-//   - pending_review items still exist: job stays processing (user must review).
-//   - No pending_review items remain: marks job completed (individual item failures are
-//     surfaced via the job_items table, not the job status).
-//
-// In addition, a sync job is never finalized while its dispatch is still
-// streaming batches: DispatchSyncWorker sets jobs.dispatch_complete=false on
-// entry and true only after the full library has been dispatched, so the
-// completion check below treats dispatch_complete=false as "more work may
-// still arrive" and refuses to finalize.
-func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, riverClient *river.Client[pgx.Tx], jobID string) {
-	ctx = logging.WithJobID(ctx, jobID)
-	activeRemaining, ok := countJobItems(ctx, db, jobID, "status IN ('pending', 'processing')", "sync: SyncCheckJobCompletion count")
-	if !ok || activeRemaining > 0 {
-		return
-	}
-
-	// If pending_review items still exist the job stays processing — user must resolve them.
-	pendingReviewCount, ok := countJobItems(ctx, db, jobID, "status = 'pending_review'", "sync: SyncCheckJobCompletion pending_review count")
-	if !ok {
-		return
-	}
-	if pendingReviewCount > 0 {
-		userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
-		notify.Emit(ctx, db, notify.EmitParams{
-			Type: notify.TypeSyncNeedsReview, Scope: notify.ScopeUser, ActorUserID: userID,
-			Payload:  notify.SyncNeedsReviewPayload{Storefront: storefront, Count: pendingReviewCount, JobID: jobID},
-			DedupKey: jobID + ":" + notify.TypeSyncNeedsReview,
-		})
-		return
-	}
-
-	// Finalize only when dispatch has finished streaming batches. finalized=false
-	// means dispatch is still in flight or the job is already terminal — in either
-	// case we must not emit completion notifications.
-	if !finalizeJobCompleted(ctx, db, jobID, "sync: SyncCheckJobCompletion finalize job failed", true) {
-		return
-	}
-
-	// The Job is finalized: nothing will run this check for it again, so the
-	// notifications, diff, metrics and store-link trigger below must not be
-	// lost to a shutdown that cancels ctx right here (#1302).
-	ctx = context.WithoutCancel(ctx)
-
-	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
-	failedCount, ok := countJobItems(ctx, db, jobID, "status = 'failed'", "sync: count failed items for notify")
-	if !ok {
-		return
-	}
-	if failedCount > 0 {
-		notify.Emit(ctx, db, notify.EmitParams{
-			Type: notify.TypeSyncCompletedWithErrors, Scope: notify.ScopeUser, ActorUserID: userID,
-			Payload:  notify.SyncCompletedWithErrorsPayload{Storefront: storefront, Failed: failedCount, JobID: jobID},
-			DedupKey: jobID + ":" + notify.TypeSyncCompletedWithErrors,
-		})
-	} else {
-		notify.Emit(ctx, db, notify.EmitParams{
-			Type: notify.TypeSyncCompleted, Scope: notify.ScopeUser, ActorUserID: userID,
-			Payload:  notify.SyncCompletedPayload{Storefront: storefront, JobID: jobID},
-			DedupKey: jobID + ":" + notify.TypeSyncCompleted,
-		})
-	}
-	emitSyncDiff(ctx, db, jobID, userID, storefrontDisplayName(ctx, db, storefront))
-
-	// Sync-outcome metrics (best-effort, bounded cardinality: source + status/outcome).
-	// Skip when storefront is empty (lookup failure) so we never create a polluting
-	// source="" time series.
-	if storefront != "" {
-		outcomeStatus := "completed"
-		if failedCount > 0 {
-			outcomeStatus = "completed_with_errors"
-		}
-		observability.RecordSyncOutcome(ctx, storefront, outcomeStatus)
-		if completed, failed, skipped, ok := syncJobItemStatusCounts(ctx, db, jobID); ok {
-			observability.RecordSyncItems(ctx, storefront, "completed", completed)
-			observability.RecordSyncItems(ctx, storefront, "failed", failed)
-			observability.RecordSyncItems(ctx, storefront, "skipped", skipped)
-		}
-	}
-
-	// Kick off scoped, incremental store-link enrichment for this storefront.
-	// Best-effort: a missing River client (e.g. in tests) simply skips it.
-	if riverClient != nil && userID != "" && storefront != "" {
-		if _, err := riverClient.Insert(ctx, StoreLinkRefreshDispatchArgs{
-			UserID: userID, Storefront: storefront, Force: false,
-		}, nil); err != nil {
-			slog.WarnContext(ctx, "sync: enqueue store_link_refresh", logging.KeyErr, err)
-		}
-	}
-}
-
-// syncJobItemStatusCounts returns the per-status item counts for a finalized job.
-// Used for the nexorious_sync_items_total business metric. Returns ok=false on a
-// query error so callers can skip metrics (best-effort, never blocks the job).
-func syncJobItemStatusCounts(ctx context.Context, db *bun.DB, jobID string) (completed, failed, skipped int64, ok bool) {
-	var rows []struct {
-		Status string `bun:"status"`
-		N      int64  `bun:"n"`
-	}
-	if err := db.NewRaw(
-		`SELECT status, COUNT(*) AS n FROM job_items WHERE job_id = ? GROUP BY status`,
-		jobID,
-	).Scan(ctx, &rows); err != nil {
-		slog.WarnContext(ctx, "sync: count job item statuses for metrics", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return 0, 0, 0, false
-	}
-	for _, r := range rows {
-		switch r.Status {
-		case "completed":
-			completed = r.N
-		case "failed":
-			failed = r.N
-		case "skipped":
-			skipped = r.N
-		}
-	}
-	return completed, failed, skipped, true
-}
-
-// syncJobUserAndStorefront fetches the owning user_id and storefront (source)
-// for a job. Returns ("","") on error.
-func syncJobUserAndStorefront(ctx context.Context, db *bun.DB, jobID string) (userID, storefront string) {
-	var row struct {
-		UserID string `bun:"user_id"`
-		Source string `bun:"source"`
-	}
-	if err := db.NewRaw(`SELECT user_id, source FROM jobs WHERE id = ?`, jobID).Scan(ctx, &row); err != nil {
-		slog.WarnContext(ctx, "sync: lookup job user/storefront", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return "", ""
-	}
-	return row.UserID, row.Source
-}
-
-// storefrontDisplayName resolves a storefront source slug (e.g. "steam",
-// "playstation-store") to its human-readable display name from the storefronts
-// reference table. Returns "" when the slug is empty, unknown, or on error —
-// callers fall back to a generic label.
-func storefrontDisplayName(ctx context.Context, db *bun.DB, slug string) string {
-	if slug == "" {
-		return ""
-	}
-	var name string
-	if err := db.NewRaw(`SELECT display_name FROM storefronts WHERE name = ?`, slug).Scan(ctx, &name); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			slog.WarnContext(ctx, "sync: lookup storefront display_name", "slug", slug, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		}
-		return ""
-	}
-	return name
-}
-
-// emitSyncDiff emits sync.diff iff changes rows exist for the job. storefront is
-// the resolved storefront display name (may be empty) carried in the payload so
-// the notification names its source.
-func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID, storefront string) {
-	var rows []struct {
-		ChangeType string `bun:"change_type"`
-		Title      string `bun:"title"`
-		Platforms  string `bun:"platforms"`
-	}
-	if err := db.NewRaw(
-		`SELECT sc.change_type,
-		        sc.title,
-		        COALESCE(string_agg(egp.platform, ',' ORDER BY egp.platform), '') AS platforms
-		   FROM changes sc
-		   LEFT JOIN external_game_platforms egp ON egp.external_game_id = sc.external_game_id
-		  WHERE sc.job_id = ? AND sc.change_type IN ('added','removed')
-		  GROUP BY sc.id, sc.change_type, sc.title, sc.created_at
-		  ORDER BY sc.created_at`,
-		jobID,
-	).Scan(ctx, &rows); err != nil {
-		slog.WarnContext(ctx, "sync: load changes for diff notify", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return
-	}
-	if len(rows) == 0 {
-		return
-	}
-	added := []notify.DiffGame{}
-	removed := []notify.DiffGame{}
-	for _, r := range rows {
-		platforms := []string{}
-		if r.Platforms != "" {
-			platforms = strings.Split(r.Platforms, ",")
-		}
-		entry := notify.DiffGame{Title: r.Title, Platforms: platforms}
-		if r.ChangeType == "added" {
-			added = append(added, entry)
-		} else {
-			removed = append(removed, entry)
-		}
-	}
-	notify.Emit(ctx, db, notify.EmitParams{
-		Type: notify.TypeSyncDiff, Scope: notify.ScopeUser, ActorUserID: userID,
-		Payload:  notify.SyncDiffPayload{Storefront: storefront, Added: added, Removed: removed, JobID: jobID},
-		DedupKey: jobID + ":" + notify.TypeSyncDiff,
-	})
+// finishSkipped finishes the item of a skipped game as skipped, with its
+// 'skipped' diff row as the transition's own write.
+func (w *UserGameWorker) finishSkipped(ctx context.Context, rj *river.Job[UserGameArgs], item *models.JobItem, eg *models.ExternalGame) error {
+	return exitOrRetry(ctx, w.LC.FinishItem(ctx, item.ID, rj.ID, joblifecycle.ItemResult{
+		Status: models.JobItemStatusSkipped,
+		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
+			// NOT EXISTS: the dispatch may have written it for this Job.
+			if _, err := tx.NewRaw(
+				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+				 SELECT ?, ?, ?, ?, 'skipped', ?, now()
+				 WHERE NOT EXISTS (
+				   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
+				uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title, item.JobID, eg.ID,
+			).Exec(ctx); err != nil {
+				return nil, fmt.Errorf("insert sync_change (skipped): %w", err)
+			}
+			return nil, nil
+		},
+	}))
 }

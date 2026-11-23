@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -221,44 +223,64 @@ func TestRematch_PendingReview_NoPlatformRows_CompletesItemWithoutChange(t *test
 	}
 }
 
-func TestRematch_RefusedWhileASyncIsWorking(t *testing.T) {
-	cases := []struct {
-		name  string
-		setup func(f *rmFixture)
-	}{
-		{"pending in an active job", func(f *rmFixture) {
-			f.game("eg", "", 100, false, "playstation-4")
-			f.job("job", "processing")
-			f.item("ji", "job", "eg", "pending", 0)
-		}},
-		{"pending in a finished job with a queued river job", func(f *rmFixture) {
-			f.game("eg", "", 100, false, "playstation-4")
-			f.job("job", "completed")
-			f.item("ji", "job", "eg", "pending", 0)
-			f.exec(`INSERT INTO river_job (args, kind, max_attempts, priority, queue, state, scheduled_at)
-				VALUES ('{"job_item_id":"ji"}', 'user_game_write', 5, 1, 'default', 'available', now())`)
-		}},
-		{"matched child pending while the parent's item is completed", func(f *rmFixture) {
-			f.game("eg", "", 100, false, "playstation-4")
-			f.game("ch", "eg", 100, false, "playstation-5")
-			f.job("job", "processing")
-			f.item("ji", "job", "eg", "completed", 0)
-			f.item("ji-ch", "job", "ch", "pending", 0)
-		}},
+// Rematch is refused only while the game's own item is pending: the sync has
+// not finished with it. A child's unfinished item does not refuse it.
+func TestRematch_RefusedWhileTheGamesOwnItemIsPending(t *testing.T) {
+	f := newRM(t, "rm-409")
+	f.game("eg", "", 100, false, "playstation-4")
+	job := newSyncJob(t, newTestLifecycle(t), f.userID, rmStore)
+	job.add(t, f.userID, "eg")
+
+	rec := f.rematch("eg", 200, "")
+	wantCode(t, rec, http.StatusConflict)
+	if want := `"a sync is still working on this game"`; !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("body: want %s, got %s", want, rec.Body.String())
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newRM(t, "rm-409")
-			tc.setup(f)
-			rec := f.rematch("eg", 200, "")
-			wantCode(t, rec, http.StatusConflict)
-			if want := `"a sync is still working on this game"`; !strings.Contains(rec.Body.String(), want) {
-				t.Errorf("body: want %s, got %s", want, rec.Body.String())
-			}
-			if n := f.count(`SELECT COUNT(*) FROM external_games WHERE resolved_igdb_id = 200`); n != 0 {
-				t.Errorf("rematch changed the match of %d games", n)
-			}
-		})
+	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE resolved_igdb_id = 200`); n != 0 {
+		t.Errorf("rematch changed the match of %d games", n)
+	}
+}
+
+// A child's igdb_match still queued when its parent is rematched: the child's
+// item completes with the rematch and its River job is cancelled, so the
+// worker writes nothing.
+func TestRematch_ChildWorkQueued_CompletesItAndCancelsItsRiverJob(t *testing.T) {
+	f := newRM(t, "rm-child-queued")
+	f.game("eg", "", 0, false, "playstation-4")
+	f.game("ch", "eg", 0, false, "playstation-5")
+	lc := newTestLifecycle(t)
+	job := newSyncJob(t, lc, f.userID, rmStore)
+	ids := job.add(t, f.userID, "eg", "ch")
+	job.done(t)
+	parentItem, childItem := ids[0], ids[1]
+	if err := lc.AwaitReview(context.Background(), parentItem, itemOwnerID(t, parentItem), joblifecycle.Review{}); err != nil {
+		t.Fatal(err)
+	}
+	childOwner := itemOwnerID(t, childItem)
+
+	wantCode(t, f.rematch("eg", 200, ""), http.StatusNoContent)
+
+	for _, id := range []string{parentItem, childItem} {
+		if s := f.itemStatus(id); s != "completed" {
+			t.Errorf("item %s: want completed, got %s", id, s)
+		}
+	}
+	if s := riverJobState(t, testDB, childOwner); s != "cancelled" {
+		t.Errorf("child's igdb_match: want cancelled, got %s", s)
+	}
+	if s := f.str(`SELECT status FROM jobs WHERE id = ?`, job.ID); s != "completed" {
+		t.Errorf("job: want completed, got %s", s)
+	}
+	// The cancelled worker, run anyway, is refused before it writes.
+	w := &tasks.IGDBMatchWorker{DB: testDB, LC: lc}
+	if err := w.Work(context.Background(), &river.Job[tasks.IGDBMatchArgs]{
+		JobRow: &rivertype.JobRow{ID: childOwner, Attempt: 1, MaxAttempts: 5},
+		Args:   tasks.IGDBMatchArgs{JobItemID: childItem},
+	}); err != nil {
+		t.Fatalf("late worker: %v", err)
+	}
+	if s := f.itemStatus(childItem); s != "completed" {
+		t.Errorf("late worker changed the child item: %s", s)
 	}
 }
 
@@ -341,13 +363,14 @@ func TestRematch_RacingASkip_DoesNotCompleteTheSkippedItem(t *testing.T) {
 	f.item("ji", "job", "eg", "pending_review", 0)
 	ctx := context.Background()
 
-	// A Skip holds the item's row and marks it skipped while the rematch runs.
+	// A Skip holds the Job row, as the module does, and marks the item
+	// skipped while the rematch runs.
 	tx, err := testDB.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if _, err := tx.ExecContext(ctx, `SELECT id FROM job_items WHERE id = 'ji' FOR UPDATE`); err != nil {
-		t.Fatalf("lock item: %v", err)
+	if _, err := tx.ExecContext(ctx, `SELECT id FROM jobs WHERE id = 'job' FOR UPDATE`); err != nil {
+		t.Fatalf("lock job: %v", err)
 	}
 	done := make(chan *httptest.ResponseRecorder, 1)
 	go func() { done <- f.rematch("eg", 200, "") }()
@@ -489,38 +512,43 @@ func TestRematch_RollsBackOnMidSequenceFailure(t *testing.T) {
 	}
 }
 
-// A user_game_write for a child and a rematch of its parent take the family's
-// rows in the same order, so they never deadlock: each run ends in a 204 or the
-// still-working 409, and the worker never fails.
+// A user_game_write for a child and a rematch of its parent both lock the Job
+// row first, then the family, so they never deadlock: the rematch answers
+// 204, the worker returns without an error, and the child's item ends
+// completed whichever went first.
 func TestRematch_ConcurrentChildWrite_NoDeadlock(t *testing.T) {
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		f := newRM(t, "rm-deadlock")
 		f.game("eg", "", 100, false, "playstation-4")
 		f.game("ch", "eg", 100, false, "playstation-5")
 		f.link("ug", 100, "eg", "playstation-4")
 		f.link("ug", 100, "", "playstation-3")
-		f.job("job", "completed")
-		f.item("ji-ch", "job", "ch", "pending", 0)
+		lc := newTestLifecycle(t)
+		job := newSyncJob(t, lc, f.userID, rmStore)
+		childItem := job.add(t, f.userID, "ch")[0]
+		job.done(t)
 
-		w := &tasks.UserGameWorker{DB: testDB}
+		w := &tasks.UserGameWorker{DB: testDB, LC: lc}
+		owner := itemOwnerID(t, childItem)
 		var wg sync.WaitGroup
 		var rec *httptest.ResponseRecorder
 		var werr error
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			werr = w.Work(context.Background(), &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: "ji-ch"}})
+			werr = w.Work(context.Background(), &river.Job[tasks.UserGameArgs]{
+				JobRow: &rivertype.JobRow{ID: owner, Attempt: 1, MaxAttempts: 5},
+				Args:   tasks.UserGameArgs{JobItemID: childItem},
+			})
 		}()
 		go func() { defer wg.Done(); rec = f.rematch("eg", 200, "keep") }()
 		wg.Wait()
 		if werr != nil {
 			t.Fatalf("worker: %v", werr)
 		}
-		if rec.Code != http.StatusNoContent && rec.Code != http.StatusConflict {
-			t.Fatalf("rematch: want 204 or 409, got %d: %s", rec.Code, rec.Body.String())
-		}
-		if s := f.itemStatus("ji-ch"); s == "failed" {
-			t.Fatalf("child item failed: %s", f.str(`SELECT COALESCE(error_message, '') FROM job_items WHERE id = 'ji-ch'`))
+		wantCode(t, rec, http.StatusNoContent)
+		if s := f.itemStatus(childItem); s != "completed" {
+			t.Fatalf("child item: want completed, got %s (%s)", s, f.str(`SELECT COALESCE(error_message, '') FROM job_items WHERE id = ?`, childItem))
 		}
 	}
 }
@@ -694,18 +722,21 @@ func TestListExternalGames_StatusComesFromTheNewestItem(t *testing.T) {
 			f.job("j1", "processing")
 			f.item("i1", "j1", "eg", "pending", 0)
 		}, "(hidden)", 0},
+		// The view no longer asks River: no item is unfinished in a finished
+		// Job any more (the module cancels them with it, the upgrade fails or
+		// cancels the old ones), so a live River job naming one is ignored.
 		{"newest pending in a finished job, live river job", func(f *rmFixture) {
 			f.game("eg", "", 0, false, "playstation-4")
 			f.job("j1", "completed")
 			f.item("i1", "j1", "eg", "pending", 0)
 			f.liveRiverJob("i1", "igdb_match")
-		}, "(hidden)", 0},
-		{"newest pending in a finished job, only a dispatch is live", func(f *rmFixture) {
-			f.game("eg", "", 0, false, "playstation-4")
-			f.job("j1", "completed")
-			f.item("i1", "j1", "eg", "pending", 0)
-			f.liveRiverJob("", "dispatch_sync")
 		}, "unmatched", 0},
+		// Failed, but Retry never reopens a failed Job: no retry is offered.
+		{"newest failed in a failed job", func(f *rmFixture) {
+			f.game("eg", "", 0, false, "playstation-4")
+			f.job("j1", "failed")
+			f.item("i1", "j1", "eg", "failed", time.Hour)
+		}, "failed", 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -718,7 +749,8 @@ func TestListExternalGames_StatusComesFromTheNewestItem(t *testing.T) {
 				t.Errorf("badge: want %d, got %d", tc.badge, got)
 			}
 			g := f.list()["eg"]
-			if (g.FailedJobItemID != nil) != (tc.want == "failed") {
+			retryable := tc.want == "failed" && tc.name != "newest failed in a failed job"
+			if (g.FailedJobItemID != nil) != retryable {
 				t.Errorf("failed_job_item_id: %v with status %s", g.FailedJobItemID, tc.want)
 			}
 		})

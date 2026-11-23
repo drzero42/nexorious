@@ -99,6 +99,9 @@ type Effect struct {
 	Outcome     Outcome
 	FirstFinish bool
 	KindData    json.RawMessage
+	// Insert queues a River job that is not Job work, such as a dispatch
+	// that creates its own Job (the store-link refresh after a sync).
+	Insert func(ctx context.Context, args river.JobArgs) error
 }
 
 // Observer records metrics in-process, right after the transaction of the
@@ -142,6 +145,10 @@ type Kind struct {
 	HasEffects func(o Outcome) bool
 	// Observer is optional.
 	Observer Observer
+	// WaitsOn says which items wait on which other item (docs/job-lifecycle.md,
+	// "Items that wait on another item"). It is read-only and runs in the
+	// module's transaction. Nil means the kind's items never wait.
+	WaitsOn func(ctx context.Context, tx bun.Tx, q WaitQuery) ([]WaitEdge, error)
 }
 
 func (k *Kind) hasEffects(o Outcome) bool {
@@ -282,8 +289,7 @@ func (m *Module) kindOf(job *models.Job) (*Kind, error) {
 }
 
 // acquireDupLock takes the transaction-scoped advisory lock on a duplicate
-// key. The key format matches tasks.AcquireJobDedupLock, so the old and new
-// code serialise on the same lock for a key.
+// key.
 func acquireDupLock(ctx context.Context, tx bun.Tx, jobType string, key DupKey) error {
 	_, err := tx.NewRaw(`SELECT pg_advisory_xact_lock(hashtext(?))`, jobType+"|"+key.Source+"|"+key.UserID).Exec(ctx)
 	if err != nil {
