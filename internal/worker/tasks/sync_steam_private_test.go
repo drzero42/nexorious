@@ -113,7 +113,11 @@ func TestDispatchSync_SteamPartialOwnedGames_FailsWithoutRemovingGames(t *testin
 	}
 }
 
-func TestDispatchSync_SteamIncompleteLibrary_NotifiesOnceUntilRecovery(t *testing.T) {
+// TestDispatchSync_FailureNotifiesOncePerOutage checks that only the first
+// non-credential failure since the last successful sync sends sync.failed,
+// whatever its message (#1344). A credential failure sends its own notice and
+// does not count as the first failure.
+func TestDispatchSync_FailureNotifiesOncePerOutage(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -126,16 +130,19 @@ func TestDispatchSync_SteamIncompleteLibrary_NotifiesOnceUntilRecovery(t *testin
 	}
 
 	for _, tc := range []struct {
-		name   string
-		reply  string
-		status int
-		events int
+		name        string
+		reply       string
+		status      int
+		credentials bool // the adapter reports a credentials failure
+		events      int  // -1: not checked
 	}{
-		{"first incomplete reply", `{"response":{}}`, http.StatusOK, 1},
-		{"upstream network failure", `{}`, http.StatusBadGateway, 1},
-		{"repeat incomplete reply", `{"response":{"games":[]}}`, http.StatusOK, 0},
-		{"successful empty library", `{"response":{"game_count":0}}`, http.StatusOK, 0},
-		{"first failure after recovery", `{"response":{}}`, http.StatusOK, 1},
+		{"first incomplete reply", `{"response":{}}`, http.StatusOK, false, 1},
+		{"different failure, same outage", `{}`, http.StatusBadGateway, false, 0},
+		{"repeat incomplete reply", `{"response":{"games":[]}}`, http.StatusOK, false, 0},
+		{"successful empty library", `{"response":{"game_count":0}}`, http.StatusOK, false, 0},
+		{"credentials failure", "", 0, true, -1},
+		{"first failure after the credentials failure", `{}`, http.StatusBadGateway, false, 1},
+		{"repeat failure", `{"response":{}}`, http.StatusOK, false, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			jobID := uuid.NewString()
@@ -153,6 +160,9 @@ func TestDispatchSync_SteamIncompleteLibrary_NotifiesOnceUntilRecovery(t *testin
 			defer srv.Close()
 			client := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
 			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: func(_ context.Context, _ string, _ models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				if tc.credentials {
+					return nil, tasks.ErrCredentials
+				}
 				return steam.NewAdapter(client, "key", "76561198000000001"), nil
 			}}
 			job := &river.Job[tasks.DispatchSyncArgs]{
@@ -161,7 +171,14 @@ func TestDispatchSync_SteamIncompleteLibrary_NotifiesOnceUntilRecovery(t *testin
 			if err := w.Work(ctx, job); err != nil {
 				t.Fatalf("work: %v", err)
 			}
-			if got := eventCount(t, jobID+":sync.failed"); got != tc.events {
+			var status string
+			if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+				t.Fatalf("read job: %v", err)
+			}
+			if want := map[bool]string{true: "completed", false: "failed"}[tc.status == http.StatusOK && strings.Contains(tc.reply, "game_count")]; status != want {
+				t.Errorf("job status = %q, want %q", status, want)
+			}
+			if got := eventCount(t, jobID+":sync.failed"); tc.events >= 0 && got != tc.events {
 				t.Errorf("sync.failed events = %d, want %d", got, tc.events)
 			}
 		})

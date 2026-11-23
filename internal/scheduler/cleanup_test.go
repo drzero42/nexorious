@@ -408,6 +408,74 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 	}
 }
 
+// TestCheckPendingSyncs_BacksOffAfterFailures checks the retry delay after
+// failed syncs (#1344): 15 minutes after the first failure, doubling per
+// failure, capped at the sync interval. Failures from before the last
+// successful sync do not count.
+func TestCheckPendingSyncs_BacksOffAfterFailures(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name       string
+		frequency  string
+		lastSynced time.Duration   // ago
+		failedAgo  []time.Duration // completed_at of each failed sync, ago
+		wantSync   bool
+	}{
+		{"first failure, inside 15 min", "daily", 48 * time.Hour, []time.Duration{10 * time.Minute}, false},
+		{"first failure, past 15 min", "daily", 48 * time.Hour, []time.Duration{20 * time.Minute}, true},
+		{"third failure, inside 1 h", "daily", 48 * time.Hour, []time.Duration{3 * time.Hour, 2 * time.Hour, 50 * time.Minute}, false},
+		{"third failure, past 1 h", "daily", 48 * time.Hour, []time.Duration{3 * time.Hour, 2 * time.Hour, 70 * time.Minute}, true},
+		{"many failures, daily cap not reached", "daily", 72 * time.Hour, repeatAgo(10, 23*time.Hour), false},
+		{"many failures, hourly cap reached", "hourly", 72 * time.Hour, repeatAgo(10, 61*time.Minute), true},
+		{"failures before the last success", "daily", 48 * time.Hour, []time.Duration{50 * time.Hour, 49 * time.Hour}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			userID := insertUser(t, ctx, nil)
+			now := time.Now().UTC()
+			if _, err := testDB.NewRaw(
+				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at)
+				 VALUES (?, ?, 'steam', ?, ?)`,
+				uuid.NewString(), userID, tc.frequency, now.Add(-tc.lastSynced),
+			).Exec(ctx); err != nil {
+				t.Fatalf("insert sync config: %v", err)
+			}
+			for _, ago := range tc.failedAgo {
+				if _, err := testDB.NewRaw(
+					`INSERT INTO jobs (id, user_id, job_type, source, status, priority, error_message, created_at, completed_at)
+					 VALUES (?, ?, 'sync', 'steam', 'failed', 'low', 'storefront unavailable', ?, ?)`,
+					uuid.NewString(), userID, now.Add(-ago-time.Minute), now.Add(-ago),
+				).Exec(ctx); err != nil {
+					t.Fatalf("insert failed job: %v", err)
+				}
+			}
+
+			w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+			_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
+
+			var pending int
+			if err := testDB.NewRaw(
+				`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync' AND status = 'pending'`, userID,
+			).Scan(ctx, &pending); err != nil {
+				t.Fatalf("count pending jobs: %v", err)
+			}
+			if got := pending == 1; got != tc.wantSync {
+				t.Errorf("sync started = %v, want %v", got, tc.wantSync)
+			}
+		})
+	}
+}
+
+// repeatAgo returns n completion offsets, the newest newest ago and each
+// earlier one an hour before the next.
+func repeatAgo(n int, newest time.Duration) []time.Duration {
+	out := make([]time.Duration, n)
+	for i := range out {
+		out[i] = newest + time.Duration(n-1-i)*time.Hour
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // BuildPeriodicJobs — guard branches for invalid config durations
 // ---------------------------------------------------------------------------

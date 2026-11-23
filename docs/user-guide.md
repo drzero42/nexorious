@@ -170,7 +170,7 @@ Once connected, the card shows your account on that service and a way to disconn
 
 ### Sync schedule and running it manually
 
-For each service you can choose how often it syncs — manually only, or hourly, daily, or weekly. Whatever the schedule, **Sync Now** runs it on demand. The service page shows the last sync time and the progress of a running one.
+For each service you can choose how often it syncs — manually only, or hourly, daily, or weekly. Whatever the schedule, **Sync Now** runs it on demand. The service page shows the last sync time and the progress of a running one. If a scheduled sync fails, Nexorious tries again after 15 minutes, then waits twice as long after each further failure, but never longer than the schedule itself. You get one **Sync failed** notification when a service starts failing, not one per attempt; the next failure after a successful sync notifies again.
 
 ### Reviewing matches
 

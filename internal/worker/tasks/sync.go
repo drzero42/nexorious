@@ -328,9 +328,9 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError, err)
 			return nil
 		}
-		if _, incomplete := errors.AsType[*storefrontadapter.IncompleteLibraryError](err); incomplete {
+		if incomplete := new(*storefrontadapter.IncompleteLibraryError); errors.As(err, incomplete) {
 			slog.WarnContext(ctx, "dispatch_sync: incomplete library", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-			failSyncJob(ctx, w.DB, p.JobID, err.Error(), true)
+			FailSyncJob(ctx, w.DB, p.JobID, err.Error())
 			return nil
 		}
 		slog.ErrorContext(ctx, "dispatch_sync: library fetch failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
@@ -494,14 +494,16 @@ func markSyncJobFailed(ctx context.Context, db bun.IDB, jobID, msg string) bool 
 	return true
 }
 
-// FailSyncJob marks a job as failed (see markSyncJobFailed) and emits the
-// generic sync.failed notification. Used for all non-credential failures;
-// credential failures go through handleCredentialError instead.
-func FailSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
-	failSyncJob(ctx, db, jobID, msg, false)
-}
+// credentialsErrorMessage is the error_message of a sync Job failed by
+// handleCredentialError.
+const credentialsErrorMessage = "credentials error"
 
-func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string, notifyOnTransition bool) {
+// FailSyncJob marks a job as failed (see markSyncJobFailed) and emits the
+// generic sync.failed notification, once per outage: only the first failure
+// since the store's last successful sync notifies (#1344). Used for all
+// non-credential failures; credential failures go through
+// handleCredentialError instead.
+func FailSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 	msg = logging.ScrubURLQueries(msg) // never leak URL query credentials into the event payload
 	if !markSyncJobFailed(ctx, db, jobID, msg) {
 		return
@@ -514,7 +516,8 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string, notifyOnTra
 	if storefront != "" {
 		observability.RecordSyncOutcome(ctx, storefront, "failed")
 	}
-	if notifyOnTransition && previousIncompleteLibraryFailure(ctx, db, jobID, msg) {
+	if previousSyncFailure(ctx, db, jobID) {
+		slog.InfoContext(ctx, "dispatch_sync: store is still failing; sync.failed already sent for this outage", logging.KeySource, storefront)
 		return
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
@@ -524,10 +527,13 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string, notifyOnTra
 	})
 }
 
-// previousIncompleteLibraryFailure checks whether an earlier job failed for
-// the same reason since the last successful library fetch. Other failures do
-// not reset that interval. Compare completion times to ignore newer jobs.
-func previousIncompleteLibraryFailure(ctx context.Context, db *bun.DB, jobID, msg string) bool {
+// previousSyncFailure reports whether an earlier sync of the same store failed
+// since its last successful sync, which means this outage has already been
+// notified. The error text need not match: messages often carry varying
+// details, so matching would notify on every attempt again. Credential
+// failures do not count, since they send their own notice. Comparing
+// completion times ignores newer jobs.
+func previousSyncFailure(ctx context.Context, db *bun.DB, jobID string) bool {
 	var repeated bool
 	if err := db.NewRaw(`
 		SELECT EXISTS (
@@ -539,11 +545,11 @@ func previousIncompleteLibraryFailure(ctx context.Context, db *bun.DB, jobID, ms
 				AND cfg.storefront = current_job.source
 			WHERE current_job.id = ?
 				AND previous_job.job_type = 'sync' AND previous_job.status = 'failed'
-				AND previous_job.error_message = ?
+				AND previous_job.error_message IS DISTINCT FROM ?
 				AND previous_job.completed_at < current_job.completed_at
 				AND (cfg.last_synced_at IS NULL OR previous_job.completed_at > cfg.last_synced_at)
-		)`, jobID, msg).Scan(ctx, &repeated); err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: check previous library failure", logging.KeyJobID, jobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		)`, jobID, credentialsErrorMessage).Scan(ctx, &repeated); err != nil {
+		slog.WarnContext(ctx, "dispatch_sync: check previous sync failure", logging.KeyJobID, jobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return false
 	}
 	return repeated
@@ -582,7 +588,7 @@ func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, 
 		// Write the flag before changing job status so the status poll can
 		// refresh the connection as soon as a failed job is visible. Roll
 		// back both writes if the job stopped being active in the meantime.
-		if !markSyncJobFailed(ctx, tx, p.JobID, "credentials error") {
+		if !markSyncJobFailed(ctx, tx, p.JobID, credentialsErrorMessage) {
 			return sql.ErrNoRows
 		}
 		return nil
@@ -593,7 +599,7 @@ func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, 
 	if err != nil {
 		deliver = nil
 		slog.WarnContext(ctx, "dispatch_sync: flag credentials_error failed", logging.KeyErr, err, logging.KeyUserID, p.UserID, logging.KeySource, p.Storefront, logging.Cat(logging.CategoryDB))
-		if !markSyncJobFailed(ctx, db, p.JobID, "credentials error") {
+		if !markSyncJobFailed(ctx, db, p.JobID, credentialsErrorMessage) {
 			return
 		}
 	}
@@ -629,7 +635,7 @@ func credentialsNotice(ctx context.Context, db bun.IDB, p DispatchSyncArgs) noti
 	}
 	return notify.EmitParams{
 		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: p.UserID,
-		Payload:  notify.SyncFailedPayload{Storefront: p.Storefront, Error: "credentials error", JobID: p.JobID},
+		Payload:  notify.SyncFailedPayload{Storefront: p.Storefront, Error: credentialsErrorMessage, JobID: p.JobID},
 		DedupKey: p.JobID + ":" + notify.TypeSyncFailed,
 	}
 }
