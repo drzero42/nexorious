@@ -210,6 +210,9 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 			"status":           status,
 			"igdb_status":      igdbStatus,
 			"backup_available": backup.PgDumpAvailable() && backup.PsqlAvailable(),
+			"instance_id":      instanceID,
+			// Maintenance mode is switched on by a restore and only by a restore.
+			"restore_in_progress": maint.IsMaintenanceMode(),
 		})
 	})
 

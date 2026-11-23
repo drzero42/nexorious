@@ -54,15 +54,29 @@ func ParseDatabaseURL(databaseURL string) (DBConnParams, error) {
 	}, nil
 }
 
+// pgDumpExclusions keep in-flight work and restore bookkeeping out of a backup
+// (#1341). River's queue and leader rows describe work of the moment, not data:
+// restored, they would run again against a database that has moved on. Their
+// tables stay in the dump (empty), and so does river_job's id sequence, so job
+// ids keep increasing after a restore. nexorious_restore holds the marker of a
+// restore in progress, which belongs to the instance, not to its data.
+// Patterns that match nothing are not an error.
+var pgDumpExclusions = []string{
+	"--exclude-table-data=public.river_job",
+	"--exclude-table-data=public.river_leader",
+	"--exclude-schema=nexorious_restore",
+}
+
 func RunPgDump(conn DBConnParams, outputPath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "pg_dump", //nolint:gosec // fixed binary; only validated DB-connection flag values are interpolated, not the command
+	args := append([]string{
 		"--format=plain", "--no-owner", "--no-acl",
-		"--host="+conn.Host, "--port="+conn.Port,
-		"--username="+conn.User, "--dbname="+conn.DBName,
-		"--file="+outputPath,
-	)
+		"--host=" + conn.Host, "--port=" + conn.Port,
+		"--username=" + conn.User, "--dbname=" + conn.DBName,
+		"--file=" + outputPath,
+	}, pgDumpExclusions...)
+	cmd := exec.CommandContext(ctx, "pg_dump", args...) //nolint:gosec // fixed binary; only validated DB-connection flag values are interpolated, not the command
 	cmd.Env = append(cmd.Environ(), "PGPASSWORD="+conn.Password)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

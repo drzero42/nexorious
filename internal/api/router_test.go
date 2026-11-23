@@ -642,3 +642,43 @@ func TestUnauthenticatedUnmatchedRoutes_NotAuthGated(t *testing.T) {
 		}
 	}
 }
+
+// /health identifies the process and reports a restore in progress, so a
+// client that triggered a restore can wait for the restarted server (#1341):
+// the id stays the same within one process, and the flag follows maintenance
+// mode, which only a restore switches on.
+func TestHealth_InstanceIDAndRestoreInProgress(t *testing.T) {
+	e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateReady), nil, "", nil, nil, nil, "dev", "unknown", nil)
+	health := func() map[string]any {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("/health: got %d", rec.Code)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+
+	first := health()
+	id, _ := first["instance_id"].(string)
+	if id == "" {
+		t.Fatalf("instance_id missing or empty: %v", first["instance_id"])
+	}
+	if first["restore_in_progress"] != false {
+		t.Errorf("restore_in_progress = %v outside a restore, want false", first["restore_in_progress"])
+	}
+
+	maint.SetMaintenanceMode(true)
+	t.Cleanup(func() { maint.SetMaintenanceMode(false) })
+	during := health()
+	if during["restore_in_progress"] != true {
+		t.Errorf("restore_in_progress = %v during a restore, want true", during["restore_in_progress"])
+	}
+	if during["instance_id"] != id {
+		t.Errorf("instance_id changed within one process: %v -> %v", id, during["instance_id"])
+	}
+}
