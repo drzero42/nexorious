@@ -199,7 +199,9 @@ Validate required values.
 
 {{/*
 Compute the database URL.
-Uses nexorious.databaseUrl if set; otherwise builds in-cluster URL.
+Uses nexorious.databaseUrl if set; otherwise builds the in-cluster URL. The
+in-cluster URL connects as postgresql.appUsername, a plain role the db-role
+init container sets up (#1357), not as POSTGRES_USER (a superuser).
 The auto-built URL URL-encodes the password so special characters
 (: @ / ? # etc.) are safe.
 */}}
@@ -207,7 +209,7 @@ The auto-built URL URL-encodes the password so special characters
 {{- if .Values.nexorious.databaseUrl -}}
 {{- .Values.nexorious.databaseUrl -}}
 {{- else -}}
-postgresql://{{ .Values.nexorious.postgresql.username }}:{{ .Values.nexorious.postgresql.password | urlquery }}@{{ include "nexorious.fullname" . }}-postgresql:5432/{{ .Values.nexorious.postgresql.database }}?sslmode=disable
+postgresql://{{ .Values.nexorious.postgresql.appUsername }}:{{ .Values.nexorious.postgresql.password | urlquery }}@{{ include "nexorious.fullname" . }}-postgresql:5432/{{ .Values.nexorious.postgresql.database }}?sslmode=disable
 {{- end -}}
 {{- end }}
 
@@ -531,4 +533,59 @@ the loader sees the injected entry.
         )
       )
   ) -}}
+{{- end }}
+
+{{/*
+Returns "true" when the chart wires the app to the bundled Postgres itself:
+the postgresql controller is enabled and no custom DB connection
+(databaseUrl, databaseUrlFrom, db*From) is configured. Only then does the
+chart know the app's role and run the db-role init container.
+*/}}
+{{- define "nexorious.bundledDbRoleEnabled" -}}
+{{- $pgEnabled := dig "postgresql" "enabled" true .Values.controllers -}}
+{{- $custom := or
+  (not (empty .Values.nexorious.databaseUrl))
+  (not (empty (dig "name" "" (default dict .Values.nexorious.databaseUrlFrom))))
+  (not (empty (dig "name" "" (default dict .Values.nexorious.dbHostFrom))))
+-}}
+{{- if and $pgEnabled (not $custom) -}}
+true
+{{- end -}}
+{{- end }}
+
+{{/*
+Inject the db-role init container (#1357) ahead of migrate when the chart
+wires the app to the bundled Postgres. The official postgres image creates
+POSTGRES_USER as a superuser; `nexorious ensure-db-role` connects as it and
+makes postgresql.appUsername a plain role that owns the database, so a
+restored backup can't run programs in the database pod. It runs on every
+start, which also takes over existing installs. Reuses the migrate init
+container's image, securityContext and resources so overrides apply to both.
+Call BEFORE bjw-s.common.loader.all.
+*/}}
+{{- define "nexorious.injectDbRoleInit" -}}
+{{- if include "nexorious.bundledDbRoleEnabled" . -}}
+  {{- $inits := .Values.controllers.nexorious.initContainers -}}
+  {{- $migrate := $inits.migrate -}}
+  {{- $dbRole := dict
+      "image"           (deepCopy $migrate.image)
+      "command"         (list "/app/nexorious" "ensure-db-role")
+      "securityContext" (deepCopy (default dict $migrate.securityContext))
+      "resources"       (deepCopy (default dict $migrate.resources))
+      "env"             (dict
+        "LOG_LEVEL" "info"
+        "DATABASE_URL" (dict "valueFrom" (dict "secretKeyRef" (dict
+          "name" (include "nexorious.credentialsSecretName" .)
+          "key"  "DATABASE_URL")))
+        "DB_ADMIN_USER" (dict "valueFrom" (dict "secretKeyRef" (dict
+          "name" (include "nexorious.postgresUsernameSecretName" .)
+          "key"  (include "nexorious.postgresUsernameSecretKey" .))))
+        "DB_ADMIN_PASSWORD" (dict "valueFrom" (dict "secretKeyRef" (dict
+          "name" (include "nexorious.postgresPasswordSecretName" .)
+          "key"  (include "nexorious.postgresPasswordSecretKey" .))))
+      )
+  -}}
+  {{- $_ := set $inits "db-role" $dbRole -}}
+  {{- $_ = set $migrate "dependsOn" "db-role" -}}
+{{- end -}}
 {{- end }}

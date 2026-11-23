@@ -65,7 +65,12 @@
             "username": {
               "type": "string",
               "minLength": 1,
-              "description": "PostgreSQL username"
+              "description": "PostgreSQL admin username (POSTGRES_USER, a superuser)"
+            },
+            "appUsername": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Non-superuser role the app connects to the bundled PostgreSQL as; created by the db-role initContainer"
             },
             "password": {
               "type": "string",

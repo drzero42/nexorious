@@ -93,7 +93,7 @@ type syncResolveInput struct {
 	Storefront   string `json:"storefront" jsonschema:"storefront slug"`
 	Ref          string `json:"ref" jsonschema:"external-game id or title"`
 	IgdbID       int    `json:"igdb_id" jsonschema:"IGDB id to match this external game to"`
-	OrphanAction string `json:"orphan_action,omitempty" jsonschema:"how to handle a user-game left orphaned by the rematch (e.g. remove)"`
+	OrphanAction string `json:"orphan_action,omitempty" jsonschema:"keep or remove: what to do with a library game the rematch would leave with no storefront link (required when it would)"`
 }
 
 type syncSkipInput struct {
@@ -167,7 +167,7 @@ func registerSyncTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, syncJobOutput{JobID: res.JobID, Storefront: res.Storefront, Status: res.Status, Message: res.Message}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "sync_resolve", Description: "Resolve a pending-review external game by matching it to an IGDB id. Ambiguous refs return candidates — call again with the id."},
+	addTool(s, &mcp.Tool{Name: "sync_resolve", Description: "Match an external game to an IGDB id: one in review, an unmatched one (e.g. after an unskip), or a matched one to correct it. Writes it and its other editions to the library at once. Refused while a sync is still working on the game; retry once the sync has finished. Ambiguous refs return candidates — call again with the id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in syncResolveInput) (*mcp.CallToolResult, syncMatchOutput, error) {
 			key := apiKey(ctx)
 			sf, err := clientops.ResolveStorefront(ctx, c, key, in.Storefront)

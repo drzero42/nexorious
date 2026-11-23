@@ -153,3 +153,17 @@ export async function startStoreLinkRefreshJob(): Promise<{
 export async function resetDatabase(): Promise<{ deleted: number }> {
   return api.post<{ deleted: number }>('/auth/admin/reset', {});
 }
+
+export interface AdminHealthWarning {
+  code: 'db_role_privileged' | (string & {});
+  role?: string;
+}
+
+/**
+ * Deployment problems an admin should fix (admin only). Computed live by the
+ * server, so a warning disappears once its cause is fixed.
+ */
+export async function getAdminHealthWarnings(): Promise<AdminHealthWarning[]> {
+  const response = await api.get<{ warnings: AdminHealthWarning[] }>('/admin/health-warnings');
+  return response.warnings;
+}

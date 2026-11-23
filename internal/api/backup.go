@@ -345,16 +345,23 @@ func (h *BackupHandler) HandleRestoreUpload(c *echo.Context) error {
 	})
 }
 
-// requireNoUsers enforces the setup-mode gate: any of the setup-zone restore
-// handlers must reject with 403 if the users table is non-empty. Returns nil
-// to continue; returns a non-nil error already sent to the client to
-// short-circuit the handler.
-func (h *BackupHandler) requireNoUsers(c *echo.Context) error {
-	count, err := h.db.NewSelect().TableExpr("users").Count(c.Request().Context())
-	if err == nil && count > 0 {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "restore during setup is only available when no users exist"})
+// requireNoUsers enforces the setup-mode gate: the setup-zone restore handlers
+// are unauthenticated, so they may only run while the users table is empty.
+// It reports whether the handler may continue. When it returns false the
+// refusal has already been written and the caller must return err as-is —
+// err is nil when the refusal was written successfully, so callers must branch
+// on the bool, never on err. A failed count refuses too (fail closed).
+func (h *BackupHandler) requireNoUsers(c *echo.Context) (ok bool, err error) {
+	ctx := c.Request().Context()
+	count, err := h.db.NewSelect().TableExpr("users").Count(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "setup restore gate: count users", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return false, c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "could not verify that setup is still pending; try again"})
 	}
-	return nil
+	if count > 0 {
+		return false, c.JSON(http.StatusForbidden, map[string]string{"error": "restore during setup is only available when no users exist"})
+	}
+	return true, nil
 }
 
 // HandleSetupRestore handles restore during initial setup (POST /api/auth/setup/restore).
@@ -365,7 +372,7 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 		})
 	}
 
-	if err := h.requireNoUsers(c); err != nil {
+	if ok, err := h.requireNoUsers(c); !ok {
 		return err
 	}
 
@@ -424,7 +431,7 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 // HandleSetupListBackups lists candidate backup archives in the configured
 // backup directory during initial setup (GET /api/auth/setup/backups).
 func (h *BackupHandler) HandleSetupListBackups(c *echo.Context) error {
-	if err := h.requireNoUsers(c); err != nil {
+	if ok, err := h.requireNoUsers(c); !ok {
 		return err
 	}
 
@@ -507,7 +514,7 @@ func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
 		})
 	}
 
-	if err := h.requireNoUsers(c); err != nil {
+	if ok, err := h.requireNoUsers(c); !ok {
 		return err
 	}
 

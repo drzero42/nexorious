@@ -242,16 +242,26 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 		Count  int    `bun:"count"`
 	}
 
+	// Import items in Pending review are counted per item, whatever their
+	// Job's status. Sync review is counted per top-level External game by the
+	// storefront list's needs_review rule (sync_view.go), so the badge and the
+	// list agree (#1338); a sync item whose game is gone is not counted.
 	var rows []sourceCount
 	err := h.db.NewRaw(`
 		SELECT j.source, COUNT(*) AS count
 		FROM job_items ji
 		JOIN jobs j ON ji.job_id = j.id
-		LEFT JOIN external_games eg ON eg.id = ji.external_game_id
-		WHERE ji.user_id = ? AND ji.status = ?
-		  AND (eg.id IS NULL OR eg.parent_id IS NULL)
-		GROUP BY j.source`,
-		userID, models.JobItemStatusPendingReview,
+		WHERE ji.user_id = ? AND ji.status = ? AND j.job_type <> 'sync'
+		GROUP BY j.source
+		UNION ALL
+		SELECT eg.storefront AS source, COUNT(*) AS count
+		FROM external_games eg
+		`+syncNewestItemJoin+`
+		WHERE eg.user_id = ? AND eg.parent_id IS NULL
+		  AND `+syncNeedsReview+`
+		  AND NOT `+syncInFlight+`
+		GROUP BY eg.storefront`,
+		userID, models.JobItemStatusPendingReview, userID,
 	).Scan(context.Background(), &rows)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count pending reviews")
@@ -260,7 +270,7 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 	countsBySource := make(map[string]int)
 	total := 0
 	for _, row := range rows {
-		countsBySource[row.Source] = row.Count
+		countsBySource[row.Source] += row.Count
 		total += row.Count
 	}
 

@@ -11,6 +11,11 @@ changelog:
     - title: ⚠ Breaking changes
       labels:
         - breaking
+    # Set by hand on PRs that fix a security issue; listed ahead of the
+    # bug/feature sections so the fix isn't buried among them.
+    - title: Security
+      labels:
+        - security
     - title: Features
       labels:
         - enhancement

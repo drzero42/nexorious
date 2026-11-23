@@ -844,7 +844,7 @@ func (s *Service) applyRestoreFromDir(extractedDir string, conn DBConnParams, op
 	}
 
 	sqlFile := filepath.Join(extractedDir, "database.sql")
-	if err := RunPsqlFile(conn, sqlFile); err != nil {
+	if err := RunPsqlRestore(conn, sqlFile); err != nil {
 		return fmt.Errorf("psql restore: %w", err)
 	}
 

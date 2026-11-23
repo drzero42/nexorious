@@ -37,16 +37,29 @@ services:
       timeout: 5s
       retries: 5
 
+  db-role:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["ensure-db-role"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://nexorious_app:${POSTGRES_PASSWORD:-nexorious}@db:5432/nexorious?sslmode=disable
+      DB_ADMIN_USER: nexorious
+      DB_ADMIN_PASSWORD: ${POSTGRES_PASSWORD:-nexorious}
+
   migrate:
     build:
       context: ../..
       dockerfile: Dockerfile
     command: ["migrate"]
     depends_on:
-      db:
-        condition: service_healthy
+      db-role:
+        condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://nexorious:${POSTGRES_PASSWORD:-nexorious}@db:5432/nexorious?sslmode=disable
+      DATABASE_URL: postgres://nexorious_app:${POSTGRES_PASSWORD:-nexorious}@db:5432/nexorious?sslmode=disable
       DB_ENCRYPTION_KEY: ${DB_ENCRYPTION_KEY:?DB_ENCRYPTION_KEY is required}
 
   app:
@@ -62,7 +75,7 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://nexorious:${POSTGRES_PASSWORD:-nexorious}@db:5432/nexorious?sslmode=disable
+      DATABASE_URL: postgres://nexorious_app:${POSTGRES_PASSWORD:-nexorious}@db:5432/nexorious?sslmode=disable
       DB_ENCRYPTION_KEY: ${DB_ENCRYPTION_KEY:?DB_ENCRYPTION_KEY is required}
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:-}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:-}

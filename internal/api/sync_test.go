@@ -1252,237 +1252,6 @@ func TestRematchExternalGame_RemoveOrphan(t *testing.T) {
 	}
 }
 
-func TestRematchExternalGame_ResolvesSiblings(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "rm-siblings")
-
-	// Two PSN external_games for the same game title (PS4 parent + PS5 child variant).
-	insertExternalGame(t, testDB, "eg-ps4", userID, "playstation-store", "PPSA-001", "Spider-Man 2")
-	insertChildExternalGame(t, testDB, "eg-ps5", userID, "playstation-store", "PPSA-002", "Spider-Man 2", "eg-ps4")
-
-	// A recent sync job for the sibling fallback path.
-	insertJob(t, testDB, "job-sib", userID, "sync", "playstation-store", "processing")
-
-	// pending_review job_item for the primary (PS4).
-	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES ('ji-ps4', 'job-sib', ?, 'PPSA-001', 'Spider-Man 2', 'eg-ps4', '{}', 'pending_review', '{}', '[]', now())`,
-		userID,
-	)
-	if err != nil {
-		t.Fatalf("insert primary job_item: %v", err)
-	}
-
-	// No job_item for the sibling (PS5) — the fallback path will create one.
-
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (5555, 'Spider-Man 2', now(), now()) ON CONFLICT DO NOTHING`)
-
-	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-ps4/rematch",
-		map[string]any{"igdb_id": 5555}, token)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	ctx := context.Background()
-
-	// Sibling (PS5) should now have resolved_igdb_id set.
-	var sibResolvedID *int32
-	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-ps5'`).Scan(ctx, &sibResolvedID); err != nil {
-		t.Fatalf("scan sibling resolved_igdb_id: %v", err)
-	}
-	if sibResolvedID == nil || *sibResolvedID != 5555 {
-		t.Errorf("expected sibling resolved_igdb_id=5555, got %v", sibResolvedID)
-	}
-
-	// A job_item for the sibling should have been created (fallback path).
-	var sibItemCount int
-	if err := testDB.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE external_game_id = 'eg-ps5'`,
-	).Scan(ctx, &sibItemCount); err != nil {
-		t.Fatalf("scan sibling job_item count: %v", err)
-	}
-	if sibItemCount != 1 {
-		t.Errorf("expected 1 job_item for sibling, got %d", sibItemCount)
-	}
-}
-
-// TestRematchExternalGame_UpdatesJobItemStatusToPending verifies that a
-// pending_review job_item is immediately set to pending when rematch is called,
-// so the game disappears from the needs-review list without waiting for River.
-func TestRematchExternalGame_UpdatesJobItemStatusToPending(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "rm-status")
-	insertExternalGame(t, testDB, "eg-status-1", userID, "steam", "111", "Portal 2")
-	insertJob(t, testDB, "job-status-1", userID, "sync", "steam", "processing")
-
-	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES ('ji-status-1', 'job-status-1', ?, '111', 'Portal 2', 'eg-status-1', '{}', 'pending_review', '{}', '[]', now())`,
-		userID,
-	)
-	if err != nil {
-		t.Fatalf("insert job_item: %v", err)
-	}
-
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (6001, 'Portal 2', now(), now()) ON CONFLICT DO NOTHING`)
-
-	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-status-1/rematch",
-		map[string]any{"igdb_id": 6001}, token)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var status string
-	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-status-1'`).Scan(context.Background(), &status); err != nil {
-		t.Fatalf("scan job_item status: %v", err)
-	}
-	if status != "pending" {
-		t.Errorf("expected job_item status=pending after rematch, got %q", status)
-	}
-}
-
-// TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending verifies that
-// pending_review job_items for sibling external_games are also immediately set
-// to pending when a rematch resolves the whole sibling group.
-func TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "rm-sib-status")
-
-	insertExternalGame(t, testDB, "eg-sib-s1", userID, "playstation-store", "PPSA-101", "God of War")
-	insertChildExternalGame(t, testDB, "eg-sib-s2", userID, "playstation-store", "PPSA-102", "God of War", "eg-sib-s1")
-	insertJob(t, testDB, "job-sib-s", userID, "sync", "playstation-store", "processing")
-
-	for _, row := range []struct{ id, egID, extID string }{
-		{"ji-sib-s1", "eg-sib-s1", "PPSA-101"},
-		{"ji-sib-s2", "eg-sib-s2", "PPSA-102"},
-	} {
-		_, err := testDB.ExecContext(context.Background(),
-			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-			 VALUES (?, 'job-sib-s', ?, ?, 'God of War', ?, '{}', 'pending_review', '{}', '[]', now())`,
-			row.id, userID, row.extID, row.egID,
-		)
-		if err != nil {
-			t.Fatalf("insert job_item %s: %v", row.id, err)
-		}
-	}
-
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (6002, 'God of War', now(), now()) ON CONFLICT DO NOTHING`)
-
-	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-sib-s1/rematch",
-		map[string]any{"igdb_id": 6002}, token)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	ctx := context.Background()
-	var count int
-	if err := testDB.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE id IN ('ji-sib-s1', 'ji-sib-s2') AND status = 'pending'`,
-	).Scan(ctx, &count); err != nil {
-		t.Fatalf("scan job_item status count: %v", err)
-	}
-	if count != 2 {
-		t.Errorf("expected both job_items to have status=pending after rematch, got count=%d", count)
-	}
-}
-
-// TestRematchExternalGame_AfterSyncCompleted reproduces the bug where
-// HandleRematchExternalGame returns 500 "failed to create job item" after a
-// sync has completed. The job_item for the external game is already in
-// 'completed' status; the handler must update it instead of inserting a
-// duplicate that would violate the UNIQUE(job_id, item_key) constraint.
-func TestRematchExternalGame_AfterSyncCompleted(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "rm-postcomplete")
-	insertExternalGame(t, testDB, "eg-pc-1", userID, "steam", "555", "Half-Life 3")
-	insertJob(t, testDB, "job-pc-1", userID, "sync", "steam", "completed")
-
-	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES ('ji-pc-1', 'job-pc-1', ?, '555', 'Half-Life 3', 'eg-pc-1', '{}', 'completed', '{}', '[]', now())`,
-		userID,
-	)
-	if err != nil {
-		t.Fatalf("insert completed job_item: %v", err)
-	}
-
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (9001, 'Half-Life 3', now(), now()) ON CONFLICT DO NOTHING`)
-
-	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-pc-1/rematch",
-		map[string]any{"igdb_id": 9001}, token)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var status string
-	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-pc-1'`).Scan(context.Background(), &status); err != nil {
-		t.Fatalf("scan job_item status: %v", err)
-	}
-	if status != "pending" {
-		t.Errorf("expected existing job_item reset to pending, got %q", status)
-	}
-	var count int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE external_game_id = 'eg-pc-1'`).Scan(context.Background(), &count)
-	if count != 1 {
-		t.Errorf("expected exactly 1 job_item for the external game, got %d", count)
-	}
-}
-
-// TestRematchExternalGame_SiblingAfterSyncCompleted verifies that sibling
-// external_games with 'completed' job_items are also reset to 'pending'
-// without triggering a duplicate-key error.
-func TestRematchExternalGame_SiblingAfterSyncCompleted(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "rm-sib-postcomplete")
-
-	insertExternalGame(t, testDB, "eg-sib-pc1", userID, "playstation-store", "CUSA-001", "Horizon")
-	insertChildExternalGame(t, testDB, "eg-sib-pc2", userID, "playstation-store", "CUSA-002", "Horizon", "eg-sib-pc1")
-	insertJob(t, testDB, "job-sib-pc", userID, "sync", "playstation-store", "completed")
-
-	for _, row := range []struct{ id, egID, extID string }{
-		{"ji-sib-pc1", "eg-sib-pc1", "CUSA-001"},
-		{"ji-sib-pc2", "eg-sib-pc2", "CUSA-002"},
-	} {
-		_, err := testDB.ExecContext(context.Background(),
-			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-			 VALUES (?, 'job-sib-pc', ?, ?, 'Horizon', ?, '{}', 'completed', '{}', '[]', now())`,
-			row.id, userID, row.extID, row.egID,
-		)
-		if err != nil {
-			t.Fatalf("insert job_item %s: %v", row.id, err)
-		}
-	}
-
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (9002, 'Horizon', now(), now()) ON CONFLICT DO NOTHING`)
-
-	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-sib-pc1/rematch",
-		map[string]any{"igdb_id": 9002}, token)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	ctx := context.Background()
-	var count int
-	if err := testDB.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE id IN ('ji-sib-pc1', 'ji-sib-pc2') AND status = 'pending'`,
-	).Scan(ctx, &count); err != nil {
-		t.Fatalf("scan job_item status count: %v", err)
-	}
-	if count != 2 {
-		t.Errorf("expected both sibling job_items reset to pending, got count=%d", count)
-	}
-}
-
 func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
 	// Rematching a parent must cascade resolved_igdb_id to children via parent_id,
 	// not title search. A second game with the same title but different user must NOT
@@ -1532,6 +1301,23 @@ func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
 	}
 	if otherResolved != nil {
 		t.Errorf("other user's game must not be resolved, got %v", *otherResolved)
+	}
+
+	// The child's item was waiting for this rematch: the rematch writes the
+	// child and completes the item itself, queueing no worker (#1338).
+	var childStatus string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-fk-child'`).Scan(ctx, &childStatus); err != nil {
+		t.Fatalf("scan child item: %v", err)
+	}
+	if childStatus != "completed" {
+		t.Errorf("child item: want completed, got %q", childStatus)
+	}
+	var riverJobs int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM river_job WHERE kind IN ('user_game_write', 'igdb_match')`).Scan(ctx, &riverJobs); err != nil {
+		t.Fatalf("count river jobs: %v", err)
+	}
+	if riverJobs != 0 {
+		t.Errorf("river jobs: want 0, got %d", riverJobs)
 	}
 }
 
@@ -1658,80 +1444,6 @@ func TestRematchExternalGame_SiblingAlreadyMatchedWrong(t *testing.T) {
 	}
 	if count != 2 {
 		t.Errorf("expected both platform variants resolved to 2222, got count=%d", count)
-	}
-}
-
-// ─── TestUnskipGame_EnqueuesJobItem ───────────────────────────────────────────
-
-func TestUnskipGame_EnqueuesJobItem(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "unskip-enqueue")
-	insertExternalGame(t, testDB, "eg-unskip", userID, "steam", "42", "Half-Life 3")
-
-	// Skip first
-	postJSONAuth(t, e, "/api/sync/ignored/eg-unskip", nil, token)
-
-	// Unskip
-	rec := deleteAuth(t, e, "/api/sync/ignored/eg-unskip", token)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// is_skipped should be false
-	var isSkipped bool
-	_ = testDB.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-unskip'`).
-		Scan(context.Background(), &isSkipped)
-	if isSkipped {
-		t.Fatal("expected is_skipped=false after unskip")
-	}
-
-	// A job and job_item should exist
-	var jobCount int
-	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = 'steam'`, userID,
-	).Scan(context.Background(), &jobCount)
-	if jobCount != 1 {
-		t.Fatalf("expected 1 sync job created by unskip, got %d", jobCount)
-	}
-
-	var itemCount int
-	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE item_key = '42' AND user_id = ?`, userID,
-	).Scan(context.Background(), &itemCount)
-	if itemCount != 1 {
-		t.Fatalf("expected 1 job_item with item_key='42', got %d", itemCount)
-	}
-}
-
-// TestUnskipGame_RiverInsertFails_MarksItemFailed locks in the dual-write
-// contract enforced by tasks.EnqueueOrFail: when the River insert fails, the
-// just-created job_item must be marked 'failed' rather than stranded in
-// 'pending' with no backing river_job (the stuck-item class this consolidation
-// closes — #1058). The handler also surfaces a 500 to the caller.
-func TestUnskipGame_RiverInsertFails_MarksItemFailed(t *testing.T) {
-	truncateAllTables(t)
-	rc := newFailingRiverClient(t)
-	e := newSyncTestAppWithRiverClient(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, rc)
-	userID, token := setupTagUser(t, testDB, e, "unskip-river-fail")
-	insertExternalGame(t, testDB, "eg-unskip-fail", userID, "steam", "99", "Portal 3")
-
-	postJSONAuth(t, e, "/api/sync/ignored/eg-unskip-fail", nil, token)
-
-	rec := deleteAuth(t, e, "/api/sync/ignored/eg-unskip-fail", token)
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 when River insert fails, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// The job_item must not be left stuck in 'pending'.
-	var status string
-	if err := testDB.NewRaw(
-		`SELECT status FROM job_items WHERE item_key = '99' AND user_id = ?`, userID,
-	).Scan(context.Background(), &status); err != nil {
-		t.Fatalf("query job_item status: %v", err)
-	}
-	if status != "failed" {
-		t.Fatalf("expected job_item status='failed' after River insert failure, got %q", status)
 	}
 }
 
@@ -1884,6 +1596,11 @@ func TestListExternalGames_AllStates(t *testing.T) {
 	if byID["eg-skipped"]["is_skipped"] != true {
 		t.Errorf("expected is_skipped=true for skipped game")
 	}
+	for id, want := range map[string]string{"eg-matched": "matched", "eg-unmatched": "unmatched", "eg-skipped": "skipped"} {
+		if got := byID[id]["sync_status"]; got != want {
+			t.Errorf("%s sync_status: want %s, got %v", id, want, got)
+		}
+	}
 }
 
 func TestListExternalGames_ExcludesInFlight(t *testing.T) {
@@ -1918,6 +1635,19 @@ func TestListExternalGames_ExcludesInFlight(t *testing.T) {
 	}
 	if resp[0]["id"] != "eg-stable" {
 		t.Errorf("expected eg-stable in response, got %v", resp[0]["id"])
+	}
+
+	// A cancelled sync leaves its pending items behind; they are not being
+	// worked, so the game is listed again (#1338).
+	if _, err := testDB.ExecContext(context.Background(), `UPDATE jobs SET status = 'cancelled' WHERE id = 'job-inflight'`); err != nil {
+		t.Fatalf("cancel job: %v", err)
+	}
+	rec = getAuth(t, e, "/api/sync/steam/external-games", token)
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 2 {
+		t.Fatalf("expected 2 games after the sync was cancelled, got %d", len(resp))
 	}
 }
 
@@ -2668,78 +2398,5 @@ func TestConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 				t.Errorf("expected credentials_error=false after successful %s connect, got true", tt.storefront)
 			}
 		})
-	}
-}
-
-// TestRematchExternalGame_RollsBackOnMidSequenceFailure (#1253) injects a DB
-// failure at the very last write of a rematch (creating the child external
-// game's job_item) and asserts that none of the earlier writes committed: the
-// platform link and the orphaned user game survive, and neither external game
-// was re-resolved.
-func TestRematchExternalGame_RollsBackOnMidSequenceFailure(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "rm-rollback")
-	insertExternalGame(t, testDB, "eg-rb-parent", userID, "playstation-store", "PPSA-RB1", "Rollback Game")
-	insertChildExternalGame(t, testDB, "eg-rb-child", userID, "playstation-store", "PPSA-RB2", "Rollback Game", "eg-rb-parent")
-	insertUserGameAndPlatform(t, testDB, "ug-rb", userID, "4242", "ugp-rb", "eg-rb-parent")
-	insertJob(t, testDB, "job-rb", userID, "sync", "playstation-store", "processing")
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (8888, 'New Match', now(), now()) ON CONFLICT DO NOTHING`); err != nil {
-		t.Fatalf("insert games row: %v", err)
-	}
-
-	// Fail the child's job_item insert — the last DB write of the rematch.
-	if _, err := testDB.ExecContext(ctx, `
-		CREATE OR REPLACE FUNCTION test_fail_rematch_child() RETURNS trigger AS $$
-		BEGIN
-			IF NEW.external_game_id = 'eg-rb-child' THEN
-				RAISE EXCEPTION 'injected failure';
-			END IF;
-			RETURN NEW;
-		END $$ LANGUAGE plpgsql;
-		CREATE TRIGGER test_fail_rematch_child BEFORE INSERT ON job_items
-			FOR EACH ROW EXECUTE FUNCTION test_fail_rematch_child();`); err != nil {
-		t.Fatalf("create failure trigger: %v", err)
-	}
-	t.Cleanup(func() {
-		if _, err := testDB.ExecContext(context.Background(), `
-			DROP TRIGGER IF EXISTS test_fail_rematch_child ON job_items;
-			DROP FUNCTION IF EXISTS test_fail_rematch_child();`); err != nil {
-			t.Errorf("drop failure trigger: %v", err)
-		}
-	})
-
-	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-rb-parent/rematch",
-		map[string]any{"igdb_id": 8888, "orphan_action": "remove"}, token)
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var ugCount, platformCount, jobItemCount, resolvedCount int
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_games WHERE id = 'ug-rb'`).Scan(ctx, &ugCount); err != nil {
-		t.Fatalf("count user_games: %v", err)
-	}
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_game_platforms WHERE id = 'ugp-rb' AND external_game_id = 'eg-rb-parent'`).Scan(ctx, &platformCount); err != nil {
-		t.Fatalf("count platforms: %v", err)
-	}
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE external_game_id IN ('eg-rb-parent', 'eg-rb-child')`).Scan(ctx, &jobItemCount); err != nil {
-		t.Fatalf("count job_items: %v", err)
-	}
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM external_games WHERE resolved_igdb_id = 8888`).Scan(ctx, &resolvedCount); err != nil {
-		t.Fatalf("count resolved external_games: %v", err)
-	}
-	if ugCount != 1 {
-		t.Errorf("user_game deleted despite rollback (count=%d)", ugCount)
-	}
-	if platformCount != 1 {
-		t.Errorf("platform link removed despite rollback (count=%d)", platformCount)
-	}
-	if jobItemCount != 0 {
-		t.Errorf("expected no job_items committed, got %d", jobItemCount)
-	}
-	if resolvedCount != 0 {
-		t.Errorf("expected no external_game re-resolved, got %d", resolvedCount)
 	}
 }
