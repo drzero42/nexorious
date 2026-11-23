@@ -65,3 +65,27 @@ func TestStoredCredentialsWriter_KeepsReconnect(t *testing.T) {
 		t.Errorf("stored %q, want the reconnected sign-in kept", got)
 	}
 }
+
+// A disconnect committed while the sync ran stays a disconnect: the sync's
+// refreshed sign-in must not bring the credentials back (#1335).
+func TestStoredCredentialsWriter_KeepsDisconnect(t *testing.T) {
+	truncateAllTables(t)
+	userID := seedResetUser(t, "writer-disconnect", "password123", false)
+	seedStoredSignIn(t, userID, "epic-games-store", "loaded-ct")
+	w := newStoredCredentialsWriter(testDB, userID, "epic-games-store", "loaded-ct")
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE user_sync_configs SET storefront_credentials = NULL WHERE user_id = ?`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.write(context.Background(), "refreshed-old"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	var stored *string
+	if err := testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ?`, userID).
+		Scan(context.Background(), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != nil {
+		t.Errorf("stored %q after disconnect, want NULL", *stored)
+	}
+}

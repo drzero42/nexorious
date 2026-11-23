@@ -227,7 +227,7 @@ All variables, grouped by area. Anything without a default is unset unless you p
 
 | Variable | Default | Description |
 |---|---|---|
-| `LEGENDARY_WORK_DIR` | — | Base directory for the per-user Legendary configuration that Epic sync relies on. **Epic sync is disabled while this is unset** (see [Epic Games Store sync](#epic-games-store-sync)). |
+| `LEGENDARY_WORK_DIR` | — | Writable directory where Epic sign-ins and syncs keep Legendary's files while they run (each operation removes its own when it finishes). **Epic sync is disabled while this is unset** (see [Epic Games Store sync](#epic-games-store-sync)). |
 
 **Observability**
 
@@ -274,15 +274,15 @@ IGDB is the database behind Nexorious's game search, cover art, descriptions, re
 
 ## Epic Games Store sync
 
-Most storefront syncs need nothing from you as the operator — each user supplies their own credentials from their profile, and Nexorious talks to the store's API directly. **Epic is the exception:** it works through the `legendary` command-line tool (from the legendary-gl project), so `legendary` has to be available to the server, and you point Nexorious at a writable directory for its per-user data with `LEGENDARY_WORK_DIR`. While `LEGENDARY_WORK_DIR` is unset, Epic sync is disabled and users can't connect an Epic account.
+Most storefront syncs need nothing from you as the operator — each user supplies their own credentials from their profile, and Nexorious talks to the store's API directly. **Epic is the exception:** it works through the `legendary` command-line tool (from the legendary-gl project), so `legendary` has to be available to the server, and you point Nexorious at a writable directory for its temporary files with `LEGENDARY_WORK_DIR`. While `LEGENDARY_WORK_DIR` is unset, Epic sync is disabled and users can't connect an Epic account.
 
 Getting `legendary` in place depends on how you deploy:
 
-- **Official container image** — `legendary` is already bundled in the image, so there's nothing to install. Just set `LEGENDARY_WORK_DIR` to a path on a persistent volume. The provided `deploy/docker/docker-compose.yml` already does this (it sets `LEGENDARY_WORK_DIR` and mounts a volume for it), so Epic sync works out of the box there.
+- **Official container image** — `legendary` is already bundled in the image, so there's nothing to install. Just set `LEGENDARY_WORK_DIR` to a writable path. The provided `deploy/docker/docker-compose.yml` already does this (it sets `LEGENDARY_WORK_DIR` and mounts a volume for it), so Epic sync works out of the box there.
 - **Single binary / from source** — install `legendary` (the legendary-gl package) on the host yourself, so the `legendary` command is on the server's `PATH`, then set `LEGENDARY_WORK_DIR`.
 - **Native package (`.deb`/`.rpm`)** — `legendary` is **not** bundled in the packages (it is a pip tool with no distro package). Install it yourself (`pipx install legendary-gl` or `pip install --user legendary-gl`) so `legendary` is on the service's `PATH`, then set `LEGENDARY_WORK_DIR`. Epic sync degrades gracefully — everything else works — while it is absent.
 
-Either way, point `LEGENDARY_WORK_DIR` at a writable, persistent directory and restart the server. Steam, PlayStation, GOG, and Humble Bundle sync have no such requirement.
+Either way, point `LEGENDARY_WORK_DIR` at a writable directory and restart the server. It doesn't need to persist: the Epic sign-in is stored (encrypted) in the database, and the directory only holds files while a sign-in or sync runs. Steam, PlayStation, GOG, and Humble Bundle sync have no such requirement.
 
 ## Amazon Games sync
 

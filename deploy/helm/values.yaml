@@ -45,9 +45,9 @@ nexorious:
 
   # -- Legendary work directory. Injected as LEGENDARY_WORK_DIR and mounted
   # -- as an emptyDir volume. Set to empty to disable Epic sync entirely.
-  # -- Note: legendary auth state is snapshotted to the database after each
-  # -- sync, so the emptyDir is safe to lose on pod restarts — state is
-  # -- restored from the DB before every invocation.
+  # -- Note: legendary auth state is stored in the database, and each sign-in
+  # -- or sync works in its own temporary directory here, so the emptyDir is
+  # -- safe to lose on pod restarts.
   legendaryWorkDir: "/var/lib/legendary"
 
   # -- Writable /tmp emptyDir for the main container. The main container

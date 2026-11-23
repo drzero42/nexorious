@@ -564,8 +564,8 @@ func (a *playstationStoreClientAdapter) GetAccountInfo(ctx context.Context, npss
 // without creating an import cycle between internal/api and internal/services/epicgamesstore.
 type epicGamesStoreClientAdapter struct{ c *epicgamesstoresvc.Client }
 
-func (a *epicGamesStoreClientAdapter) Authenticate(ctx context.Context, userID, authCode string) (*EpicGamesStoreAccountInfo, map[string]string, error) {
-	info, snapshot, err := a.c.Authenticate(ctx, userID, authCode)
+func (a *epicGamesStoreClientAdapter) Authenticate(ctx context.Context, _, authCode string) (*EpicGamesStoreAccountInfo, map[string]string, error) {
+	info, snapshot, err := a.c.Authenticate(ctx, authCode)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -56,6 +56,8 @@ type EpicGamesStoreClient interface {
 	// Authenticate runs legendary auth, returns account info and the resulting
 	// state snapshot. The caller stores the snapshot in the DB.
 	Authenticate(ctx context.Context, userID, authCode string) (*EpicGamesStoreAccountInfo, map[string]string, error)
+	// Cleanup removes the user's legendary files that older versions left
+	// on disk. Sign-ins and syncs remove their own files when they finish.
 	Cleanup(ctx context.Context, userID string) error
 	Configured() bool
 }
@@ -900,7 +902,9 @@ func (h *SyncHandler) HandleEpicGamesStoreConnect(c *echo.Context) error {
 }
 
 // HandleEpicGamesStoreDisconnect clears the user's Epic credentials and snapshot, and
-// removes the legendary working directory.
+// removes any legendary files older versions left on disk. A failure to remove
+// those is logged but still answers 204: the stored credentials are already
+// gone, so the disconnect itself succeeded.
 func (h *SyncHandler) HandleEpicGamesStoreDisconnect(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
