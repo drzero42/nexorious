@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -15,13 +16,15 @@ import (
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
-// TestDispatchSync_SteamPrivateGameDetails_FailsWithoutRemovingGames runs a
-// Steam reply with neither games nor game_count (what Steam sends when the
-// account's game details are private) through the real Steam adapter and the
-// sync worker. The job must fail, and the game already in the library must stay
-// available with no "removed" change recorded and the credentials flag clear
-// (#1310).
-func TestDispatchSync_SteamPrivateGameDetails_FailsWithoutRemovingGames(t *testing.T) {
+// TestDispatchSync_SteamPartialOwnedGames_FailsWithoutRemovingGames runs a
+// Steam reply whose game_count is higher than the number of games it lists
+// through the real Steam adapter and the sync worker. Read as the full library,
+// that reply would let the removal sweep mark the unlisted game removed; the
+// empty-fetch guard (#1324) does not catch it because the fetch is not empty.
+// The job must fail with a hint about the Game details setting, both games must
+// stay available with no "removed" change recorded, and the credentials flag
+// must stay clear (#1310).
+func TestDispatchSync_SteamPartialOwnedGames_FailsWithoutRemovingGames(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -40,11 +43,16 @@ func TestDispatchSync_SteamPrivateGameDetails_FailsWithoutRemovingGames(t *testi
 	); err != nil {
 		t.Fatalf("insert sync config: %v", err)
 	}
-	egID := insertTestExternalGame(t, userID, "steam", "730", "Counter-Strike 2", "pc-windows")
+	listedID := insertTestExternalGame(t, userID, "steam", "730", "Counter-Strike 2", "pc-windows")
+	unlistedID := insertTestExternalGame(t, userID, "steam", "570", "Dota 2", "pc-windows")
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{}}`))
+		if strings.Contains(r.URL.Path, "appdetails") {
+			_, _ = w.Write([]byte(`{"730":{"success":true,"data":{"platforms":{"windows":true,"mac":false,"linux":false}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"response":{"game_count":2,"games":[{"appid":730,"name":"Counter-Strike 2","playtime_forever":60}]}}`))
 	}))
 	defer srv.Close()
 	client := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
@@ -60,20 +68,28 @@ func TestDispatchSync_SteamPrivateGameDetails_FailsWithoutRemovingGames(t *testi
 		t.Fatalf("Work: %v", err)
 	}
 
-	var status string
-	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
-		t.Fatalf("read job status: %v", err)
+	var jobRow struct {
+		Status       string  `bun:"status"`
+		ErrorMessage *string `bun:"error_message"`
 	}
-	if status != "failed" {
-		t.Errorf("job status = %q, want failed", status)
+	if err := testDB.NewRaw(`SELECT status, error_message FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobRow); err != nil {
+		t.Fatalf("read job: %v", err)
+	}
+	if jobRow.Status != "failed" {
+		t.Errorf("job status = %q, want failed", jobRow.Status)
+	}
+	if jobRow.ErrorMessage == nil || !strings.Contains(*jobRow.ErrorMessage, "Game details") {
+		t.Errorf("job error_message = %v, want a hint about the Game details setting", jobRow.ErrorMessage)
 	}
 
-	var available bool
-	if err := testDB.NewRaw(`SELECT is_available FROM external_games WHERE id = ?`, egID).Scan(ctx, &available); err != nil {
-		t.Fatalf("read game availability: %v", err)
-	}
-	if !available {
-		t.Error("game marked unavailable, want it left available")
+	for name, egID := range map[string]string{"listed": listedID, "unlisted": unlistedID} {
+		var available bool
+		if err := testDB.NewRaw(`SELECT is_available FROM external_games WHERE id = ?`, egID).Scan(ctx, &available); err != nil {
+			t.Fatalf("read %s game availability: %v", name, err)
+		}
+		if !available {
+			t.Errorf("%s game marked unavailable, want it left available", name)
+		}
 	}
 
 	var removed int
