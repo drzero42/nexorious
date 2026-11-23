@@ -5,15 +5,14 @@ package tasks_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	pgx "github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
-	"github.com/riverqueue/river/rivertype"
 
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -136,11 +135,8 @@ func famSetup(t *testing.T) string {
 // famDispatch runs a dispatch for the job that fetches the given batches.
 func famDispatch(t *testing.T, rc *river.Client[pgx.Tx], jobID, userID string, batches ...[]tasks.ExternalGameEntry) {
 	t.Helper()
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{batches: batches}), RiverClient: rc}
-	if err := w.Work(context.Background(), &river.Job[tasks.DispatchSyncArgs]{
-		JobRow: &rivertype.JobRow{},
-		Args:   tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: famStore},
-	}); err != nil {
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{batches: batches}), LC: newTestLC(t)}
+	if err := w.Work(context.Background(), syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: famStore})); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 }
@@ -151,11 +147,8 @@ func famEntry(extID string) tasks.ExternalGameEntry {
 
 func famMatch(t *testing.T, rc *river.Client[pgx.Tx], itemID string) error {
 	t.Helper()
-	w := &tasks.IGDBMatchWorker{DB: testDB, RiverClient: rc}
-	return w.Work(context.Background(), &river.Job[tasks.IGDBMatchArgs]{
-		JobRow: &rivertype.JobRow{Attempt: 1, MaxAttempts: 3},
-		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
-	})
+	w := &tasks.IGDBMatchWorker{DB: testDB, LC: newTestLC(t)}
+	return w.Work(context.Background(), matchJob(t, tasks.IGDBMatchArgs{JobItemID: itemID}))
 }
 
 type famEG struct {
@@ -241,10 +234,8 @@ func TestSyncItemWorkers_ItemNotPending_WritesNothing(t *testing.T) {
 			writeItem := famInsertItem(t, jobID, userID, matched, status)
 			matchItem := famInsertItem(t, jobID, userID, unmatched, status)
 
-			uw := &tasks.UserGameWorker{DB: testDB, RiverClient: rc}
-			if err := uw.Work(context.Background(), &river.Job[tasks.UserGameArgs]{
-				JobRow: &rivertype.JobRow{}, Args: tasks.UserGameArgs{JobItemID: writeItem},
-			}); err != nil {
+			uw := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t), RiverClient: rc}
+			if err := uw.Work(context.Background(), writeJob(t, tasks.UserGameArgs{JobItemID: writeItem})); err != nil {
 				t.Fatalf("user_game_write: %v", err)
 			}
 			if err := famMatch(t, rc, matchItem); err != nil {
@@ -467,10 +458,6 @@ func TestDispatchSync_PromotesChildOfParentThatLeftEarlier(t *testing.T) {
 	parentID := famInsertGame(t, userID, famGame{extID: "P", available: false, age: 3 * time.Hour})
 	c1 := famInsertGame(t, userID, famGame{extID: "C1", parent: parentID, available: true, age: 2 * time.Hour})
 	famInsertGame(t, userID, famGame{extID: "C2", parent: parentID, available: false, age: time.Hour})
-	// Left behind by a sync the user cancelled to escape the hang.
-	cancelled := famInsertJob(t, userID, "cancelled", true)
-	leftC1 := famInsertItem(t, cancelled, userID, c1, "pending")
-	leftP := famInsertItem(t, cancelled, userID, parentID, "pending_review")
 	jobID := famInsertJob(t, userID, "pending", true)
 
 	famDispatch(t, rc, jobID, userID, []tasks.ExternalGameEntry{famEntry("C1"), famEntry("NEW")})
@@ -484,11 +471,6 @@ func TestDispatchSync_PromotesChildOfParentThatLeftEarlier(t *testing.T) {
 	}
 	if _, gotNew := famGet(t, userID, "NEW"); gotNew.ParentID == nil || *gotNew.ParentID != c1 {
 		t.Errorf("a new edition must become the promoted game's child, got %v", gotNew.ParentID)
-	}
-	for _, id := range []string{leftC1, leftP} {
-		if got, _ := famItemStatus(t, id); got != "cancelled" {
-			t.Errorf("leftover item in a finished Job: want cancelled, got %q", got)
-		}
 	}
 }
 
@@ -558,40 +540,26 @@ func TestDispatchSync_NoPromotion(t *testing.T) {
 func TestIGDBMatchWorker_ChildWaitsOnlyWhenTheWaitCanEnd(t *testing.T) {
 	cases := []struct {
 		name             string
-		jobStatus        string
 		dispatchComplete bool
-		dispatchRiver    string // "" = none, else the River state of the dispatch job
 		parentItem       string // "" = none
 		want             string // "wait" or "failed"
 	}{
-		{"parent item pending", "processing", true, "", "pending", "wait"},
-		{"parent in review", "processing", true, "", "pending_review", "wait"},
-		{"dispatch still running", "processing", false, "available", "", "wait"},
-		{"no parent item, dispatch done", "processing", true, "", "", "failed"},
-		{"dispatch River job discarded", "processing", false, "discarded", "", "failed"},
-		{"parent item failed", "processing", true, "", "failed", "failed"},
-		{"retried child in a finished Job", "completed", true, "", "", "failed"},
+		{"parent item pending", true, "pending", "wait"},
+		{"parent in review", true, "pending_review", "wait"},
+		{"no parent item yet, dispatch running", false, "", "wait"},
+		{"no parent item, dispatch done", true, "", "failed"},
+		{"parent item failed", true, "failed", "failed"},
+		{"parent item completed while unmatched", false, "completed", "failed"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			userID := famSetup(t)
 			rc := newTestRiverClient(t)
-			ctx := context.Background()
 			parentID := famInsertGame(t, userID, famGame{extID: "P", available: true})
 			childID := famInsertGame(t, userID, famGame{extID: "C", parent: parentID, available: true})
-			jobID := famInsertJob(t, userID, tc.jobStatus, tc.dispatchComplete)
+			jobID := famInsertJob(t, userID, "processing", tc.dispatchComplete)
 			if tc.parentItem != "" {
 				famInsertItem(t, jobID, userID, parentID, tc.parentItem)
-			}
-			if tc.dispatchRiver != "" {
-				res, err := rc.Insert(ctx, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: famStore}, nil)
-				if err != nil {
-					t.Fatalf("insert dispatch River job: %v", err)
-				}
-				if _, err := testDB.ExecContext(ctx, `UPDATE river_job SET state = ?, finalized_at = CASE WHEN ? = 'discarded' THEN now() END WHERE id = ?`,
-					tc.dispatchRiver, tc.dispatchRiver, res.Job.ID); err != nil {
-					t.Fatalf("set dispatch River state: %v", err)
-				}
 			}
 			itemID := famInsertItem(t, jobID, userID, childID, "pending")
 
@@ -602,8 +570,8 @@ func TestIGDBMatchWorker_ChildWaitsOnlyWhenTheWaitCanEnd(t *testing.T) {
 			status, msg := famItemStatus(t, itemID)
 			switch tc.want {
 			case "wait":
-				if status != "pending" {
-					t.Errorf("want the child waiting (pending), got %q", status)
+				if status != "pending" || famItemOwner(t, itemID) != nil {
+					t.Errorf("want the child waiting (pending, no owner), got %q", status)
 				}
 			case "failed":
 				if status != "failed" || msg == nil || *msg != "parent game is unmatched and is not part of this sync" {
@@ -612,6 +580,15 @@ func TestIGDBMatchWorker_ChildWaitsOnlyWhenTheWaitCanEnd(t *testing.T) {
 			}
 		})
 	}
+}
+
+func famItemOwner(t *testing.T, itemID string) *int64 {
+	t.Helper()
+	var id *int64
+	if err := testDB.NewRaw(`SELECT river_job_id FROM job_items WHERE id = ?`, itemID).Scan(context.Background(), &id); err != nil {
+		t.Fatalf("item owner: %v", err)
+	}
+	return id
 }
 
 // A child whose parent has no item in the sync ends failed once the dispatch
@@ -655,64 +632,108 @@ func TestIGDBMatchWorker_ChildOfFailedButMatchedParentIsWritten(t *testing.T) {
 	}
 }
 
-func TestDecideChildWait_RepointedChildIsRetried(t *testing.T) {
+// A child whose game is promoted while its worker is deciding (it read the
+// game as a child, then the promotion committed) is searched like any other
+// game, not failed: told "cannot wait", it loads the game again.
+func TestIGDBMatchWorker_PromotedWhileAskingToWait_IsSearched(t *testing.T) {
 	userID := famSetup(t)
+	rc := newTestRiverClient(t)
 	ctx := context.Background()
-	oldParent := famInsertGame(t, userID, famGame{extID: "OLD", available: false})
-	newParent := famInsertGame(t, userID, famGame{extID: "NEW", available: true})
-	childID := famInsertGame(t, userID, famGame{extID: "C", parent: newParent, available: true})
+	parentID := famInsertGame(t, userID, famGame{extID: "P", available: false})
+	childID := famInsertGame(t, userID, famGame{extID: "C", parent: parentID, available: true})
 	jobID := famInsertJob(t, userID, "processing", true)
 	itemID := famInsertItem(t, jobID, userID, childID, "pending")
+	job := matchJob(t, tasks.IGDBMatchArgs{JobItemID: itemID})
 
-	_, err := tasks.DecideChildWaitForTest(ctx, testDB, itemID, jobID, childID, oldParent)
-	if !errors.Is(err, tasks.ErrChildRepointedForTest) {
-		t.Fatalf("want ErrChildRepointed, got %v", err)
+	// Hold the parent row: the worker's inherit reads it FOR SHARE and waits.
+	tx, err := testDB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if status, _ := famItemStatus(t, itemID); status != "pending" {
-		t.Errorf("a re-pointed child must not be failed, got %q", status)
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM external_games WHERE id = ? FOR UPDATE`, parentID); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		w := &tasks.IGDBMatchWorker{DB: testDB, LC: newTestLC(t)}
+		done <- w.Work(ctx, job)
+	}()
+	waitForLockWait(t)
+	// The promotion commits while the worker waits.
+	if _, err := tx.ExecContext(ctx, `UPDATE external_games SET parent_id = NULL WHERE id = ?`, childID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("igdb_match: %v", err)
+	}
+	_ = rc
+	if status, msg := famItemStatus(t, itemID); status != "pending_review" {
+		t.Errorf("promoted game must be searched (no IGDB → review), got %q %v", status, msg)
 	}
 }
 
-func TestDecideChildWait_PromotedOrMatchedMeanwhileProceeds(t *testing.T) {
-	userID := famSetup(t)
-	ctx := context.Background()
-	parentID := famInsertGame(t, userID, famGame{extID: "P", available: false})
-	promoted := famInsertGame(t, userID, famGame{extID: "C", available: true}) // parent_id already cleared
-	matchedParent := famInsertGame(t, userID, famGame{extID: "MP", title: "Other", available: true, resolved: 950})
-	child := famInsertGame(t, userID, famGame{extID: "MC", title: "Other", parent: matchedParent, available: true})
-	jobID := famInsertJob(t, userID, "processing", true)
-
-	for name, args := range map[string][2]string{
-		"promoted":       {promoted, parentID},
-		"parent matched": {child, matchedParent},
-	} {
-		itemID := famInsertItem(t, jobID, userID, args[0], "pending")
-		got, err := tasks.DecideChildWaitForTest(ctx, testDB, itemID, jobID, args[0], args[1])
-		if err != nil || got != "proceed" {
-			t.Errorf("%s: want proceed, got %q %v", name, got, err)
+// waitForLockWait waits until some backend is blocked on a lock.
+func waitForLockWait(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var n int
+		if err := testDB.NewRaw(`SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'`).Scan(context.Background(), &n); err != nil {
+			t.Fatal(err)
 		}
+		if n > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
+	t.Fatal("no backend blocked on a lock")
 }
 
 // ── Rule 6: the re-queue at the end of the dispatch ──────────────────────────
 
-func TestDispatchSync_RequeuesWaitingItemsAtTheEnd(t *testing.T) {
+// A child that waited during the dispatch and whose parent left the library
+// in this sync is promoted by the sweep; marking the dispatch done queues it,
+// so it is matched in the same sync.
+func TestDispatchSync_WaitingChildPromotedInTheSweep_IsQueued(t *testing.T) {
 	userID := famSetup(t)
 	rc := newTestRiverClient(t)
-	parentID := famInsertGame(t, userID, famGame{extID: "P", available: true})
-	childID := famInsertGame(t, userID, famGame{extID: "C", parent: parentID, available: true})
-	jobID := famInsertJob(t, userID, "processing", true)
+	parentID := famInsertGame(t, userID, famGame{extID: "P", available: true, age: 2 * time.Hour})
+	childID := famInsertGame(t, userID, famGame{extID: "C", parent: parentID, available: true, age: time.Hour})
+	jobID := famInsertJob(t, userID, "processing", false)
 	// A child that waited while the dispatch ran: pending, nothing running it.
-	waiting := famInsertItem(t, jobID, userID, childID, "pending")
+	waiting := famInsertItemKey(t, jobID, userID, childID, "C", "pending")
 
-	famDispatch(t, rc, jobID, userID, []tasks.ExternalGameEntry{famEntry("P"), famEntry("C")})
+	famDispatch(t, rc, jobID, userID, []tasks.ExternalGameEntry{famEntry("C")})
 
+	if _, got := famGet(t, userID, "C"); got.ParentID != nil {
+		t.Fatalf("C must be promoted")
+	}
 	if n := famLiveRiverJobs(t, waiting); n != 1 {
 		t.Errorf("waiting child: want one live River job, got %d", n)
 	}
-	if n := famCount(t, `SELECT COUNT(*) FROM events WHERE payload->>'action' = 'rescue_orphaned_items'`); n != 0 {
-		t.Errorf("the dispatch's re-queue must emit no maintenance event, got %d", n)
+	if err := famMatch(t, rc, waiting); err != nil {
+		t.Fatalf("igdb_match: %v", err)
 	}
+	if status, _ := famItemStatus(t, waiting); status != "pending_review" {
+		t.Errorf("promoted child must be searched, got %q", status)
+	}
+}
+
+func famInsertItemKey(t *testing.T, jobID, userID, egID, key, status string) string {
+	t.Helper()
+	id := uuid.NewString()
+	if _, err := testDB.NewRaw(
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, ?, 'Horizon', ?, '{}', ?, '{}', '[]', now())`,
+		id, jobID, userID, key, egID, status,
+	).Exec(context.Background()); err != nil {
+		t.Fatalf("insert item: %v", err)
+	}
+	return id
 }
 
 func TestDispatchSync_RunAgain_GivesNoItemASecondRiverJob(t *testing.T) {
@@ -722,6 +743,10 @@ func TestDispatchSync_RunAgain_GivesNoItemASecondRiverJob(t *testing.T) {
 	entries := []tasks.ExternalGameEntry{famEntry("A"), {ExternalID: "B", Title: "Other", Platforms: []string{"pc-windows"}}}
 
 	famDispatch(t, rc, jobID, userID, entries)
+	// As if the first run was cut off before it marked the dispatch done.
+	if _, err := testDB.ExecContext(context.Background(), `UPDATE jobs SET dispatch_complete = false WHERE id = ?`, jobID); err != nil {
+		t.Fatal(err)
+	}
 	famDispatch(t, rc, jobID, userID, entries)
 
 	var items []string
@@ -738,44 +763,52 @@ func TestDispatchSync_RunAgain_GivesNoItemASecondRiverJob(t *testing.T) {
 	}
 }
 
-// cancellingAdapter cancels the sync (as HandleCancelJob does) after its first
-// batch, then sends a second one.
+// cancellingAdapter cancels the sync through the module (as HandleCancelJob
+// does) after its first batch, then sends a second one.
 type cancellingAdapter struct {
 	jobID string
+	lc    *joblifecycle.Module
 }
 
 func (a *cancellingAdapter) GetLibrary(ctx context.Context, _ int, onBatch func([]tasks.ExternalGameEntry) error) error {
 	if err := onBatch([]tasks.ExternalGameEntry{famEntry("A")}); err != nil {
 		return err
 	}
-	if _, err := testDB.ExecContext(ctx, `UPDATE jobs SET status = 'cancelled', completed_at = now() WHERE id = ?`, a.jobID); err != nil {
-		return err
-	}
-	if _, err := testDB.ExecContext(ctx, `UPDATE river_job SET state = 'cancelled', finalized_at = now() WHERE args->>'job_item_id' IS NOT NULL`); err != nil {
+	if err := a.lc.Cancel(ctx, a.jobID); err != nil {
 		return err
 	}
 	return onBatch([]tasks.ExternalGameEntry{{ExternalID: "B", Title: "Other", Platforms: []string{"pc-windows"}}})
 }
 
-func TestDispatchSync_CancelledDuringDispatch_NoRequeue(t *testing.T) {
+// Cancel during a running dispatch: the dispatch adds no further items, the
+// sweeps do not run, and nothing is left unfinished or queued.
+func TestDispatchSync_CancelledDuringDispatch(t *testing.T) {
 	userID := famSetup(t)
-	rc := newTestRiverClient(t)
+	lc := newTestLC(t)
+	famInsertGame(t, userID, famGame{extID: "X", title: "Elsewhere", available: true})
 	jobID := famInsertJob(t, userID, "pending", true)
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&cancellingAdapter{jobID: jobID}), RiverClient: rc}
-	if err := w.Work(context.Background(), &river.Job[tasks.DispatchSyncArgs]{
-		JobRow: &rivertype.JobRow{},
-		Args:   tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: famStore},
-	}); err != nil {
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&cancellingAdapter{jobID: jobID, lc: lc}), LC: lc}
+	if err := w.Work(context.Background(), syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: famStore})); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
-	aID, _ := famGet(t, userID, "A")
-	items := famItemsFor(t, jobID, aID)
-	if len(items) != 1 {
-		t.Fatalf("want one item for A, got %d", len(items))
+	if got := famJobStatus(t, jobID); got != "cancelled" {
+		t.Fatalf("job: want cancelled, got %q", got)
 	}
-	if n := famLiveRiverJobs(t, items[0]); n != 0 {
-		t.Errorf("a sync cancelled during its dispatch must not be re-queued, got %d live River jobs", n)
+	if n := famCount(t, `SELECT COUNT(*) FROM external_games WHERE user_id = ? AND external_id = 'B'`, userID); n != 0 {
+		t.Errorf("the dispatch went on after the cancel: B was written")
+	}
+	if n := famCount(t, `SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status IN ('pending', 'pending_review')`, jobID); n != 0 {
+		t.Errorf("%d unfinished items left", n)
+	}
+	if n := famCount(t, `SELECT COUNT(*) FROM river_job WHERE state IN ('available', 'scheduled', 'retryable', 'pending')`); n != 0 {
+		t.Errorf("%d River jobs left queued", n)
+	}
+	if _, x := famGet(t, userID, "X"); x.ParentID != nil {
+		t.Fatal("unexpected parent")
+	}
+	if n := famCount(t, `SELECT COUNT(*) FROM external_games WHERE user_id = ? AND external_id = 'X' AND is_available`, userID); n != 1 {
+		t.Errorf("the removed-game sweep ran after the cancel")
 	}
 }

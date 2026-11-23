@@ -6,11 +6,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/drzero42/nexorious/internal/worker/tasks"
+	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 )
 
-// TestSyncCompletion_EnqueuesStoreLinkRefresh verifies that finalizing a sync
-// job enqueues a scoped, incremental store-link enrichment dispatch for that
+// TestSyncCompletion_EnqueuesStoreLinkRefresh verifies that a sync's completed
+// effect enqueues a scoped, incremental store-link enrichment dispatch for that
 // job's storefront.
 func TestSyncCompletion_EnqueuesStoreLinkRefresh(t *testing.T) {
 	truncateAllTables(t)
@@ -26,20 +27,29 @@ func TestSyncCompletion_EnqueuesStoreLinkRefresh(t *testing.T) {
 	).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
+	itemID := uuid.NewString()
 	if _, err := testDB.NewRaw(
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, 'x', 'x', '{}', 'completed', '{}', '[]', now())`,
-		uuid.NewString(), jobID, userID,
+		 VALUES (?, ?, ?, 'x', 'x', '{}', 'pending', '{}', '[]', now())`,
+		itemID, jobID, userID,
 	).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	rc := newTestMetadataRiverClient(t)
-	tasks.SyncCheckJobCompletion(ctx, testDB, rc, jobID)
+	// The last item finishing completes the sync; its completed effect
+	// queues the store-link refresh.
+	lc := newTestLC(t)
+	if err := lc.FinishItem(ctx, itemID, ownItem(t, itemID), joblifecycle.ItemResult{Status: models.JobItemStatusCompleted}); err != nil {
+		t.Fatal(err)
+	}
+	if got := jobStatus(t, jobID); got != models.JobStatusCompleted {
+		t.Fatalf("job: want completed, got %q", got)
+	}
+	runSyncEffects(t, lc)
 
 	var n int
 	if err := testDB.NewRaw(
-		`SELECT count(*) FROM river_job WHERE kind = 'store_link_refresh_dispatch'`,
+		`SELECT count(*) FROM river_job WHERE kind = 'store_link_refresh_dispatch' AND args->>'storefront' = 'steam' AND args->>'user_id' = ?`, userID,
 	).Scan(ctx, &n); err != nil {
 		t.Fatal(err)
 	}

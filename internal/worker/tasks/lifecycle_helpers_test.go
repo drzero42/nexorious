@@ -5,11 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	pgx "github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
-	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
 
 	"github.com/drzero42/nexorious/internal/joblifecycle"
@@ -85,23 +82,6 @@ func countEvents(t *testing.T, typ string) int {
 		t.Fatalf("count events: %v", err)
 	}
 	return n
-}
-
-// newTestMetadataRiverClient creates a non-started working River client backed
-// by the shared test container, for tests that call Insert without a running
-// worker loop.
-func newTestMetadataRiverClient(t *testing.T) *river.Client[pgx.Tx] {
-	t.Helper()
-	pool, err := pgxpool.New(context.Background(), testConnStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
-	if err != nil {
-		t.Fatalf("river.NewClient: %v", err)
-	}
-	return rc
 }
 
 // fakeOwnerSeq hands out River job ids for items a test inserts directly: the

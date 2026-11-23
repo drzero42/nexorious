@@ -19,10 +19,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
-	"github.com/riverqueue/river/rivertype"
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/services/amazongames"
@@ -93,13 +93,11 @@ func newTestRiverClient(t *testing.T) *river.Client[pgx.Tx] {
 
 func TestDispatchSync_InvalidPayload(t *testing.T) {
 	truncateAllTables(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), LC: newTestLC(t)}
 
 	// With River, args are already typed — test that a job with empty args
 	// (no matching sync config) returns nil without panicking.
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{},
-	}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{})
 	if err := w.Work(context.Background(), job); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -206,10 +204,8 @@ func TestDispatchSync_FailsJob(t *testing.T) {
 				).Exec(ctx)
 			}
 
-			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: tc.factory(), RiverClient: nil}
-			job := &river.Job[tasks.DispatchSyncArgs]{
-				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: tc.storefront},
-			}
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: tc.factory(), LC: newTestLC(t)}
+			job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: tc.storefront})
 
 			if err := w.Work(ctx, job); err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -296,11 +292,8 @@ func TestDispatchSync_SingleBatchHappyPath(t *testing.T) {
 			).Exec(ctx)
 
 			fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{tc.games}}
-			rc := newTestRiverClient(t)
-			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-			job := &river.Job[tasks.DispatchSyncArgs]{
-				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: tc.storefront},
-			}
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+			job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: tc.storefront})
 
 			if err := w.Work(ctx, job); err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -365,11 +358,8 @@ func TestDispatchSync_MacPlatformPersisted(t *testing.T) {
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
 		{{ExternalID: "1145360", Title: "Hades", PlaytimeHours: 50, Platforms: []string{"mac"}, OwnershipStatus: "owned"}},
 	}}
-	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -451,11 +441,8 @@ func TestDispatchSync_SetsSiblingParentID(t *testing.T) {
 			{ExternalID: "PPSA67890_00", Title: "Horizon", Platforms: []string{"playstation-5"}},
 		},
 	}}
-	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"})
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -509,10 +496,8 @@ func TestDispatchSync_Steam_PlatformUpdate_AddsNewPlatform(t *testing.T) {
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
 		{{ExternalID: "999", Title: "Cached Game", PlaytimeHours: 5, Platforms: []string{"pc-windows", "pc-linux"}, OwnershipStatus: "owned"}},
 	}}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -549,12 +534,9 @@ func TestDispatchSync_Steam_AdapterEmptyBatch_NoSideEffects(t *testing.T) {
 		uuid.NewString(), userID,
 	).Exec(ctx)
 
-	rc := newTestRiverClient(t)
 	fakeAdapter := &fakeStorefrontAdapter{}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("expected Work to succeed, got: %v", err)
@@ -599,11 +581,8 @@ func TestDispatchSync_Steam_EmptyPlatformsFallback_EmitsWindowsRow(t *testing.T)
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
 		{{ExternalID: "777", Title: "No Platform Game", PlaytimeHours: 0, OwnershipStatus: "owned"}},
 	}}
-	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -659,11 +638,8 @@ func TestDispatchSync_Steam_SkippedGameExcluded(t *testing.T) {
 			{ExternalID: "570", Title: "Dota 2", PlaytimeHours: 50, Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"},
 		},
 	}}
-	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -722,10 +698,8 @@ func TestDispatchSync_Steam_PlaytimeStoredOnPlatform(t *testing.T) {
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
 		{{ExternalID: "730", Title: "Counter-Strike 2", PlaytimeHours: 100, Platforms: []string{"pc-windows", "pc-linux"}, OwnershipStatus: "owned"}},
 	}}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -787,10 +761,8 @@ func TestDispatchSync_Steam_FractionalPlaytimeStoredOnPlatform(t *testing.T) {
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
 		{{ExternalID: "570", Title: "Dota 2", PlaytimeHours: 1.5, Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
 	}}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -832,10 +804,8 @@ func TestDispatchSync_Steam_JobItemExternalGameIDSet(t *testing.T) {
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
 		{{ExternalID: "570", Title: "Dota 2", PlaytimeHours: 50, Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
 	}}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -904,11 +874,8 @@ func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 		{ExternalID: "NPWR00003_00", Title: "Horizon", Platforms: []string{"playstation-5"}, OwnershipStatus: "owned"},
 	}
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{page1, page2}}
-	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"})
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1009,11 +976,8 @@ func TestDispatchSync_DualPlatformCreatesTwoRows(t *testing.T) {
 			fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
 				{{ExternalID: tc.externalID, Title: "Dual Game", PlaytimeHours: 100, Platforms: tc.platforms, OwnershipStatus: "owned"}},
 			}}
-			rc := newTestRiverClient(t)
-			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-			job := &river.Job[tasks.DispatchSyncArgs]{
-				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: tc.storefront},
-			}
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+			job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: tc.storefront})
 			if err := w.Work(ctx, job); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -1090,13 +1054,11 @@ func TestFailSyncJob_CancelsPendingItems(t *testing.T) {
 	).Exec(ctx)
 
 	w := &tasks.DispatchSyncWorker{
-		DB:          testDB,
-		Adapter:     fetchErrFactory(errors.New("network error")),
-		RiverClient: nil,
+		DB:      testDB,
+		Adapter: fetchErrFactory(errors.New("network error")),
+		LC:      newTestLC(t),
 	}
-	_ = w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	})
+	_ = w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"}))
 
 	var cancelledCount int
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'cancelled'`, jobID).Scan(ctx, &cancelledCount)
@@ -1135,10 +1097,8 @@ func TestDispatchSync_RemovedGames_WritesSyncChange(t *testing.T) {
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{{
 		{ExternalID: "1000", Title: "Kept Game", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"},
 	}}}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: newTestRiverClient(t)}
-	_ = w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	})
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	_ = w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"}))
 
 	var changeCount int
 	_ = testDB.NewRaw(
@@ -1179,10 +1139,8 @@ func TestDispatchSync_EmptyFetchWithKnownGames_FailsWithoutSweep(t *testing.T) {
 	// A game on another storefront must not count as "known" for this one.
 	insertTestExternalGame(t, userID, "steam", "3", "Steam Game", "pc-windows")
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
-	}); err != nil {
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), LC: newTestLC(t)}
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"})); err != nil {
 		t.Fatalf("Work: %v", err)
 	}
 
@@ -1245,10 +1203,8 @@ func TestDispatchSync_EmptyFetchNoKnownGames_Completes(t *testing.T) {
 	_, _ = testDB.ExecContext(ctx,
 		`UPDATE external_games SET is_available = false WHERE user_id = ? AND storefront = 'gog'`, userID)
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), RiverClient: newTestRiverClient(t)}
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
-	}); err != nil {
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), LC: newTestLC(t)}
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"})); err != nil {
 		t.Fatalf("Work: %v", err)
 	}
 
@@ -1302,7 +1258,6 @@ func TestIGDBMatchWorker_ChildInheritsFromResolvedParent(t *testing.T) {
 		uuid.NewString(), childID,
 	).Exec(ctx)
 
-	rc := newTestRiverClient(t)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
@@ -1310,11 +1265,8 @@ func TestIGDBMatchWorker_ChildInheritsFromResolvedParent(t *testing.T) {
 		itemID, jobID, userID, childID,
 	)
 
-	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: rc}
-	job := &river.Job[tasks.IGDBMatchArgs]{
-		JobRow: &rivertype.JobRow{MaxAttempts: 5},
-		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
-	}
+	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: nil, LC: newTestLC(t)}
+	job := matchJob(t, tasks.IGDBMatchArgs{JobItemID: itemID})
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1334,8 +1286,8 @@ func TestIGDBMatchWorker_ChildInheritsFromResolvedParent(t *testing.T) {
 }
 
 func TestUserGameWorker_SiblingTrigger(t *testing.T) {
-	// After Stage 3 completes for a parent, it must re-enqueue Stage 2 for
-	// any children that have pending job_items and are not yet resolved.
+	// When the parent's item finishes, the module queues the items that wait
+	// on it (its children's, pending with no owner) for Stage 2.
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -1389,11 +1341,8 @@ func TestUserGameWorker_SiblingTrigger(t *testing.T) {
 	)
 
 	rc := newTestRiverClient(t)
-	w := &tasks.UserGameWorker{DB: testDB, IGDBClient: nil, RiverClient: rc}
-	rj := &river.Job[tasks.UserGameArgs]{
-		JobRow: &rivertype.JobRow{MaxAttempts: 5},
-		Args:   tasks.UserGameArgs{JobItemID: parentItemID},
-	}
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil, RiverClient: rc}
+	rj := writeJob(t, tasks.UserGameArgs{JobItemID: parentItemID})
 	if err := w.Work(ctx, rj); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1439,11 +1388,8 @@ func TestIGDBMatchWorker_NoIGDBClient_PendingReview(t *testing.T) {
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
-	job := &river.Job[tasks.IGDBMatchArgs]{
-		JobRow: &rivertype.JobRow{MaxAttempts: 5},
-		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
-	}
+	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: nil, LC: newTestLC(t)}
+	job := matchJob(t, tasks.IGDBMatchArgs{JobItemID: itemID})
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1489,7 +1435,6 @@ func TestIGDBMatchWorker_AutoResolve(t *testing.T) {
 		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
 		uuid.NewString(), egID,
 	).Exec(ctx)
-	rc := newTestRiverClient(t)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -1498,11 +1443,8 @@ func TestIGDBMatchWorker_AutoResolve(t *testing.T) {
 	)
 
 	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
-	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
-	job := &river.Job[tasks.IGDBMatchArgs]{
-		JobRow: &rivertype.JobRow{MaxAttempts: 5},
-		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
-	}
+	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: igdbClient, LC: newTestLC(t)}
+	job := matchJob(t, tasks.IGDBMatchArgs{JobItemID: itemID})
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1547,8 +1489,6 @@ func TestDispatchSyncWorker_EnqueuesPerBatch(t *testing.T) {
 		uuid.NewString(), userID,
 	).Exec(ctx)
 
-	rc := newTestRiverClient(t)
-
 	// Two separate batches: batch 1 has game-A, batch 2 has game-B.
 	adapter := &fakeStorefrontAdapter{
 		batches: [][]tasks.ExternalGameEntry{
@@ -1557,14 +1497,14 @@ func TestDispatchSyncWorker_EnqueuesPerBatch(t *testing.T) {
 		},
 	}
 	w := &tasks.DispatchSyncWorker{
-		DB:          testDB,
-		Adapter:     adapterFactory(adapter),
-		RiverClient: rc,
+		DB:      testDB,
+		Adapter: adapterFactory(adapter),
+		LC:      newTestLC(t),
 	}
 
-	job := &river.Job[tasks.DispatchSyncArgs]{Args: tasks.DispatchSyncArgs{
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{
 		JobID: jobID, UserID: userID, Storefront: "steam",
-	}}
+	})
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("Work: %v", err)
 	}
@@ -1622,10 +1562,8 @@ func TestUserGameWorker_CreatesUserGameAndSyncChange(t *testing.T) {
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	job := &river.Job[tasks.UserGameArgs]{
-		Args: tasks.UserGameArgs{JobItemID: itemID},
-	}
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	job := writeJob(t, tasks.UserGameArgs{JobItemID: itemID})
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1715,8 +1653,8 @@ func TestUserGameWorker_OwnershipRankGuard(t *testing.T) {
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -1794,8 +1732,8 @@ func TestUserGameWorker_StatusChangedSyncChange(t *testing.T) {
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -1854,10 +1792,8 @@ func TestDispatchSync_CredentialsError_SetsFlag(t *testing.T) {
 				uuid.NewString(), userID,
 			).Exec(ctx)
 
-			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: tc.factory(), RiverClient: nil}
-			job := &river.Job[tasks.DispatchSyncArgs]{
-				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-			}
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: tc.factory(), LC: newTestLC(t)}
+			job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 			if err := w.Work(ctx, job); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -1915,10 +1851,8 @@ func TestDispatchSync_AmazonGames_FailureChangesNoGames(t *testing.T) {
 			insertTestExternalGame(t, userID, "amazon-games", "amzn1.adg.product.1", "Owned Game", "pc-windows")
 
 			adapter := amazongames.NewAdapter(amazonLibraryStub{err: tc.err}, json.RawMessage(`{}`), nil)
-			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), RiverClient: nil}
-			if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "amazon-games"},
-			}); err != nil {
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), LC: newTestLC(t)}
+			if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "amazon-games"})); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
@@ -1963,11 +1897,8 @@ func TestDispatchSync_Success_ClearsCredentialsFlag(t *testing.T) {
 	).Exec(ctx)
 
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{}}
-	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1982,64 +1913,85 @@ func TestDispatchSync_Success_ClearsCredentialsFlag(t *testing.T) {
 	}
 }
 
-func TestSyncCheckJobCompletion_FailedItemsYieldsCompleted(t *testing.T) {
-	truncateAllTables(t)
+// syncCompletionFixture inserts an active sync Job for storefront with its
+// dispatch done and one pending item per status in pending (owned by a fake
+// River job) plus the given finished or in-review items. It returns the Job id
+// and the pending items' ids.
+func syncCompletionFixture(t *testing.T, storefront string, dispatchComplete bool, pending int, others ...string) (userID, jobID string, pendingIDs []string) {
+	t.Helper()
 	ctx := context.Background()
-
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
+	userID, jobID = uuid.NewString(), uuid.NewString()
 	insertTestUser(t, testDB, userID)
-	insertTestJob(t, testDB, jobID, userID, 1)
-
-	// Insert one failed item.
-	if _, err := testDB.NewRaw(`
-		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'failed', '{}', '[]', now())`,
-		jobID, userID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert job_item: %v", err)
-	}
-
-	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
-
-	var status string
-	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
-		t.Fatalf("query job: %v", err)
-	}
-	if status != "completed" {
-		t.Errorf("expected status=completed, got %q", status)
-	}
-}
-
-// TestSyncCheckJobCompletion_SyncDiffNamesStorefront verifies the emitted
-// sync.diff payload carries the storefront's display name (looked up from the
-// storefronts table by source slug), so the notification can name its source.
-func TestSyncCheckJobCompletion_SyncDiffNamesStorefront(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	// playstation-store → "PlayStation Store" exercises a multi-word display
-	// name that a naive slug-titlecase would mangle.
 	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
-		 VALUES (?, ?, 'sync', 'playstation-store', 'processing', 'low', 1)`,
-		jobID, userID,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, dispatch_complete, started_at)
+		 VALUES (?, ?, 'sync', ?, 'processing', 'low', 1, ?, now())`,
+		jobID, userID, storefront, dispatchComplete,
 	); err != nil {
 		t.Fatalf("insert job: %v", err)
 	}
-
-	// One resolved item so the job finalizes, plus a changes row so emitSyncDiff fires.
-	if _, err := testDB.NewRaw(`
-		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Bloodborne', '{}', 'completed', '{}', '[]', now())`,
-		jobID, userID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert job_item: %v", err)
+	insert := func(status string, owner any) string {
+		id := uuid.NewString()
+		if _, err := testDB.ExecContext(ctx,
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, river_job_id, created_at)
+			 VALUES (?, ?, ?, ?, 'Game', '{}', ?, '{}', '[]', ?, now())`,
+			id, jobID, userID, id, status, owner,
+		); err != nil {
+			t.Fatalf("insert item: %v", err)
+		}
+		return id
 	}
+	for range pending {
+		pendingIDs = append(pendingIDs, insert("pending", nextFakeOwner()))
+	}
+	for _, st := range others {
+		insert(st, nil)
+	}
+	return userID, jobID, pendingIDs
+}
+
+func finishSyncItem(t *testing.T, lc *joblifecycle.Module, itemID, status string) {
+	t.Helper()
+	if err := lc.FinishItem(context.Background(), itemID, itemOwner(t, itemID), joblifecycle.ItemResult{Status: status, Message: "boom"}); err != nil {
+		t.Fatalf("finish item: %v", err)
+	}
+}
+
+// The last item finishing completes the sync, even when items failed: a
+// failed item is surfaced through the completed-with-errors notification,
+// not the Job status.
+func TestSyncCompletion_FailedItemYieldsCompletedWithErrors(t *testing.T) {
+	truncateAllTables(t)
+	lc := newTestLC(t)
+	userID, jobID, items := syncCompletionFixture(t, "steam", true, 2)
+
+	finishSyncItem(t, lc, items[0], models.JobItemStatusFailed)
+	if got := jobStatus(t, jobID); got != models.JobStatusProcessing {
+		t.Fatalf("job with a pending item left: want processing, got %q", got)
+	}
+	finishSyncItem(t, lc, items[1], models.JobItemStatusCompleted)
+	if got := jobStatus(t, jobID); got != models.JobStatusCompleted {
+		t.Fatalf("job: want completed, got %q", got)
+	}
+	runSyncEffects(t, lc)
+	if n := eventCount(t, jobID+":"+notify.TypeSyncCompletedWithErrors); n != 1 {
+		t.Errorf("sync.completed_with_errors events: want 1, got %d", n)
+	}
+	if n := eventCount(t, jobID+":"+notify.TypeSyncCompleted); n != 0 {
+		t.Errorf("sync.completed must not be sent with a failed item, got %d", n)
+	}
+	_ = userID
+}
+
+// The sync.diff payload carries the storefront's display name (looked up from
+// the storefronts table by source slug), so the notification can name its
+// source.
+func TestSyncCompletion_SyncDiffNamesStorefront(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	lc := newTestLC(t)
+	// playstation-store → "PlayStation Store" exercises a multi-word display
+	// name that a naive slug-titlecase would mangle.
+	userID, jobID, items := syncCompletionFixture(t, "playstation-store", true, 1)
 	if _, err := testDB.NewRaw(`
 		INSERT INTO changes (id, job_id, user_id, change_type, title, created_at)
 		VALUES (gen_random_uuid(), ?, ?, 'added', 'Bloodborne', now())`,
@@ -2048,7 +2000,8 @@ func TestSyncCheckJobCompletion_SyncDiffNamesStorefront(t *testing.T) {
 		t.Fatalf("insert change: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
+	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	runSyncEffects(t, lc)
 
 	var payload []byte
 	if err := testDB.NewRaw(
@@ -2066,103 +2019,36 @@ func TestSyncCheckJobCompletion_SyncDiffNamesStorefront(t *testing.T) {
 	}
 }
 
-// TestSyncCheckJobCompletion_DispatchIncomplete_StaysProcessing is the #642
-// regression guard: while DispatchSyncWorker is still streaming batches
-// (dispatch_complete=false), a transiently-empty active set must NOT finalize
-// the job, or items from later batches get orphaned under a terminal job.
-func TestSyncCheckJobCompletion_DispatchIncomplete_StaysProcessing(t *testing.T) {
+// #642: while the dispatch is still adding batches, the last item finishing
+// must not complete the sync, or later batches' items would be orphaned under
+// a finished Job.
+func TestSyncCompletion_DispatchNotDone_StaysProcessing(t *testing.T) {
 	truncateAllTables(t)
-	ctx := context.Background()
+	lc := newTestLC(t)
+	_, jobID, items := syncCompletionFixture(t, "steam", false, 1)
 
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	insertTestJob(t, testDB, jobID, userID, 1)
-
-	// Dispatch is still streaming batches.
-	if _, err := testDB.NewRaw(`UPDATE jobs SET dispatch_complete = false WHERE id = ?`, jobID).Exec(ctx); err != nil {
-		t.Fatalf("set dispatch_complete=false: %v", err)
-	}
-
-	// One fully-resolved item, none pending_review — the empty-active set that
-	// previously tripped premature completion.
-	if _, err := testDB.NewRaw(`
-		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'completed', '{}', '[]', now())`,
-		jobID, userID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert job_item: %v", err)
-	}
-
-	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
-
-	var status string
-	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
-		t.Fatalf("query job: %v", err)
-	}
-	if status != "processing" {
-		t.Errorf("dispatch incomplete: expected job to stay 'processing', got %q", status)
+	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	if got := jobStatus(t, jobID); got != models.JobStatusProcessing {
+		t.Errorf("dispatch not done: want processing, got %q", got)
 	}
 }
 
-// TestSyncCheckJobCompletion_DispatchComplete_Finalizes confirms the happy
-// path: once dispatch is complete and no active/pending_review items remain,
-// the job finalizes to 'completed'.
-func TestSyncCheckJobCompletion_DispatchComplete_Finalizes(t *testing.T) {
+// Items in Pending review keep the sync processing once nothing is left for a
+// worker, and the user is told once.
+func TestSyncCompletion_PendingReviewBlocksAndNotifiesOnce(t *testing.T) {
 	truncateAllTables(t)
-	ctx := context.Background()
+	lc := newTestLC(t)
+	_, jobID, items := syncCompletionFixture(t, "steam", true, 2, models.JobItemStatusPendingReview)
 
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	insertTestJob(t, testDB, jobID, userID, 1) // dispatch_complete defaults TRUE
-
-	if _, err := testDB.NewRaw(`
-		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'completed', '{}', '[]', now())`,
-		jobID, userID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert job_item: %v", err)
+	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	finishSyncItem(t, lc, items[1], models.JobItemStatusCompleted)
+	if got := jobStatus(t, jobID); got != models.JobStatusProcessing {
+		t.Errorf("pending_review present: want processing, got %q", got)
 	}
-
-	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
-
-	var status string
-	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
-		t.Fatalf("query job: %v", err)
-	}
-	if status != "completed" {
-		t.Errorf("dispatch complete, no active/review items: expected 'completed', got %q", status)
-	}
-}
-
-// TestSyncCheckJobCompletion_PendingReviewBlocks confirms pending_review items
-// keep the job processing even when dispatch is complete (existing invariant).
-func TestSyncCheckJobCompletion_PendingReviewBlocks(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	insertTestJob(t, testDB, jobID, userID, 1) // dispatch_complete defaults TRUE
-
-	if _, err := testDB.NewRaw(`
-		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'pending_review', '{}', '[]', now())`,
-		jobID, userID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert job_item: %v", err)
-	}
-
-	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
-
-	var status string
-	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
-		t.Fatalf("query job: %v", err)
-	}
-	if status != "processing" {
-		t.Errorf("pending_review present: expected job to stay 'processing', got %q", status)
+	runSyncEffects(t, lc)
+	runSyncEffects(t, lc)
+	if n := eventCount(t, jobID+":"+notify.TypeSyncNeedsReview); n != 1 {
+		t.Errorf("sync.needs_review events: want 1, got %d", n)
 	}
 }
 
@@ -2222,8 +2108,8 @@ func TestUserGameWorker_BackfillsExternalGameID(t *testing.T) {
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2317,7 +2203,6 @@ func TestSync_IGDBMatch_PassesPlatformIDsFromExternalGame(t *testing.T) {
 		uuid.NewString(), egID,
 	).Exec(ctx)
 
-	rc := newTestRiverClient(t)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -2326,11 +2211,8 @@ func TestSync_IGDBMatch_PassesPlatformIDsFromExternalGame(t *testing.T) {
 	)
 
 	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
-	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
-	job := &river.Job[tasks.IGDBMatchArgs]{
-		JobRow: &rivertype.JobRow{MaxAttempts: 5},
-		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
-	}
+	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: igdbClient, LC: newTestLC(t)}
+	job := matchJob(t, tasks.IGDBMatchArgs{JobItemID: itemID})
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2408,8 +2290,8 @@ func TestUserGameWorker_AlreadyInLibrary_WritesSyncChange(t *testing.T) {
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2462,8 +2344,8 @@ func TestUserGameWorker_WorkerAutoSkip_WritesSyncChange(t *testing.T) {
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2536,8 +2418,8 @@ func TestUserGameWorker_EnqueuesImmediateMetadataFetch(t *testing.T) {
 	igdbClient := newTestIGDBClient(t, srv)
 	rc := newTestRiverClient(t)
 
-	w := &tasks.UserGameWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdbClient, RiverClient: rc}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2562,8 +2444,8 @@ func TestUserGameWorker_SkipsMetadataFetchWhenDescriptionPresent(t *testing.T) {
 	igdbClient := newTestIGDBClient(t, srv)
 	rc := newTestRiverClient(t)
 
-	w := &tasks.UserGameWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdbClient, RiverClient: rc}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2582,8 +2464,8 @@ func TestUserGameWorker_SkipsMetadataFetchWhenIGDBNotConfigured(t *testing.T) {
 	unconfigured := igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
 	rc := newTestRiverClient(t)
 
-	w := &tasks.UserGameWorker{DB: testDB, IGDBClient: unconfigured, RiverClient: rc}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t), IGDBClient: unconfigured, RiverClient: rc}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2643,11 +2525,8 @@ func TestDispatchSync_FlagFalseWhileStreaming(t *testing.T) {
 			_ = testDB.NewRaw(`SELECT dispatch_complete FROM jobs WHERE id = ?`, jobID).Scan(ctx, &midStreamFlag)
 		},
 	}
-	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -2685,12 +2564,9 @@ func TestDispatchSync_EmptyLibrary_Finalizes(t *testing.T) {
 		uuid.NewString(), userID,
 	).Exec(ctx)
 
-	rc := newTestRiverClient(t)
 	// Adapter yields no games at all.
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -2741,8 +2617,8 @@ func TestUserGameWorker_PlayStatus_NewGame_WithHours_SetsInProgress(t *testing.T
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2793,8 +2669,8 @@ func TestUserGameWorker_PlayStatus_NewGame_NoHours_SetsNotStarted(t *testing.T) 
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2850,8 +2726,8 @@ func TestUserGameWorker_PlayStatus_ExistingNotStarted_WithHours_PromotesToInProg
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2908,8 +2784,8 @@ func TestUserGameWorker_PlayStatus_ExistingUserSet_NeverOverwritten(t *testing.T
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2971,8 +2847,8 @@ func TestUserGameWorker_PromotesWishlistedGame(t *testing.T) {
 		itemID, jobID, userID, egID,
 	)
 
-	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t)}
+	if err := w.Work(ctx, writeJob(t, tasks.UserGameArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -2999,118 +2875,25 @@ func TestUserGameWorker_PromotesWishlistedGame(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// SyncCheckJobCompletion — notification emission (Task 14)
+// Finishing effects — notifications
 // ---------------------------------------------------------------------------
 
-func TestSyncCheckJobCompletionEmitsCompleted(t *testing.T) {
+func TestSyncCompletion_EmitsCompleted(t *testing.T) {
 	truncateAllTables(t)
-	ctx := context.Background()
 	notify.SetRiverClient(nil)
+	lc := newTestLC(t)
+	_, jobID, items := syncCompletionFixture(t, "steam", true, 1)
 
-	userID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, dispatch_complete, created_at)
-		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', true, now())`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job: %v", err)
-	}
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, 'k', 't', '{}'::jsonb, 'completed', '{}'::jsonb, '[]'::jsonb, now())`,
-		uuid.NewString(), jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job_item: %v", err)
-	}
-
-	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
-
-	var typ string
-	if err := testDB.NewRaw(`SELECT type FROM events WHERE dedup_key = ?`, jobID+":sync.completed").Scan(ctx, &typ); err != nil {
-		t.Fatalf("expected sync.completed event: %v", err)
-	}
-	if typ != "sync.completed" {
-		t.Fatalf("type = %q, want sync.completed", typ)
-	}
-}
-
-func TestSyncCheckJobCompletionEmitsCompletedWithErrors(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	notify.SetRiverClient(nil)
-
-	userID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, dispatch_complete, created_at)
-		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', true, now())`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job: %v", err)
-	}
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, 'k', 't', '{}'::jsonb, 'failed', '{}'::jsonb, '[]'::jsonb, now())`,
-		uuid.NewString(), jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job_item: %v", err)
-	}
-
-	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
-
-	var count int
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.completed_with_errors").Scan(ctx, &count); err != nil {
+	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	runSyncEffects(t, lc)
+	// Run again (a River retry): the dedup key keeps it to one event.
+	if _, err := testDB.ExecContext(context.Background(), `UPDATE river_job SET state = 'available', finalized_at = NULL WHERE kind = ?`, joblifecycle.EffectsArgs{}.Kind()); err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Fatalf("expected sync.completed_with_errors, got %d", count)
-	}
-}
+	runSyncEffects(t, lc)
 
-func TestSyncCheckJobCompletionEmitsNeedsReview(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	notify.SetRiverClient(nil)
-
-	userID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, dispatch_complete, created_at)
-		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', true, now())`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job: %v", err)
-	}
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, 'k', 't', '{}'::jsonb, 'pending_review', '{}'::jsonb, '[]'::jsonb, now())`,
-		uuid.NewString(), jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job_item: %v", err)
-	}
-
-	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
-
-	// sync.needs_review event must have been emitted.
-	var nrCount int
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.needs_review").Scan(ctx, &nrCount); err != nil {
-		t.Fatalf("count needs_review events: %v", err)
-	}
-	if nrCount != 1 {
-		t.Fatalf("expected 1 sync.needs_review event, got %d", nrCount)
-	}
-
-	// sync.completed must NOT have been emitted while pending_review items exist.
-	var completedCount int
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.completed").Scan(ctx, &completedCount); err != nil {
-		t.Fatalf("count completed events: %v", err)
-	}
-	if completedCount != 0 {
-		t.Fatalf("expected no sync.completed event while pending_review items exist, got %d", completedCount)
+	if n := eventCount(t, jobID+":sync.completed"); n != 1 {
+		t.Fatalf("sync.completed events: want 1, got %d", n)
 	}
 }
 
@@ -3138,13 +2921,12 @@ func TestFailSyncJobEmitsFailed(t *testing.T) {
 
 	// Drive the real worker with a fetch error — this triggers FailSyncJob internally.
 	w := &tasks.DispatchSyncWorker{
-		DB:          testDB,
-		Adapter:     fetchErrFactory(errors.New("network error")),
-		RiverClient: nil,
+		DB:      testDB,
+		Adapter: fetchErrFactory(errors.New("network error")),
+		LC:      newTestLC(t),
 	}
-	_ = w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	})
+	_ = w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"}))
+	runSyncEffects(t, w.LC)
 
 	// sync.failed event must exist with the correct dedup_key.
 	var count int
@@ -3188,13 +2970,12 @@ func TestFailSyncJobScrubsCredentialURLQuery(t *testing.T) {
 		Err: errors.New("connection refused"),
 	})
 	w := &tasks.DispatchSyncWorker{
-		DB:          testDB,
-		Adapter:     fetchErrFactory(fetchErr),
-		RiverClient: nil,
+		DB:      testDB,
+		Adapter: fetchErrFactory(fetchErr),
+		LC:      newTestLC(t),
 	}
-	_ = w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	})
+	_ = w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"}))
+	runSyncEffects(t, w.LC)
 
 	var errMsg string
 	if err := testDB.NewRaw(`SELECT error_message FROM jobs WHERE id = ?`, jobID).Scan(ctx, &errMsg); err != nil {
@@ -3221,23 +3002,8 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 	ctx := context.Background()
 	notify.SetRiverClient(nil)
 
-	userID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, dispatch_complete, created_at)
-		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', true, now())`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job: %v", err)
-	}
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, 'k', 't', '{}'::jsonb, 'completed', '{}'::jsonb, '[]'::jsonb, now())`,
-		uuid.NewString(), jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job_item: %v", err)
-	}
+	lc := newTestLC(t)
+	userID, jobID, items := syncCompletionFixture(t, "steam", true, 1)
 
 	// Insert two changes rows: one added (with platform rows), one removed.
 	// The added game has explicit platform rows so we can assert they appear in the payload.
@@ -3274,7 +3040,8 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 		t.Fatalf("insert change removed: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
+	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	runSyncEffects(t, lc)
 
 	// sync.diff event must have been emitted.
 	var diffCount int
@@ -3309,26 +3076,12 @@ func TestNoSyncDiffWhenNoChanges(t *testing.T) {
 	ctx := context.Background()
 	notify.SetRiverClient(nil)
 
-	userID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, dispatch_complete, created_at)
-		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', true, now())`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job: %v", err)
-	}
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, 'k', 't', '{}'::jsonb, 'completed', '{}'::jsonb, '[]'::jsonb, now())`,
-		uuid.NewString(), jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job_item: %v", err)
-	}
+	lc := newTestLC(t)
+	_, jobID, items := syncCompletionFixture(t, "steam", true, 1)
 	// No changes rows inserted.
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
+	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	runSyncEffects(t, lc)
 
 	// No sync.diff event should have been emitted.
 	var diffCount int
@@ -3394,12 +3147,11 @@ func TestDispatchSync_CredentialsError_Transition_Subscribed_EmitsAuthExpired(t 
 	insertCredErrJobAndConfig(t, userID, jobID, false)
 	seedSubscription(t, userID, "sync.auth_expired")
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}); err != nil {
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), LC: newTestLC(t)}
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	runSyncEffects(t, w.LC)
 
 	if got := eventCount(t, jobID+":sync.auth_expired"); got != 1 {
 		t.Errorf("expected 1 sync.auth_expired event, got %d", got)
@@ -3420,12 +3172,11 @@ func TestDispatchSync_CredentialsError_Transition_Unsubscribed_EmitsSyncFailed(t
 	jobID := uuid.NewString()
 	insertCredErrJobAndConfig(t, userID, jobID, false)
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}); err != nil {
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), LC: newTestLC(t)}
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	runSyncEffects(t, w.LC)
 
 	if got := eventCount(t, jobID+":sync.failed"); got != 1 {
 		t.Errorf("expected 1 fallback sync.failed event, got %d", got)
@@ -3447,12 +3198,11 @@ func TestDispatchSync_CredentialsError_Repeat_EmitsNothing(t *testing.T) {
 	insertCredErrJobAndConfig(t, userID, jobID, true)
 	seedSubscription(t, userID, "sync.auth_expired")
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}); err != nil {
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), LC: newTestLC(t)}
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	runSyncEffects(t, w.LC)
 
 	if got := eventCount(t, jobID+":sync.auth_expired"); got != 0 {
 		t.Errorf("expected 0 sync.auth_expired events on repeat, got %d", got)
@@ -3490,10 +3240,8 @@ func TestUpsertExternalGame_PersistsSourceMetadata(t *testing.T) {
 			SourceMetadata:  map[string]string{"namespace": "ns-xyz"},
 		}},
 	}}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"},
-	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), LC: newTestLC(t)}
+	job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"})
 
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -3526,7 +3274,9 @@ func TestUpsertPlatforms_WritesAchievements(t *testing.T) {
 	).Exec(ctx)
 
 	four, three := 4, 3
-	tasks.UpsertPlatformsForTest(ctx, testDB, egID, []string{"pc-windows", "pc-linux"}, 5.0, &three, &four)
+	if err := tasks.UpsertPlatformsForTest(ctx, testDB, egID, []string{"pc-windows", "pc-linux"}, 5.0, &three, &four); err != nil {
+		t.Fatal(err)
+	}
 
 	// Index-0 platform (pc-windows) must receive the achievement counts.
 	var unlocked, total *int

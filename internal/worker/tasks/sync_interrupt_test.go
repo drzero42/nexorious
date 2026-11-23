@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -60,10 +60,18 @@ func seedGOGSyncJob(t *testing.T, status string) (userID, jobID string) {
 
 func runDispatch(t *testing.T, ctx context.Context, w *tasks.DispatchSyncWorker, jobID, userID string) {
 	t.Helper()
-	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
-	}); err != nil {
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"})); err != nil {
 		t.Fatalf("Work: %v", err)
+	}
+}
+
+// runInterrupted runs a dispatch whose ctx is cancelled on the way: the
+// worker records nothing and returns the cancellation, for River to run the
+// same River job again.
+func runInterrupted(t *testing.T, ctx context.Context, w *tasks.DispatchSyncWorker, jobID, userID string) {
+	t.Helper()
+	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"})); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Work: want context.Canceled, got %v", err)
 	}
 }
 
@@ -101,8 +109,8 @@ func TestDispatchSync_InterruptedAfterFetch_NotMarkedComplete(t *testing.T) {
 		batches:    [][]tasks.ExternalGameEntry{{{ExternalID: "1", Title: "Game One", Platforms: []string{"pc-windows"}}}},
 		afterFetch: cancel,
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), RiverClient: newTestRiverClient(t)}
-	runDispatch(t, ctx, w, jobID, userID)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), LC: newTestLC(t)}
+	runInterrupted(t, ctx, w, jobID, userID)
 
 	status, dispatchComplete := loadJobState(t, jobID)
 	if status != "processing" {
@@ -137,8 +145,8 @@ func TestDispatchSync_InterruptedFetchError_NotFailed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	adapter := &hookAdapter{afterFetch: cancel, err: context.Canceled}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter)}
-	runDispatch(t, ctx, w, jobID, userID)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), LC: newTestLC(t)}
+	runInterrupted(t, ctx, w, jobID, userID)
 
 	if status, dispatchComplete := loadJobState(t, jobID); status != "processing" || dispatchComplete {
 		t.Errorf("want processing with dispatch_complete=false, got %q / %v", status, dispatchComplete)
@@ -163,14 +171,14 @@ func TestDispatchSync_RerunAfterInterrupt_NoDuplicates(t *testing.T) {
 		{ExternalID: "1", Title: "Game One", Platforms: []string{"pc-windows"}},
 		{ExternalID: "2", Title: "Skipped Game", Platforms: []string{"pc-windows"}},
 	}}
-	rc := newTestRiverClient(t)
+	lc := newTestLC(t)
 
 	ctx, cancel := context.WithCancel(bg)
 	defer cancel()
-	first := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&hookAdapter{batches: batches, afterFetch: cancel}), RiverClient: rc}
-	runDispatch(t, ctx, first, jobID, userID)
+	first := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&hookAdapter{batches: batches, afterFetch: cancel}), LC: lc}
+	runInterrupted(t, ctx, first, jobID, userID)
 
-	second := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&hookAdapter{batches: batches}), RiverClient: rc}
+	second := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&hookAdapter{batches: batches}), LC: newTestLC(t)}
 	runDispatch(t, bg, second, jobID, userID)
 
 	if n := countRows(t, `SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID); n != 1 {
@@ -183,11 +191,18 @@ func TestDispatchSync_RerunAfterInterrupt_NoDuplicates(t *testing.T) {
 		t.Fatalf("after re-run: want processing with dispatch_complete=true, got %q / %v", status, dispatchComplete)
 	}
 
+	if n := countRows(t, `SELECT COUNT(*) FROM river_job WHERE kind = 'igdb_match'`); n != 1 {
+		t.Errorf("igdb_match River jobs: want 1 (the re-run gives the item no second one), got %d", n)
+	}
+
 	// Settle the one item; the Job then completes.
-	if _, err := testDB.NewRaw(`UPDATE job_items SET status = 'completed' WHERE job_id = ?`, jobID).Exec(bg); err != nil {
+	var itemID string
+	if err := testDB.NewRaw(`SELECT id FROM job_items WHERE job_id = ?`, jobID).Scan(bg, &itemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := lc.FinishItem(bg, itemID, itemOwner(t, itemID), joblifecycle.ItemResult{Status: models.JobItemStatusCompleted}); err != nil {
 		t.Fatalf("settle item: %v", err)
 	}
-	tasks.SyncCheckJobCompletion(bg, testDB, nil, jobID)
 	if status, _ := loadJobState(t, jobID); status != "completed" {
 		t.Errorf("job status: want completed, got %q", status)
 	}
@@ -205,7 +220,7 @@ func TestDispatchSync_CancelledJob_StaysCancelledAndFetchesNothing(t *testing.T)
 		built++
 		return adapter, nil
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: newTestRiverClient(t)}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, LC: newTestLC(t)}
 	runDispatch(t, context.Background(), w, jobID, userID)
 
 	if status, _ := loadJobState(t, jobID); status != models.JobStatusCancelled {
@@ -225,18 +240,18 @@ func TestDispatchSync_FailsAfterCancel_StaysCancelledNoNotification(t *testing.T
 	truncateAllTables(t)
 	userID, jobID := seedGOGSyncJob(t, "pending")
 
+	lc := newTestLC(t)
 	adapter := &hookAdapter{
 		afterFetch: func() {
-			if _, err := testDB.NewRaw(
-				`UPDATE jobs SET status = 'cancelled', completed_at = now() WHERE id = ?`, jobID,
-			).Exec(context.Background()); err != nil {
+			if err := lc.Cancel(context.Background(), jobID); err != nil {
 				t.Errorf("cancel job: %v", err)
 			}
 		},
 		err: errors.New("upstream exploded"),
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter)}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), LC: lc}
 	runDispatch(t, context.Background(), w, jobID, userID)
+	runSyncEffects(t, lc)
 
 	if status, _ := loadJobState(t, jobID); status != models.JobStatusCancelled {
 		t.Errorf("job status: want cancelled, got %q", status)
