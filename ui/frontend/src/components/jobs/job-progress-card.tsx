@@ -69,13 +69,13 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
             <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-5">
               <div>
                 <div className="text-muted-foreground">Matched</div>
-                <div className="text-lg font-semibold text-green-600 dark:text-green-400">
+                <div className="text-lg font-semibold text-green-700 dark:text-green-400">
                   {job.progress.completed}
                 </div>
               </div>
               <div>
                 <div className="text-muted-foreground">Needs Review</div>
-                <div className="text-lg font-semibold text-yellow-600 dark:text-yellow-400">
+                <div className="text-lg font-semibold text-yellow-700 dark:text-yellow-400">
                   {job.progress.pendingReview}
                 </div>
               </div>

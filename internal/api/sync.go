@@ -625,20 +625,34 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 	}
 	ctx := context.Background()
 
+	// A failed read answers 500, never an idle store: the store page treats a
+	// cleared active job as a finished sync.
+	statusReadFailed := func(what string, err error) error {
+		slog.ErrorContext(c.Request().Context(), "sync: status read failed", "what", what, logging.KeyErr, err, logging.KeySource, sf, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read sync status")
+	}
+
 	var activeJobID *string
 	var jobID string
 	err := h.db.NewRaw(
 		`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
 		userID, sf,
 	).Scan(ctx, &jobID)
-	if err == nil {
+	switch {
+	case err == nil:
 		activeJobID = &jobID
+	case !errors.Is(err, sql.ErrNoRows):
+		return statusReadFailed("active job", err)
 	}
 
 	var lastSyncedAt *time.Time
 	var cfg models.UserSyncConfig
-	if err := h.db.NewSelect().Model(&cfg).Where("user_id = ? AND storefront = ?", userID, sf).Scan(ctx); err == nil {
+	err = h.db.NewSelect().Model(&cfg).Where("user_id = ? AND storefront = ?", userID, sf).Scan(ctx)
+	switch {
+	case err == nil:
 		lastSyncedAt = cfg.LastSyncedAt
+	case !errors.Is(err, sql.ErrNoRows):
+		return statusReadFailed("sync config", err)
 	}
 
 	var externalGameCount int
@@ -647,7 +661,7 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 		ColumnExpr("COUNT(*)").
 		Where("user_id = ? AND storefront = ? AND is_available = true", userID, sf).
 		Scan(ctx, &externalGameCount); err != nil {
-		externalGameCount = 0
+		return statusReadFailed("external game count", err)
 	}
 
 	return c.JSON(http.StatusOK, syncStatusResponse{

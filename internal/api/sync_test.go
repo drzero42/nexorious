@@ -259,6 +259,29 @@ func TestSyncStatus_ReflectsActiveJob(t *testing.T) {
 	}
 }
 
+// A status read that fails must not answer as an idle store: the store page
+// would then re-enable Sync Now and treat a running sync as ended.
+func TestSyncStatus_DatabaseErrorIs500(t *testing.T) {
+	for _, table := range []string{"jobs", "user_sync_configs", "external_games"} {
+		t.Run(table, func(t *testing.T) {
+			truncateAllTables(t)
+			e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+			_, token := setupTagUser(t, testDB, e, "stat-err-"+table)
+			ctx := context.Background()
+			if _, err := testDB.ExecContext(ctx, "ALTER TABLE "+table+" RENAME TO "+table+"_r25"); err != nil {
+				t.Fatal(err)
+			}
+			restore := func() { _, _ = testDB.ExecContext(ctx, "ALTER TABLE IF EXISTS "+table+"_r25 RENAME TO "+table) }
+			t.Cleanup(restore)
+			rec := getAuth(t, e, "/api/sync/steam/status", token)
+			restore()
+			if rec.Code != http.StatusInternalServerError {
+				t.Errorf("status with %s unreadable: got %d %s, want 500", table, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestSteamConnect_BadSteamID(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})

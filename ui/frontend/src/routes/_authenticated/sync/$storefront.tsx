@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   syncKeys,
   useSyncConfig,
-  useSyncStatus,
+  useSyncStatusWithConnections,
   useUpdateSyncConfig,
   useTriggerSync,
   useResetSyncData,
@@ -40,7 +40,7 @@ import {
 } from '@/types';
 import type { SyncConfigUpdateData } from '@/types';
 import { JobProgressCard } from '@/components/jobs';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -49,7 +49,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
+import { badgeVariants } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -71,6 +72,51 @@ export const Route = createFileRoute('/_authenticated/sync/$storefront')({
   head: () => ({ meta: [{ title: 'Sync | Nexorious' }] }),
   component: SyncDetailPage,
 });
+
+/**
+ * The status label in a store page's header, which also opens and closes the
+ * connection card below it.
+ */
+export function ConnectionToggle({
+  credentialsError,
+  isConfigured,
+  open,
+  onToggle,
+}: {
+  credentialsError: boolean;
+  isConfigured: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const label = credentialsError
+    ? 'Credentials Error'
+    : isConfigured
+      ? 'Connected'
+      : 'Not Configured';
+  // A native button styled as the badge (a div badge inside a button is not
+  // valid content for it).
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onToggle}
+      className={cn(
+        badgeVariants({ variant: credentialsError ? 'destructive' : 'outline' }),
+        'cursor-pointer',
+        !credentialsError &&
+          (isConfigured
+            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+            : 'bg-muted text-muted-foreground'),
+      )}
+    >
+      {label}
+      <ChevronDown
+        aria-hidden="true"
+        className={`ml-1 h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`}
+      />
+    </button>
+  );
+}
 
 function SyncDetailPageSkeleton() {
   return (
@@ -131,7 +177,7 @@ function SyncDetailPage() {
 
   // Fetch sync config and status
   const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(storefront);
-  const { data: status, isLoading: statusLoading } = useSyncStatus(storefront);
+  const { data: status, isLoading: statusLoading } = useSyncStatusWithConnections(storefront);
 
   // Fetch PSN-specific status
   const { data: playstationStoreStatus } = usePlaystationStoreStatus();
@@ -313,7 +359,7 @@ function SyncDetailPage() {
   return (
     <div className="space-y-6">
       {/* Navigation Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <nav className="flex items-center text-sm text-muted-foreground">
           <Link to="/dashboard" className="hover:text-foreground">
             Dashboard
@@ -326,7 +372,7 @@ function SyncDetailPage() {
           <span className="text-foreground">{displayName}</span>
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           {config.isConfigured && (
             <AlertDialog
               open={resetDialogOpen}
@@ -383,8 +429,8 @@ function SyncDetailPage() {
       {/* Platform Header */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-muted">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-muted">
               {storefrontInfo?.icon_url && (
                 <img
                   src={`${envConfig.staticUrl}${storefrontInfo.icon_url}`}
@@ -394,55 +440,29 @@ function SyncDetailPage() {
                 />
               )}
             </div>
-            <div>
-              <CardTitle className="text-2xl">
-                {displayName}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <h1 className="text-2xl font-semibold leading-none tracking-tight">
+                  {displayName}
+                </h1>
                 {(status?.externalGameCount ?? 0) > 0 && (
-                  <span className="ml-2 text-base font-normal text-muted-foreground">
+                  <span className="whitespace-nowrap text-base font-normal text-muted-foreground">
                     {status!.externalGameCount} games
                   </span>
                 )}
-              </CardTitle>
+              </div>
               <CardDescription className="flex items-center gap-2 mt-1">
                 <Clock className="h-4 w-4" />
                 Last synced: {formatRelativeTime(config.lastSyncedAt, 'Never')}
               </CardDescription>
             </div>
-            <div className="ml-auto flex flex-col items-end gap-2">
-              <Badge
-                variant={credentialsError ? 'destructive' : 'outline'}
-                className={
-                  credentialsError
-                    ? 'cursor-pointer'
-                    : config.isConfigured
-                      ? 'cursor-pointer bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                      : 'cursor-pointer bg-muted text-muted-foreground'
-                }
-                onClick={() => setConnectionSectionOpen((o) => !o)}
-              >
-                {credentialsError ? (
-                  <>
-                    Credentials Error
-                    <ChevronDown
-                      className={`ml-1 h-3 w-3 transition-transform ${connectionSectionOpen ? 'rotate-180' : ''}`}
-                    />
-                  </>
-                ) : config.isConfigured ? (
-                  <>
-                    Connected
-                    <ChevronDown
-                      className={`ml-1 h-3 w-3 transition-transform ${connectionSectionOpen ? 'rotate-180' : ''}`}
-                    />
-                  </>
-                ) : (
-                  <>
-                    Not Configured
-                    <ChevronDown
-                      className={`ml-1 h-3 w-3 transition-transform ${connectionSectionOpen ? 'rotate-180' : ''}`}
-                    />
-                  </>
-                )}
-              </Badge>
+            <div className="ml-auto flex shrink-0 flex-col items-end gap-2">
+              <ConnectionToggle
+                credentialsError={credentialsError}
+                isConfigured={config.isConfigured}
+                open={connectionSectionOpen}
+                onToggle={() => setConnectionSectionOpen((o) => !o)}
+              />
               {config.isConfigured && (
                 <Select
                   value={effectiveFrequency}

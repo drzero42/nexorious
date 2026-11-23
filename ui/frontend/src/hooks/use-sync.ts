@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import * as syncApi from '@/api/sync';
@@ -68,6 +69,54 @@ export function useSyncStatus(platform: SyncStorefront) {
       return data?.isSyncing ? 5000 : 30000;
     },
   });
+}
+
+/**
+ * Each store page's own connection-status query, refetched when its sync ends.
+ */
+const connectionStatusKeys: Partial<Record<SyncStorefront, readonly unknown[]>> = {
+  [SyncStorefront.STEAM]: syncKeys.steamConnection(),
+  [SyncStorefront.EPIC_GAMES_STORE]: syncKeys.epicGamesStoreConnection(),
+  [SyncStorefront.GOG]: syncKeys.gogConnection(),
+  [SyncStorefront.PLAYSTATION_STORE]: syncKeys.playstationStoreStatus(),
+  [SyncStorefront.HUMBLE]: syncKeys.humbleStatus(),
+};
+
+/**
+ * Whether a newer poll of one store's sync status shows a sync ended, began or
+ * was replaced. isSyncing is not compared: the server derives it from
+ * activeJobId, so it cannot change without activeJobId changing too.
+ */
+function syncChangedBetween(prev: SyncStatus, next: SyncStatus): boolean {
+  return prev.activeJobId !== next.activeJobId || prev.lastSyncedAt !== next.lastSyncedAt;
+}
+
+/**
+ * useSyncStatus, plus one refetch of this store's connection status whenever a
+ * poll shows a sync ended: the job finished, was replaced by another, or the
+ * last sync time moved. A sync that ends can have flagged its store's sign-in
+ * as rejected, and a page already showing "Connected" must learn that.
+ *
+ * Steady polls refetch nothing. Limit: a sync that starts and fails entirely
+ * between two polls (30 s apart while idle) changes no field the status
+ * endpoint reports, so it is not seen here; the page shows it on next load.
+ */
+export function useSyncStatusWithConnections(platform: SyncStorefront) {
+  const queryClient = useQueryClient();
+  const query = useSyncStatus(platform);
+  const { data } = query;
+  const prevRef = useRef<{ platform: SyncStorefront; status: SyncStatus } | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const prev = prevRef.current;
+    prevRef.current = { platform, status: data };
+    if (!prev || prev.platform !== platform) return;
+    const queryKey = connectionStatusKeys[platform];
+    if (queryKey && syncChangedBetween(prev.status, data)) {
+      queryClient.invalidateQueries({ queryKey });
+    }
+  }, [data, platform, queryClient]);
+  return query;
 }
 
 /**
