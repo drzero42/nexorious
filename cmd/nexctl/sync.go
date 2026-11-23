@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -454,7 +455,14 @@ func newSyncResolveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "resolve <storefront> <ref>",
 		Short: "Manually match an external game to an IGDB id",
-		Args:  cobra.ExactArgs(2),
+		Long: `Manually match an external game to an IGDB id.
+
+Works on any game in the storefront's list: one that needs review, an
+unmatched one (for example after unskipping it), or a matched one whose
+match is wrong. The game and its other editions are written to the library
+at once. The server refuses while a sync is still working on the game;
+run it again once the sync has finished.`,
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			p, _, err := resolveProfile(cmd)
@@ -489,7 +497,7 @@ func newSyncResolveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Int("igdb-id", 0, "IGDB game id to match to (required)")
-	cmd.Flags().String("orphan-action", "", "How to handle a user-game left orphaned by the rematch (remove)")
+	cmd.Flags().String("orphan-action", "", "keep or remove: what to do with a library game the rematch would leave with no storefront link")
 	return cmd
 }
 
@@ -637,7 +645,7 @@ func newSyncReviewCmd() *cobra.Command {
 					}
 					chosen := results.Games[sel-1]
 					if rematchErr := c.RematchExternalGame(cmd.Context(), p.Key, eg.ID, chosen.IgdbID, ""); rematchErr != nil {
-						fmt.Fprintf(out, "rematch error: %v (use 'sync resolve --orphan-action' to handle this)\n", rematchErr)
+						fmt.Fprintf(out, "rematch error: %v%s\n", rematchErr, rematchErrHint(rematchErr))
 						continue
 					}
 					fmt.Fprintf(out, "resolved %s -> igdb %d\n", eg.Title, chosen.IgdbID)
@@ -658,4 +666,15 @@ func newSyncReviewCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// rematchErrHint returns the orphan-action hint for the server's orphan 409
+// only; any other rematch error (e.g. "a sync is still working on this game")
+// gets none.
+func rematchErrHint(err error) string {
+	var he *cliclient.HTTPError
+	if errors.As(err, &he) && strings.HasPrefix(he.Message, "orphan_action required") {
+		return " (use 'sync resolve --orphan-action' to handle this)"
+	}
+	return ""
 }

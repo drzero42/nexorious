@@ -28,6 +28,7 @@ export const jobsKeys = {
     [...jobsKeys.detail(jobId), 'items', { status, page }] as const,
   typeStatus: (jobType: JobType) => [...jobsKeys.all, 'typeStatus', jobType] as const,
   recents: () => [...jobsKeys.all, 'recent'] as const,
+  pendingReviewCount: () => [...jobsKeys.all, 'pendingReviewCount'] as const,
   recent: (filters: RecentJobsFilters) => [...jobsKeys.recents(), filters] as const,
 };
 
@@ -125,7 +126,7 @@ export function useJobTypeStatus(jobType: JobType, options?: { enabled?: boolean
  */
 export function usePendingReviewCount() {
   return useQuery({
-    queryKey: [...jobsKeys.all, 'pendingReviewCount'] as const,
+    queryKey: jobsKeys.pendingReviewCount(),
     queryFn: () => jobsApi.getPendingReviewCount(),
     refetchInterval: 30000,
   });

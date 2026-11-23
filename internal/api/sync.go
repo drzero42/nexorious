@@ -24,7 +24,6 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/logging"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
-	"github.com/drzero42/nexorious/internal/usergame"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -1023,65 +1022,6 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-	id := c.Param("id")
-	ctx := context.Background()
-
-	var eg models.ExternalGame
-	err := h.db.NewSelect().Model(&eg).Where("id = ? AND user_id = ?", id, userID).Scan(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusNotFound, "not found")
-	}
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to find game")
-	}
-
-	if _, err := h.db.NewRaw(
-		`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE id = ?`, id,
-	).Exec(ctx); err != nil {
-		slog.ErrorContext(c.Request().Context(), "sync: unskip game failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to unskip game")
-	}
-
-	// Cascade unskip to children (job_items unchanged; children re-process on next sync).
-	if _, err := h.db.NewRaw(
-		`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE parent_id = ?`, id,
-	).Exec(ctx); err != nil {
-		slog.ErrorContext(c.Request().Context(), "sync: unskip game: cascade children failed", logging.KeyErr, err, "parent_id", id, logging.Cat(logging.CategoryDB))
-	}
-
-	// Enqueue immediate re-processing. Failure here is non-fatal — the game
-	// will be picked up on the next full sync.
-	jobID := uuid.NewString()
-	now := time.Now().UTC()
-	_, jerr := h.db.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-		 VALUES (?, ?, 'sync', ?, 'processing', 'high', 1, ?)`,
-		jobID, userID, eg.Storefront, now,
-	).Exec(ctx)
-	if jerr == nil {
-		itemID := uuid.NewString()
-		if _, err := h.db.NewRaw(
-			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
-			itemID, jobID, userID, eg.ExternalID, eg.Title, eg.ID,
-		).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: insert job_item for unskip failed", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
-		}
-		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, itemID, tasks.IGDBMatchArgs{JobItemID: itemID}); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: enqueue igdb_match failed", logging.KeyErr, err, logging.KeyJobItemID, itemID, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
-		}
-	}
-
-	return c.NoContent(http.StatusNoContent)
-}
-
 func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -1093,75 +1033,76 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 	}
 	ctx := context.Background()
 
+	// One row per top-level game. Status comes from the newest item (see
+	// sync_view.go). The orphan fields are per family, matching rematch's
+	// orphan check: links of the game or its Child games, "other" meaning
+	// outside the family; with the family on several user games, the smallest
+	// count among them (zero: at least one would be orphaned), and the user game
+	// the game's own links are on, else the lowest id.
 	var games []externalGameResponse
 	err := h.db.NewRaw(`
-		SELECT
-			eg.id,
-			eg.storefront,
-			eg.external_id,
-			eg.title,
-			eg.resolved_igdb_id,
-			eg.is_skipped,
-			eg.is_available,
-			eg.is_subscription,
-			EXISTS (
-				SELECT 1 FROM user_game_platforms ugp WHERE ugp.external_game_id = eg.id
-			) AS has_user_game,
-			(
-				SELECT ugp.user_game_id FROM user_game_platforms ugp
-				WHERE ugp.external_game_id = eg.id LIMIT 1
-			) AS user_game_id,
-			g.title AS igdb_title,
-			COALESCE(
-				(SELECT COUNT(*)
-				 FROM user_game_platforms o
-				 WHERE o.user_game_id = (
-					 SELECT ugp.user_game_id FROM user_game_platforms ugp
-					 WHERE ugp.external_game_id = eg.id LIMIT 1
-				 )
-				 AND o.external_game_id IS DISTINCT FROM eg.id),
-				0
-			) AS user_game_other_platform_count,
-			CASE
-				WHEN EXISTS (
-					SELECT 1 FROM job_items ji
-					WHERE ji.external_game_id = eg.id AND ji.status = 'pending_review'
-				) THEN 'needs_review'
-				WHEN EXISTS (
-					SELECT 1 FROM job_items ji
-					WHERE ji.external_game_id = eg.id AND ji.status = 'failed'
-				) THEN 'failed'
-				WHEN eg.is_skipped THEN 'skipped'
-				WHEN eg.resolved_igdb_id IS NOT NULL THEN 'matched'
-				ELSE 'unmatched'
-			END AS sync_status,
-			(
-				SELECT ji.id FROM job_items ji
-				WHERE ji.external_game_id = eg.id AND ji.status = 'failed'
-				ORDER BY ji.created_at DESC
-				LIMIT 1
-			) AS failed_job_item_id,
-			COALESCE(
-				(SELECT string_agg(DISTINCT egp.platform, ',' ORDER BY egp.platform)
-				 FROM external_game_platforms egp
-				 WHERE egp.external_game_id = eg.id
-				    OR egp.external_game_id IN (
-				        SELECT id FROM external_games WHERE parent_id = eg.id
-				    )
-				),
-				''
-			) AS platforms_csv,
-			eg.store_link
-		FROM external_games eg
-		LEFT JOIN games g ON g.id = eg.resolved_igdb_id
-		WHERE eg.user_id = ? AND eg.storefront = ?
-		  AND eg.parent_id IS NULL
-		  AND NOT EXISTS (
-		      SELECT 1 FROM job_items ji
-		      WHERE ji.external_game_id = eg.id
-		        AND ji.status IN ('pending', 'processing')
-		  )
-		ORDER BY eg.title ASC`,
+		SELECT id, storefront, external_id, title, resolved_igdb_id, is_skipped, is_available, is_subscription,
+		       has_user_game, user_game_id, igdb_title, user_game_other_platform_count,
+		       CASE
+		           WHEN needs_review THEN 'needs_review'
+		           WHEN is_skipped THEN 'skipped'
+		           WHEN failed THEN 'failed'
+		           WHEN resolved_igdb_id IS NOT NULL THEN 'matched'
+		           ELSE 'unmatched'
+		       END AS sync_status,
+		       CASE WHEN failed AND NOT needs_review AND NOT is_skipped THEN newest_item_id END AS failed_job_item_id,
+		       platforms_csv, store_link
+		FROM (
+			SELECT
+				eg.id, eg.storefront, eg.external_id, eg.title, eg.resolved_igdb_id,
+				eg.is_skipped, eg.is_available, eg.is_subscription, eg.store_link,
+				g.title AS igdb_title,
+				COALESCE(fl.has_user_game, false) AS has_user_game,
+				fl.user_game_id,
+				COALESCE(fl.other_count, 0) AS user_game_other_platform_count,
+				ni.id AS newest_item_id,
+				`+syncNeedsReview+` AS needs_review,
+				`+syncFailed+` AS failed,
+				`+syncInFlight+` AS in_flight,
+				COALESCE(
+					(SELECT string_agg(DISTINCT egp.platform, ',' ORDER BY egp.platform)
+					 FROM external_game_platforms egp
+					 WHERE egp.external_game_id = eg.id
+					    OR egp.external_game_id IN (
+					        SELECT id FROM external_games WHERE parent_id = eg.id
+					    )
+					),
+					''
+				) AS platforms_csv
+			FROM external_games eg
+			LEFT JOIN games g ON g.id = eg.resolved_igdb_id
+			`+syncNewestItemJoin+`
+			LEFT JOIN LATERAL (
+				SELECT true AS has_user_game,
+				       COALESCE(MIN(ug_id) FILTER (WHERE own), MIN(ug_id)) AS user_game_id,
+				       MIN(others) AS other_count
+				FROM (
+					SELECT l.user_game_id AS ug_id,
+					       bool_or(l.external_game_id = eg.id) AS own,
+					       (SELECT COUNT(*) FROM user_game_platforms o
+					        WHERE o.user_game_id = l.user_game_id
+					          AND (o.external_game_id IS NULL
+					               OR (o.external_game_id <> eg.id
+					                   AND o.external_game_id NOT IN (
+					                       SELECT c.id FROM external_games c WHERE c.parent_id = eg.id)))
+					       ) AS others
+					FROM user_game_platforms l
+					WHERE l.external_game_id = eg.id
+					   OR l.external_game_id IN (SELECT c.id FROM external_games c WHERE c.parent_id = eg.id)
+					GROUP BY l.user_game_id
+				) per_user_game
+				HAVING COUNT(*) > 0
+			) fl ON true
+			WHERE eg.user_id = ? AND eg.storefront = ?
+			  AND eg.parent_id IS NULL
+		) v
+		WHERE NOT in_flight
+		ORDER BY title ASC`,
 		userID, sf,
 	).Scan(ctx, &games)
 	if err != nil {
@@ -1253,225 +1194,11 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-// HandleRematchExternalGame re-resolves an external game (and its child
-// external games) to a new IGDB id. All DB writes run in one transaction
-// (#1253) so a failure part-way leaves nothing half-applied; the River
-// enqueues happen after commit because River's client cannot share bun's
-// transaction (EnqueueOrFail marks an item failed, and so retryable, if that
-// last step fails).
-func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-	id := c.Param("id")
-	ctx := context.Background()
-	reqCtx := c.Request().Context()
-
-	var body struct {
-		IGDBID       int    `json:"igdb_id"`
-		OrphanAction string `json:"orphan_action"`
-	}
-	if err := c.Bind(&body); err != nil || body.IGDBID == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "igdb_id is required")
-	}
-
-	var jobItemIDs []string
-	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// Verify ownership, and lock the row so concurrent rematches of the
-		// same external game serialise.
-		var eg models.ExternalGame
-		err := tx.NewSelect().Model(&eg).
-			Where("id = ? AND user_id = ?", id, userID).
-			For("UPDATE").
-			Scan(ctx)
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "not found")
-		}
-		if err != nil {
-			slog.ErrorContext(reqCtx, "sync: rematch: load external_game failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to load external game")
-		}
-
-		if err := rematchUnlink(ctx, reqCtx, tx, userID, id, body.OrphanAction); err != nil {
-			return err
-		}
-
-		// Ensure the games row exists (FK on external_games.resolved_igdb_id).
-		if _, err := tx.NewRaw(
-			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
-			body.IGDBID, eg.Title,
-		).Exec(ctx); err != nil {
-			slog.ErrorContext(reqCtx, "sync: ensure game row failed", logging.KeyErr, err, "igdb_id", body.IGDBID, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve game")
-		}
-
-		if _, err := tx.NewRaw(
-			`UPDATE external_games SET resolved_igdb_id = ?, is_skipped = false, updated_at = now() WHERE id = ?`,
-			body.IGDBID, id,
-		).Exec(ctx); err != nil {
-			slog.ErrorContext(reqCtx, "sync: update external_game resolution failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update external game")
-		}
-
-		itemID, err := rematchPendingItem(ctx, reqCtx, tx, userID, eg.Storefront, eg.ID, eg.ExternalID, eg.Title)
-		if err != nil {
-			return err
-		}
-		jobItemIDs = append(jobItemIDs, itemID)
-
-		// Resolve children: external_games with parent_id pointing to this row.
-		var children []struct {
-			ID         string `bun:"id"`
-			ExternalID string `bun:"external_id"`
-			Title      string `bun:"title"`
-		}
-		if err := tx.NewRaw(`
-			SELECT id, external_id, title FROM external_games
-			WHERE parent_id = ? AND is_skipped = false`, id,
-		).Scan(ctx, &children); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			slog.ErrorContext(reqCtx, "sync: rematch: list child external_games failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to load child external games")
-		}
-		for _, child := range children {
-			if _, err := tx.NewRaw(
-				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
-				body.IGDBID, child.ID,
-			).Exec(ctx); err != nil {
-				slog.ErrorContext(reqCtx, "sync: rematch: resolve child external_game failed", logging.KeyErr, err, "sibling_id", child.ID, logging.Cat(logging.CategoryDB))
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to update child external game")
-			}
-			childItemID, err := rematchPendingItem(ctx, reqCtx, tx, userID, eg.Storefront, child.ID, child.ExternalID, child.Title)
-			if err != nil {
-				return err
-			}
-			jobItemIDs = append(jobItemIDs, childItemID)
-		}
-		return nil
-	})
-	if err != nil {
-		var he *echo.HTTPError
-		if errors.As(err, &he) {
-			return he
-		}
-		slog.ErrorContext(reqCtx, "sync: rematch transaction failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to rematch external game")
-	}
-
-	// Enqueue after commit. The parent comes first; its failure is the
-	// caller's failure. A child enqueue failure is logged only — the item is
-	// already marked failed by EnqueueOrFail and can be retried.
-	for i, itemID := range jobItemIDs {
-		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, itemID, tasks.UserGameArgs{JobItemID: itemID}); err != nil {
-			slog.ErrorContext(reqCtx, "sync: rematch: enqueue user_game_write failed", logging.KeyErr, err, logging.KeyJobItemID, itemID, logging.Cat(logging.CategoryDB))
-			if i == 0 {
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
-			}
-		}
-	}
-
-	return c.NoContent(http.StatusNoContent)
-}
-
-// rematchUnlink removes the external game's platform links (via usergame) and
-// applies the orphan decision when they were the user game's only links. It
-// returns a 409 *echo.HTTPError when the game would be orphaned and no
-// orphan_action was given.
-func rematchUnlink(ctx, reqCtx context.Context, tx bun.Tx, userID, externalGameID, orphanAction string) error {
-	// Find the user_game linked to this external game (any one of its platform rows is enough).
-	var ugID string
-	err := tx.NewRaw(
-		`SELECT user_game_id FROM user_game_platforms WHERE external_game_id = ? LIMIT 1`, externalGameID,
-	).Scan(ctx, &ugID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		slog.ErrorContext(reqCtx, "sync: rematch: lookup platform link failed", logging.KeyErr, err, logging.KeyExternalGameID, externalGameID, logging.Cat(logging.CategoryDB))
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to check platform link")
-	}
-
-	// Count platforms on the same user_game that belong to OTHER external games.
-	// Matches the frontend definition of user_game_other_platform_count, which also
-	// uses IS DISTINCT FROM rather than a row-id comparison — important for Steam
-	// games that appear as multiple platforms (Windows + Linux) under one external_game_id.
-	var otherCount int
-	if err := tx.NewRaw(
-		`SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = ? AND external_game_id IS DISTINCT FROM ?`,
-		ugID, externalGameID,
-	).Scan(ctx, &otherCount); err != nil {
-		slog.ErrorContext(reqCtx, "sync: count other platforms failed", logging.KeyErr, err, "user_game_id", ugID, logging.Cat(logging.CategoryDB))
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to check platform count")
-	}
-
-	// Require orphan_action when this is the last platform.
-	if otherCount == 0 && orphanAction == "" {
-		return echo.NewHTTPError(http.StatusConflict, "orphan_action required: game would lose its only storefront link")
-	}
-
-	if err := usergame.UnlinkExternalGame(ctx, tx, userID, externalGameID); err != nil {
-		slog.ErrorContext(reqCtx, "sync: delete user_game_platforms failed", logging.KeyErr, err, logging.KeyExternalGameID, externalGameID, logging.Cat(logging.CategoryDB))
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to remove platform link")
-	}
-
-	if otherCount == 0 && orphanAction == "remove" {
-		if err := usergame.Delete(ctx, tx, usergame.DeleteParams{UserID: userID, UserGameID: ugID}); err != nil {
-			slog.ErrorContext(reqCtx, "sync: delete user_game failed", logging.KeyErr, err, "user_game_id", ugID, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to remove game")
-		}
-	}
-	return nil
-}
-
-// rematchPendingItem resets the newest job_item for an external game to
-// pending, or creates one on the user's most recent sync job for the
-// storefront when none exists. Looking beyond pending_review covers the case
-// where the sync already completed and the item is 'completed' — inserting a
-// second row would violate UNIQUE(job_id, item_key).
-func rematchPendingItem(ctx, reqCtx context.Context, tx bun.Tx, userID, storefront, externalGameID, externalID, title string) (string, error) {
-	var itemID string
-	err := tx.NewRaw(`
-		SELECT id FROM job_items
-		WHERE external_game_id = ?
-		ORDER BY created_at DESC
-		LIMIT 1`, externalGameID,
-	).Scan(ctx, &itemID)
-	if err == nil {
-		if _, err := tx.NewRaw(`UPDATE job_items SET status = 'pending' WHERE id = ?`, itemID).Exec(ctx); err != nil {
-			slog.ErrorContext(reqCtx, "sync: rematch: update job_item status failed", logging.KeyErr, err, logging.KeyJobItemID, itemID, logging.Cat(logging.CategoryDB))
-			return "", echo.NewHTTPError(http.StatusInternalServerError, "failed to update job item")
-		}
-		return itemID, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		slog.ErrorContext(reqCtx, "sync: rematch: lookup job_item failed", logging.KeyErr, err, logging.KeyExternalGameID, externalGameID, logging.Cat(logging.CategoryDB))
-		return "", echo.NewHTTPError(http.StatusInternalServerError, "failed to look up job item")
-	}
-
-	var recentJobID string
-	if err := tx.NewRaw(`
-		SELECT id FROM jobs
-		WHERE user_id = ? AND source = ? AND job_type = 'sync'
-		ORDER BY created_at DESC LIMIT 1`,
-		userID, storefront,
-	).Scan(ctx, &recentJobID); err != nil {
-		slog.ErrorContext(reqCtx, "sync: rematch — no recent job found", logging.KeySource, storefront, logging.KeyErr, err, logging.KeyExternalGameID, externalGameID, logging.Cat(logging.CategoryDB))
-		return "", echo.NewHTTPError(http.StatusInternalServerError, "no sync job context found")
-	}
-	itemID = uuid.NewString()
-	if _, err := tx.NewRaw(`
-		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
-		itemID, recentJobID, userID, externalID, title, externalGameID,
-	).Exec(ctx); err != nil {
-		slog.ErrorContext(reqCtx, "sync: rematch: insert job_item failed", logging.KeyErr, err, logging.KeyJobID, recentJobID, "item_key", externalID, logging.KeyExternalGameID, externalGameID, logging.Cat(logging.CategoryDB))
-		return "", echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
-	}
-	return itemID, nil
-}
-
-// HandleRetryFailedExternalGames re-enqueues all failed job_items for external
-// games belonging to this user+storefront.
+// HandleRetryFailedExternalGames retries the storefront's games the view
+// shows as failed (their newest item failed, and nothing wrote them since), and
+// the Child games whose own newest item failed by the same rule. Every item is
+// reset first and queued afterwards, parents before children, so a child never
+// runs before its parent has been reset (#1338).
 func (h *SyncHandler) HandleRetryFailedExternalGames(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -1482,30 +1209,40 @@ func (h *SyncHandler) HandleRetryFailedExternalGames(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
 	}
 	ctx := context.Background()
+	reqCtx := c.Request().Context()
 
-	var items []struct {
-		ID string `bun:"id"`
-	}
-	if err := h.db.NewRaw(`
-		SELECT ji.id
-		FROM job_items ji
-		JOIN external_games eg ON eg.id = ji.external_game_id
-		WHERE eg.user_id = ? AND eg.storefront = ? AND ji.status = 'failed'`,
-		userID, sf,
-	).Scan(ctx, &items); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to query failed items")
-	}
-
-	for _, item := range items {
-		if _, err := h.db.NewRaw(
-			`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL WHERE id = ?`,
-			item.ID,
-		).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: retry-failed: reset item", logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			continue
+	var itemIDs []string
+	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := tx.NewRaw(`
+			SELECT ni.id
+			FROM external_games eg
+			`+syncNewestItemJoin+`
+			WHERE eg.user_id = ? AND eg.storefront = ? AND NOT eg.is_skipped
+			  AND `+syncFailed+`
+			  AND NOT `+syncNeedsReview+`
+			ORDER BY eg.parent_id IS NOT NULL, ni.id`,
+			userID, sf,
+		).Scan(ctx, &itemIDs); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("query failed items: %w", err)
 		}
-		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, item.ID, tasks.IGDBMatchArgs{JobItemID: item.ID}); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: retry-failed: enqueue", logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		if len(itemIDs) == 0 {
+			return nil
+		}
+		if _, err := tx.NewRaw(
+			`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL
+			 WHERE id IN (?) AND status = 'failed'`, bun.List(itemIDs),
+		).Exec(ctx); err != nil {
+			return fmt.Errorf("reset failed items: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		slog.ErrorContext(reqCtx, "sync: retry-failed", logging.KeySource, sf, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to retry failed items")
+	}
+	for _, id := range itemIDs {
+		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, id, tasks.IGDBMatchArgs{JobItemID: id}); err != nil {
+			slog.ErrorContext(reqCtx, "sync: retry-failed: enqueue", logging.KeyJobItemID, id, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	}
 	return c.NoContent(http.StatusNoContent)

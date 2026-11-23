@@ -195,6 +195,8 @@ type ExternalGame struct {
 	SourceMetadata  json.RawMessage `bun:"source_metadata"          json:"source_metadata,omitempty"`
 	CreatedAt       time.Time       `bun:"created_at,nullzero,notnull"       json:"created_at"`
 	UpdatedAt       time.Time       `bun:"updated_at,nullzero,notnull"       json:"updated_at"`
+	// LibraryWrittenAt is set by the library write only (#1338).
+	LibraryWrittenAt *time.Time `bun:"library_written_at" json:"-"`
 
 	Platforms []ExternalGamePlatform `bun:"rel:has-many,join:id=external_game_id" json:"-"`
 }

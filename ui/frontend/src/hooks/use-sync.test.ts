@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
+import { createElement, type ReactNode } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { server } from '@/test/mocks/server';
-import { QueryWrapper } from '@/test/test-utils';
+import { QueryWrapper, createTestQueryClient } from '@/test/test-utils';
 import {
   useSyncConfigs,
   useSyncConfig,
@@ -10,7 +12,9 @@ import {
   useUpdateSyncConfig,
   useTriggerSync,
   useConnectEpicGamesStore,
+  useRematchExternalGame,
 } from './use-sync';
+import { usePendingReviewCount } from './use-jobs';
 import { SyncStorefront, SyncFrequency } from '@/types';
 import * as syncApi from '@/api/sync';
 
@@ -315,6 +319,36 @@ describe('use-sync hooks', () => {
 
       expect(mockConnectEpicGamesStore).toHaveBeenCalledWith('TESTCODE');
       mockConnectEpicGamesStore.mockRestore();
+    });
+  });
+
+  describe('useRematchExternalGame', () => {
+    it('refreshes the review badge after a rematch', async () => {
+      let count = 1;
+      server.use(
+        http.get(`${API_URL}/jobs/pending-review-count`, () =>
+          HttpResponse.json({ pending_review_count: count, counts_by_source: { steam: count } }),
+        ),
+        http.post(`${API_URL}/sync/external-games/:id/rematch`, () => {
+          count = 0;
+          return new HttpResponse(null, { status: 204 });
+        }),
+      );
+      const queryClient = createTestQueryClient();
+      const wrapper = ({ children }: { children: ReactNode }) =>
+        createElement(QueryClientProvider, { client: queryClient }, children);
+
+      const { result } = renderHook(
+        () => ({ badge: usePendingReviewCount(), rematch: useRematchExternalGame() }),
+        { wrapper },
+      );
+      await waitFor(() => expect(result.current.badge.data?.pendingReviewCount).toBe(1));
+
+      await act(async () => {
+        await result.current.rematch.mutateAsync({ id: 'eg-1', igdbId: 7 });
+      });
+
+      await waitFor(() => expect(result.current.badge.data?.pendingReviewCount).toBe(0));
     });
   });
 });

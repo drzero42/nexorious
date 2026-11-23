@@ -61,6 +61,10 @@ _Avoid_: storefront game
 An External game that is another edition of an External game already known for the same storefront, its parent. It follows the parent's match instead of being matched itself.
 _Avoid_: sibling
 
+**Unmatched**:
+An External game that is not skipped and points to no IGDB game, and has no item in Pending review: for instance one unskipped before it was ever matched. It waits for the user to Rematch it, or for the next sync to match it while it is still in the storefront library.
+_Avoid_: pending review (an item in a Job waiting for the user; an Unmatched game is waiting for nothing)
+
 **Rematch**:
 Choosing or changing which IGDB game an External game points to. The library is updated at once; a Rematch is not a Job.
 _Avoid_: resolve (a Resolution is the choice; in a sync, the Rematch is the act that makes it)
