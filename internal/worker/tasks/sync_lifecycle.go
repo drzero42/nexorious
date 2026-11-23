@@ -233,12 +233,21 @@ func emitAll(ctx context.Context, db *bun.DB, events ...notify.EmitParams) error
 	})
 }
 
+// outageFailure is the outage rule that sync.failed and sync.recovered share
+// (#1344, #1385): a sync of the store, previous_job, that failed for anything
+// but its credentials since the store's last successful sync (cfg's
+// last_synced_at). The error text need not match: messages often carry
+// varying details, so matching would notify on every attempt again.
+// Credential failures do not count, since they send their own notice. The
+// caller joins previous_job (with the store's user_id and source) and cfg, and
+// binds credentialsErrorMessage.
+const outageFailure = `previous_job.job_type = 'sync' AND previous_job.status = 'failed'
+	AND previous_job.error_message IS DISTINCT FROM ?
+	AND (cfg.last_synced_at IS NULL OR previous_job.completed_at > cfg.last_synced_at)`
+
 // previousSyncFailure reports whether an earlier sync of the same store failed
-// since its last successful sync, which means this outage has already been
-// notified. The error text need not match: messages often carry varying
-// details, so matching would notify on every attempt again. Credential
-// failures do not count, since they send their own notice. Comparing
-// completion times ignores newer jobs.
+// in this outage (outageFailure), which means the outage has already been
+// notified. Comparing completion times ignores newer jobs.
 func previousSyncFailure(ctx context.Context, db bun.IDB, jobID string) (bool, error) {
 	var repeated bool
 	if err := db.NewRaw(`
@@ -250,14 +259,45 @@ func previousSyncFailure(ctx context.Context, db bun.IDB, jobID string) (bool, e
 			LEFT JOIN user_sync_configs AS cfg ON cfg.user_id = current_job.user_id
 				AND cfg.storefront = current_job.source
 			WHERE current_job.id = ?
-				AND previous_job.job_type = 'sync' AND previous_job.status = 'failed'
-				AND previous_job.error_message IS DISTINCT FROM ?
 				AND previous_job.completed_at < current_job.completed_at
-				AND (cfg.last_synced_at IS NULL OR previous_job.completed_at > cfg.last_synced_at)
+				AND `+outageFailure+`
 		)`, jobID, credentialsErrorMessage).Scan(ctx, &repeated); err != nil {
 		return false, fmt.Errorf("check previous sync failure: %w", err)
 	}
 	return repeated, nil
+}
+
+// emitSyncRecovered sends sync.recovered when the store is in an outage that
+// sent sync.failed (outageFailure), so the user learns it is over (#1385). It
+// runs in the transaction that records the successful fetch, before
+// last_synced_at moves past the outage. A store that failed only for its
+// credentials sent no sync.failed, and the user's reconnect ended it, so it
+// sends nothing.
+func emitSyncRecovered(ctx context.Context, tx bun.Tx, p DispatchSyncArgs) error {
+	var outage bool
+	if err := tx.NewRaw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM jobs AS previous_job
+			LEFT JOIN user_sync_configs AS cfg ON cfg.user_id = previous_job.user_id
+				AND cfg.storefront = previous_job.source
+			WHERE previous_job.user_id = ? AND previous_job.source = ?
+				AND previous_job.id <> ?
+				AND `+outageFailure+`
+		)`, p.UserID, p.Storefront, p.JobID, credentialsErrorMessage).Scan(ctx, &outage); err != nil {
+		return fmt.Errorf("check sync outage: %w", err)
+	}
+	if !outage {
+		return nil
+	}
+	if err := notify.EmitTx(ctx, tx, notify.EmitParams{
+		Type: notify.TypeSyncRecovered, Scope: notify.ScopeUser, ActorUserID: p.UserID,
+		Payload:  notify.SyncRecoveredPayload{Storefront: p.Storefront, JobID: p.JobID},
+		DedupKey: p.JobID + ":" + notify.TypeSyncRecovered,
+	}); err != nil {
+		return fmt.Errorf("emit %s: %w", notify.TypeSyncRecovered, err)
+	}
+	return nil
 }
 
 // userSubscribed reports whether the user is subscribed to eventType.

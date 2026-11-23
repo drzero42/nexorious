@@ -180,3 +180,83 @@ func TestDispatchSync_FailureNotifiesOncePerOutage(t *testing.T) {
 		})
 	}
 }
+
+// TestDispatchSync_RecoveryNotifiesOncePerOutage checks that the first
+// successful sync after an outage that sent sync.failed sends sync.recovered,
+// and that no other successful sync does (#1385). A store that failed only for
+// its credentials sent no sync.failed, so its recovery sends nothing either.
+func TestDispatchSync_RecoveryNotifiesOncePerOutage(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	); err != nil {
+		t.Fatalf("insert sync config: %v", err)
+	}
+
+	const (
+		failure     = "failure"
+		success     = "success"
+		credentials = "credentials"
+	)
+	for _, tc := range []struct {
+		name      string
+		outcome   string
+		recovered int // sync.recovered events for this Job
+	}{
+		{"first sync succeeds", success, 0},
+		{"store starts failing", failure, 0},
+		{"store still failing", failure, 0},
+		{"store works again", success, 1},
+		{"store keeps working", success, 0},
+		{"credentials failure", credentials, 0},
+		{"works after the credentials failure", success, 0},
+		{"store fails again", failure, 0},
+		{"works again after the second outage", success, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			jobID := uuid.NewString()
+			if _, err := testDB.ExecContext(ctx,
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+				jobID, userID,
+			); err != nil {
+				t.Fatalf("insert job: %v", err)
+			}
+			reply, status := `{"response":{"game_count":0}}`, http.StatusOK
+			if tc.outcome == failure {
+				reply, status = `{}`, http.StatusBadGateway
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(reply))
+			}))
+			defer srv.Close()
+			client := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: func(_ context.Context, _ string, _ models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				if tc.outcome == credentials {
+					return nil, tasks.ErrCredentials
+				}
+				return steam.NewAdapter(client, "key", "76561198000000001"), nil
+			}, LC: newTestLC(t)}
+			job := syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"})
+			if err := w.Work(ctx, job); err != nil {
+				t.Fatalf("work: %v", err)
+			}
+			runSyncEffects(t, w.LC)
+			var jobStatus string
+			if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus); err != nil {
+				t.Fatalf("read job: %v", err)
+			}
+			if want := map[bool]string{true: "completed", false: "failed"}[tc.outcome == success]; jobStatus != want {
+				t.Fatalf("job status = %q, want %q", jobStatus, want)
+			}
+			if got := eventCount(t, jobID+":sync.recovered"); got != tc.recovered {
+				t.Errorf("sync.recovered events = %d, want %d", got, tc.recovered)
+			}
+		})
+	}
+}
