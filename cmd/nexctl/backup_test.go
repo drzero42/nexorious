@@ -722,3 +722,147 @@ func TestBackupScheduleSetOnlyChangedFlag(t *testing.T) {
 		t.Errorf("schedule = %v, want daily", putBody["schedule"])
 	}
 }
+
+// runBackupSplit is runBackup with stdout and stderr kept apart, for the
+// cases where stdout must carry nothing but the archive, id or JSON.
+func runBackupSplit(t *testing.T, srvURL string, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	seedProfile(t, srvURL)
+	root := newRootCmd()
+	var outBuf, errBuf bytes.Buffer
+	root.SetOut(&outBuf)
+	root.SetErr(&errBuf)
+	root.SetIn(strings.NewReader(""))
+	root.SetArgs(args)
+	err = root.Execute()
+	return outBuf.String(), errBuf.String(), err
+}
+
+// createAndDownloadMux serves a backup create that returns id, and its
+// download. created counts the create calls.
+func createAndDownloadMux(t *testing.T, id, payload string, created *int) *http.ServeMux {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/admin/backups", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+			return
+		}
+		*created++
+		_ = json.NewEncoder(w).Encode(map[string]any{"backup_id": id, "message": "ok"})
+	})
+	mux.HandleFunc("/api/admin/backups/"+id+"/download", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, payload)
+	})
+	return mux
+}
+
+func TestBackupCreateDownloadToFile(t *testing.T) {
+	var created int
+	srv := httptest.NewServer(createAndDownloadMux(t, "bk-new", "archive", &created))
+	t.Cleanup(srv.Close)
+
+	dest := filepath.Join(t.TempDir(), "x.tar.gz")
+	out, err := runBackup(t, srv.URL, "backup", "create", "--download", "--out", dest)
+	if err != nil {
+		t.Fatalf("backup create --download: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "created backup bk-new") || !strings.Contains(out, "downloaded to "+dest) {
+		t.Errorf("output = %q, want created and downloaded lines", out)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read dest: %v", err)
+	}
+	if string(got) != "archive" {
+		t.Errorf("file content = %q, want %q", got, "archive")
+	}
+}
+
+// With --out - the archive is the whole of stdout; the status line goes to
+// stderr so a pipe gets a valid archive.
+func TestBackupCreateDownloadToStdout(t *testing.T) {
+	var created int
+	srv := httptest.NewServer(createAndDownloadMux(t, "bk-new", "archive", &created))
+	t.Cleanup(srv.Close)
+
+	stdout, stderr, err := runBackupSplit(t, srv.URL, "backup", "create", "--download", "--out", "-")
+	if err != nil {
+		t.Fatalf("backup create --download --out -: %v\n%s", err, stderr)
+	}
+	if stdout != "archive" {
+		t.Errorf("stdout = %q, want only the archive", stdout)
+	}
+	if !strings.Contains(stderr, "created backup bk-new") {
+		t.Errorf("stderr = %q, want the created line", stderr)
+	}
+}
+
+// Under -q stdout stays the bare id; the downloaded line goes to stderr.
+func TestBackupCreateDownloadQuiet(t *testing.T) {
+	var created int
+	srv := httptest.NewServer(createAndDownloadMux(t, "bk-q", "archive", &created))
+	t.Cleanup(srv.Close)
+
+	dest := filepath.Join(t.TempDir(), "q.tar.gz")
+	stdout, stderr, err := runBackupSplit(t, srv.URL, "backup", "create", "-q", "--download", "--out", dest)
+	if err != nil {
+		t.Fatalf("backup create -q --download: %v\n%s", err, stderr)
+	}
+	if stdout != "bk-q\n" {
+		t.Errorf("stdout = %q, want bare id", stdout)
+	}
+	if !strings.Contains(stderr, "downloaded to "+dest) {
+		t.Errorf("stderr = %q, want the downloaded line", stderr)
+	}
+}
+
+// Flag misuse is refused before a backup is created, so it leaves none behind.
+func TestBackupCreateFlagErrorsCreateNothing(t *testing.T) {
+	cases := map[string][]string{
+		"out without download": {"backup", "create", "--out", "x.tar.gz"},
+		"stdout with quiet":    {"backup", "create", "--download", "--out", "-", "-q"},
+		"stdout with json":     {"backup", "create", "--download", "--out", "-", "--json"},
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			var created int
+			srv := httptest.NewServer(createAndDownloadMux(t, "bk-x", "archive", &created))
+			t.Cleanup(srv.Close)
+
+			out, err := runBackup(t, srv.URL, args...)
+			if err == nil {
+				t.Fatalf("want an error, got none\n%s", out)
+			}
+			if created != 0 {
+				t.Errorf("backup created %d times, want 0", created)
+			}
+		})
+	}
+}
+
+// A failed download after the backup exists names the backup and how to
+// fetch it, so the user doesn't create a second one.
+func TestBackupCreateDownloadFailureNamesBackup(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/admin/backups", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"backup_id": "bk-new", "message": "ok"})
+	})
+	mux.HandleFunc("/api/admin/backups/bk-new/download", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":"boom"}`, http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	dest := filepath.Join(t.TempDir(), "x.tar.gz")
+	out, err := runBackup(t, srv.URL, "backup", "create", "--download", "--out", dest)
+	if err == nil {
+		t.Fatalf("want an error, got none\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "nexctl backup download bk-new") {
+		t.Errorf("error = %q, want it to name the retry command", err)
+	}
+	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+		t.Errorf("dest exists after failed download (stat err %v)", statErr)
+	}
+}
