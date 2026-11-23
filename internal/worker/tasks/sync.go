@@ -104,20 +104,34 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 	}
 
 	if row.IsNew {
-		var parentID string
-		if err := db.NewRaw(`
-			SELECT id FROM external_games
-			WHERE user_id = ? AND storefront = ? AND title = ?
-			  AND id != ? AND parent_id IS NULL
-			LIMIT 1`,
-			p.UserID, p.Storefront, e.Title, row.ID,
-		).Scan(ctx, &parentID); err == nil && parentID != "" {
-			if _, err := db.NewRaw(`
-				UPDATE external_games SET parent_id = ? WHERE id = ? AND parent_id IS NULL`,
-				parentID, row.ID,
-			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "dispatch_sync: set parent_id failed", logging.KeyErr, err, logging.KeyExternalGameID, row.ID, logging.Cat(logging.CategoryDB))
-			}
+		// A new edition of a known game becomes its child and takes its skip
+		// (#1339). Only a game a child can inherit from qualifies: top-level and
+		// available, matched or skipped. An unmatched, unskipped game that has
+		// left the library could never end a child's wait. The oldest wins. One
+		// statement, with the parent locked, so a skip committing in between is
+		// not missed.
+		var inheritedSkip bool
+		err := db.NewRaw(`
+			UPDATE external_games c
+			SET parent_id = p.id, is_skipped = p.is_skipped
+			FROM (
+			  SELECT id, is_skipped FROM external_games
+			  WHERE user_id = ? AND storefront = ? AND title = ?
+			    AND id != ? AND parent_id IS NULL
+			    AND (is_available OR resolved_igdb_id IS NOT NULL OR is_skipped)
+			  ORDER BY created_at, id
+			  LIMIT 1
+			  FOR SHARE
+			) p
+			WHERE c.id = ? AND c.parent_id IS NULL
+			RETURNING c.is_skipped`,
+			p.UserID, p.Storefront, e.Title, row.ID, row.ID,
+		).Scan(ctx, &inheritedSkip)
+		switch {
+		case err == nil:
+			row.IsSkipped = inheritedSkip
+		case !errors.Is(err, sql.ErrNoRows):
+			slog.WarnContext(ctx, "dispatch_sync: set parent_id failed", logging.KeyErr, err, logging.KeyExternalGameID, row.ID, logging.Cat(logging.CategoryDB))
 		}
 	}
 
@@ -192,6 +206,16 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		slog.InfoContext(ctx, "dispatch_sync: job is no longer active; nothing to do", logging.KeySource, p.Storefront)
 		return nil
 	}
+
+	// Child games (#1339): give every child its parent's skip, then promote the
+	// children of parents that left in an earlier sync, so a new edition in this
+	// fetch finds the promoted game as its parent. Failures are logged: the next
+	// dispatch repairs what this one missed, and a child that cannot wait is
+	// failed rather than left hanging.
+	if err := repairChildSkips(ctx, w.DB, p.UserID, p.Storefront); err != nil {
+		slog.WarnContext(ctx, "dispatch_sync: repair child skips failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	}
+	promoteOrphanedChildren(ctx, w.DB, p.UserID, p.Storefront)
 
 	// Load sync config.
 	var cfg models.UserSyncConfig
@@ -357,6 +381,9 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 	}
 
+	// Parents that left in this sync: promote their children (#1339).
+	promoteOrphanedChildren(ctx, w.DB, p.UserID, p.Storefront)
+
 	// The sweeps above ran on ctx: if it was cancelled meanwhile they may be
 	// unfinished, so the run must not be marked complete.
 	if dispatchInterrupted(ctx) {
@@ -385,6 +412,15 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		// jobs is out of scope for #642).
 		slog.ErrorContext(ctx, "dispatch_sync: mark dispatch_complete failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
+	}
+	// Look again at items with nothing running them: children that waited while
+	// the dispatch could still add their parent's item, and games promoted
+	// during the sweep. Their igdb_match now matches, inherits or fails them
+	// (#1339). The query only selects items of an active Job, so a sync
+	// cancelled during its dispatch is not restarted. Background ctx, like the
+	// dispatch_complete write above: the shutdown must not cut it off.
+	if _, _, err := RequeueOrphanedPendingItems(context.Background(), w.DB, w.RiverClient, p.JobID, 0); err != nil {
+		slog.ErrorContext(ctx, "dispatch_sync: re-queue waiting items failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, p.JobID)
 
@@ -550,6 +586,12 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 	}
 	// Correlate every line below to the user-facing job once the item is loaded.
 	ctx = logging.WithJobID(ctx, item.JobID)
+	// A late or duplicate River job for an item that is no longer pending
+	// (finished, in review, or cancelled) must change nothing (#1339).
+	if item.Status != models.JobItemStatusPending {
+		slog.DebugContext(ctx, "igdb_match: item is not pending, nothing to do", logging.KeyJobItemID, item.ID, "status", item.Status)
+		return nil
+	}
 
 	if item.ExternalGameID == nil {
 		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
@@ -585,34 +627,44 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		return w.enqueueUserGame(ctx, item.ID, item.JobID)
 	}
 
-	// Child check: if this row has a parent, inherit or wait.
+	// Child check: if this row has a parent, inherit, wait, or fail.
 	if eg.ParentID != nil {
 		var parent models.ExternalGame
-		if err := w.DB.NewSelect().Model(&parent).
-			Where("id = ?", *eg.ParentID).
-			Scan(ctx); err == nil && parent.ResolvedIGDBID != nil {
-			igdbID := *parent.ResolvedIGDBID
-			slog.DebugContext(ctx, "igdb_match: child inheriting from resolved parent",
-				logging.KeyJobItemID, p.JobItemID, "title", eg.Title, "igdb_id", igdbID, "parent_id", *eg.ParentID)
-			if _, err := w.DB.NewRaw(
-				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
-				igdbID, eg.Title,
-			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "igdb_match: insert game row (child inherit)", logging.KeyErr, err, "igdb_id", igdbID, logging.Cat(logging.CategoryDB))
-			}
-			if _, err := w.DB.NewRaw(
-				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
-				igdbID, eg.ID,
-			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "igdb_match: apply child inherit", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
-			}
+		err := w.DB.NewSelect().Model(&parent).Where("id = ?", *eg.ParentID).Scan(ctx)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("igdb_match: load parent: %w", err)
+		}
+		if err == nil && parent.ResolvedIGDBID != nil {
+			return w.inheritFromParent(ctx, &item, &eg, *parent.ResolvedIGDBID)
+		}
+
+		// The parent is unmatched (or gone): wait only if the wait can end.
+		res, err := decideChildWait(ctx, w.DB, item.ID, item.JobID, eg.ID, *eg.ParentID)
+		if err != nil {
+			return err
+		}
+		switch res.action {
+		case childWait:
+			slog.DebugContext(ctx, "igdb_match: parent unresolved, waiting",
+				logging.KeyJobItemID, p.JobItemID, "parent_id", *eg.ParentID)
+			return nil
+		case childFailed:
+			slog.InfoContext(ctx, "igdb_match: child cannot wait for its parent; item failed",
+				logging.KeyJobItemID, p.JobItemID, "parent_id", *eg.ParentID)
+			SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+			return nil
+		}
+		// childProceed: the facts changed while we looked. Carry on with them.
+		eg.IsSkipped = res.isSkipped
+		eg.ResolvedIGDBID = res.resolvedIGDBID
+		eg.ParentID = res.parentID
+		if eg.IsSkipped || eg.ResolvedIGDBID != nil {
 			return w.enqueueUserGame(ctx, item.ID, item.JobID)
 		}
-		// Parent not yet resolved — leave job_item in pending.
-		// Stage 3 of the parent will re-enqueue Stage 2 for this child.
-		slog.DebugContext(ctx, "igdb_match: parent unresolved, waiting",
-			logging.KeyJobItemID, p.JobItemID, "parent_id", *eg.ParentID)
-		return nil
+		if eg.ParentID != nil && res.parentIGDBID != nil {
+			return w.inheritFromParent(ctx, &item, &eg, *res.parentIGDBID)
+		}
+		// No longer a child (promoted): searched like any other game.
 	}
 
 	// IGDB search.
@@ -694,6 +746,26 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 	return nil
 }
 
+// inheritFromParent gives a child its parent's match and hands it to the write
+// stage.
+func (w *IGDBMatchWorker) inheritFromParent(ctx context.Context, item *models.JobItem, eg *models.ExternalGame, igdbID int32) error {
+	slog.DebugContext(ctx, "igdb_match: child inheriting from resolved parent",
+		logging.KeyJobItemID, item.ID, "title", eg.Title, "igdb_id", igdbID, "parent_id", *eg.ParentID)
+	if _, err := w.DB.NewRaw(
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+		igdbID, eg.Title,
+	).Exec(ctx); err != nil {
+		slog.WarnContext(ctx, "igdb_match: insert game row (child inherit)", logging.KeyErr, err, "igdb_id", igdbID, logging.Cat(logging.CategoryDB))
+	}
+	if _, err := w.DB.NewRaw(
+		`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+		igdbID, eg.ID,
+	).Exec(ctx); err != nil {
+		slog.WarnContext(ctx, "igdb_match: apply child inherit", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
+	}
+	return w.enqueueUserGame(ctx, item.ID, item.JobID)
+}
+
 func (w *IGDBMatchWorker) enqueueUserGame(ctx context.Context, jobItemID, jobID string) error {
 	if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, jobItemID, UserGameArgs{JobItemID: jobItemID}); err != nil {
 		slog.WarnContext(ctx, "igdb_match: enqueue user_game_write failed", logging.KeyJobItemID, jobItemID, logging.KeyErr, err)
@@ -732,6 +804,12 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	}
 	// Correlate every line below to the user-facing job once the item is loaded.
 	ctx = logging.WithJobID(ctx, item.JobID)
+	// A late or duplicate River job for an item that is no longer pending
+	// (finished, in review, or cancelled) must change nothing (#1339).
+	if item.Status != models.JobItemStatusPending {
+		slog.DebugContext(ctx, "user_game_write: item is not pending, nothing to do", logging.KeyJobItemID, item.ID, "status", item.Status)
+		return nil
+	}
 
 	if item.ExternalGameID == nil {
 		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")

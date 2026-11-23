@@ -17,11 +17,8 @@ import (
 // RescueOrphanedPendingItems finds job_items that are stuck in pending with no
 // active River job backing them and re-enqueues a new River job for each one.
 //
-// An item is considered orphaned when ALL of:
-//   - status = 'pending'
-//   - created_at older than age (so freshly-created items are not touched)
-//   - parent job is still active (status IN ('pending', 'processing'))
-//   - no river_job exists for this item in a non-terminal state
+// The query is tasks.RequeueOrphanedPendingItems (shared with the sync
+// dispatch's own end-of-dispatch re-queue); age keeps freshly-created items out.
 //
 // This is a safety net for the case where the worker's load-job_item query
 // fails transiently: the worker returns an error (River retries), but if the
@@ -35,50 +32,13 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 // event optional: the startup recovery pass (RecoverInterruptedSyncs) runs it
 // with no age limit and emitEvent=false, since a restart must not notify.
 func rescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], age time.Duration, emitEvent bool) {
-	var orphans []struct {
-		ID      string `bun:"id"`
-		JobType string `bun:"job_type"`
-		Source  string `bun:"source"`
-	}
-
-	if err := db.NewRaw(`
-		SELECT ji.id, j.job_type, j.source
-		FROM job_items ji
-		JOIN jobs j ON j.id = ji.job_id
-		WHERE ji.status = 'pending'
-		  AND ji.created_at < now() - (?::text || ' seconds')::interval
-		  AND j.status IN ('pending', 'processing')
-		  AND NOT EXISTS (
-		    SELECT 1 FROM river_job rj
-		    WHERE rj.args->>'job_item_id' = ji.id
-		      AND rj.state NOT IN ('completed', 'discarded', 'cancelled')
-		  )`,
-		int64(age.Seconds()),
-	).Scan(ctx, &orphans); err != nil {
+	successCount, failureCount, err := tasks.RequeueOrphanedPendingItems(ctx, db, rc, "", age)
+	if err != nil {
 		slog.ErrorContext(ctx, "rescue_orphaned_items: query failed", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		if emitEvent {
 			emitMaint(ctx, db, true, notify.MaintPayload{Action: "rescue_orphaned_items", Error: err.Error()})
 		}
 		return
-	}
-
-	var successCount, failureCount int
-	for _, o := range orphans {
-		// Route by job_type AND source so a generic-pipeline import (e.g. CSV,
-		// which shares the "import" job_type but needs its own match→finalize
-		// chain) re-enters at the right worker rather than the JSON importer.
-		args, err := tasks.ArgsForJobType(o.JobType, o.Source, o.ID)
-		if err != nil {
-			slog.WarnContext(ctx, "rescue_orphaned_items: unknown job_type, skipping", logging.KeyJobItemID, o.ID, logging.KeyJobType, o.JobType, logging.KeySource, o.Source)
-			continue
-		}
-		if err := tasks.EnqueueOrFail(ctx, db, rc, o.ID, args); err != nil {
-			slog.WarnContext(ctx, "rescue_orphaned_items: re-enqueue failed", logging.KeyJobItemID, o.ID, logging.KeyErr, err)
-			failureCount++
-		} else {
-			slog.InfoContext(ctx, "rescue_orphaned_items: re-enqueued orphaned item", logging.KeyJobItemID, o.ID, logging.KeyJobType, o.JobType)
-			successCount++
-		}
 	}
 	if emitEvent && successCount+failureCount > 0 {
 		emitMaint(ctx, db, false, notify.MaintPayload{Action: "rescue_orphaned_items", Rescued: successCount, Failed: failureCount})
