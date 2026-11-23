@@ -39,7 +39,7 @@ services:
           memory: 256m
 
   db-role:
-    image: ghcr.io/drzero42/nexorious:0.98.0 # x-release-please-version
+    image: ghcr.io/drzero42/nexorious:0.98.1 # x-release-please-version
     command: ["ensure-db-role"]
     depends_on:
       db:
@@ -50,7 +50,7 @@ services:
       DB_ADMIN_PASSWORD: ${POSTGRES_PASSWORD}
 
   app:
-    image: ghcr.io/drzero42/nexorious:0.98.0 # x-release-please-version
+    image: ghcr.io/drzero42/nexorious:0.98.1 # x-release-please-version
     # Explicit for clarity/robustness; the image CMD already defaults to serve.
     command: ["serve"]
     ports:
