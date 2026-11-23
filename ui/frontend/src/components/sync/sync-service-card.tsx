@@ -86,9 +86,7 @@ export function SyncServiceCard({
                 Connected
               </Badge>
             ) : (
-              <Badge variant="outline" className="bg-muted text-muted-foreground">
-                Not Configured
-              </Badge>
+              <Badge variant="muted">Not Configured</Badge>
             )}
           </div>
         </div>

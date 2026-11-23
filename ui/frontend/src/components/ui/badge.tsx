@@ -14,6 +14,9 @@ const badgeVariants = cva(
         destructive:
           'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90',
         outline: 'text-foreground',
+        // Muted text darkened in the light theme: --muted-foreground on
+        // --muted measures 4.39:1, short of WCAG AA for text this small.
+        muted: 'bg-muted text-zinc-600 dark:text-muted-foreground',
       },
     },
     defaultVariants: {

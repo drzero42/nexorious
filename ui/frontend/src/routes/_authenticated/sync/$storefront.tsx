@@ -101,12 +101,13 @@ export function ConnectionToggle({
       aria-expanded={open}
       onClick={onToggle}
       className={cn(
-        badgeVariants({ variant: credentialsError ? 'destructive' : 'outline' }),
+        badgeVariants({
+          variant: credentialsError ? 'destructive' : isConfigured ? 'outline' : 'muted',
+        }),
         'cursor-pointer',
         !credentialsError &&
-          (isConfigured
-            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-            : 'bg-muted text-muted-foreground'),
+          isConfigured &&
+          'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
       )}
     >
       {label}
