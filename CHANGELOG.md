@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.100.0 (2026-11-23)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Features
+* feat: move refresh and export Jobs onto the Job lifecycle module by @drzero42 in https://github.com/drzero42/nexorious/pull/1393
+* feat(helm): optional CloudNativePG Cluster as the database by @drzero42 in https://github.com/drzero42/nexorious/pull/1395
+* feat: move import Jobs onto the Job lifecycle module by @drzero42 in https://github.com/drzero42/nexorious/pull/1396
+* feat(nexctl): download the new backup from backup create --download by @drzero42 in https://github.com/drzero42/nexorious/pull/1397
+* feat: move sync onto the Job lifecycle module by @drzero42 in https://github.com/drzero42/nexorious/pull/1399
+* feat: notify when a failing storefront sync works again by @drzero42 in https://github.com/drzero42/nexorious/pull/1406
+### Bug fixes
+* fix: backfill job_items.created_at stored with the zero time by @drzero42 in https://github.com/drzero42/nexorious/pull/1401
+* fix: key store-link refresh items by user and storefront by @drzero42 in https://github.com/drzero42/nexorious/pull/1403
+* fix: exclude the pools item from nexorious import progress by @drzero42 in https://github.com/drzero42/nexorious/pull/1404
+* fix: keep the sync outage boundary across Reset sync data by @drzero42 in https://github.com/drzero42/nexorious/pull/1407
+
+
+**Full Changelog**: https://github.com/drzero42/nexorious/compare/v0.99.0...v0.100.0
+
 ## 0.99.0 (2026-11-23)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
