@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.98.1 (2026-11-23)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Security
+* fix: stop setup restore handlers when the no-users check refuses by @drzero42 in https://github.com/drzero42/nexorious/pull/1353
+* fix: load restore dumps in psql restricted mode, in one transaction by @drzero42 in https://github.com/drzero42/nexorious/pull/1355
+* fix: connect the bundled Postgres as a non-superuser role by @drzero42 in https://github.com/drzero42/nexorious/pull/1361
+### Bug fixes
+* fix(sync): refuse to mark a library removed when the fetch comes back empty by @drzero42 in https://github.com/drzero42/nexorious/pull/1328
+* fix(sync): resume interrupted syncs at startup by @drzero42 in https://github.com/drzero42/nexorious/pull/1330
+* fix(sync): fail sync work hard-killed on its last attempt at startup by @drzero42 in https://github.com/drzero42/nexorious/pull/1331
+* fix: add id tiebreak to jobs and games list ordering by @drzero42 in https://github.com/drzero42/nexorious/pull/1332
+* fix: let the database default apply to unset model timestamps by @drzero42 in https://github.com/drzero42/nexorious/pull/1333
+### Dependencies
+* fix(deps): update module github.com/labstack/echo/v5 to v5.4.7 by @cloudzero-renovate-operator[bot] in https://github.com/drzero42/nexorious/pull/1308
+### Other changes
+* ci: credit contributors and group release notes by label by @drzero42 in https://github.com/drzero42/nexorious/pull/1321
+
+
+**Full Changelog**: https://github.com/drzero42/nexorious/compare/v0.98.0...v0.98.1
+
 ## [0.98.0](https://github.com/drzero42/nexorious/compare/v0.97.6...v0.98.0) (2026-11-18)
 
 
