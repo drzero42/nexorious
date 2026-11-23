@@ -32,3 +32,11 @@ type Adapter interface {
 // ErrCredentials is returned by an adapter when credentials are invalid,
 // expired, or cannot be decrypted. DispatchSyncWorker marks the job failed on this error.
 var ErrCredentials = errors.New("credentials error")
+
+// IncompleteLibraryError indicates that a storefront returned a library that
+// cannot safely be treated as complete. Message explains how to retry.
+type IncompleteLibraryError struct {
+	Message string
+}
+
+func (e *IncompleteLibraryError) Error() string { return e.Message }
