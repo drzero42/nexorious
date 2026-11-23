@@ -252,7 +252,7 @@ func (h *BackupHandler) HandleRestore(c *echo.Context) error {
 
 	id := c.Param("id")
 	res, err := h.svc.RestoreBackup(id, backup.RestoreOpts{})
-	return writeRestoreResponse(c, res, err, false)
+	return writeRestoreResponse(c, res, err, restoreStored)
 }
 
 // HandleRestoreUpload restores from an uploaded file (POST /api/admin/backups/restore/upload).
@@ -297,7 +297,7 @@ func (h *BackupHandler) HandleRestoreUpload(c *echo.Context) error {
 	}
 
 	res, err := h.svc.RestoreFromUpload(tmpPath, backup.RestoreOpts{})
-	return writeRestoreResponse(c, res, err, false)
+	return writeRestoreResponse(c, res, err, restoreUpload)
 }
 
 // requireNoUsers enforces the setup-mode gate: the setup-zone restore handlers
@@ -365,7 +365,7 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 	}
 
 	res, err := h.svc.RestoreFromUpload(tmpPath, backup.RestoreOpts{SetupZone: true})
-	return writeRestoreResponse(c, res, err, true)
+	return writeRestoreResponse(c, res, err, restoreSetupUpload)
 }
 
 // HandleSetupListBackups lists candidate backup archives in the configured
@@ -490,16 +490,28 @@ func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
 	}
 
 	res, err := h.svc.RestoreFromArchive(fullPath, backup.RestoreOpts{SetupZone: true})
-	return writeRestoreResponse(c, res, err, true)
+	return writeRestoreResponse(c, res, err, restoreSetupDisk)
 }
+
+// restoreSource is where the archive a restore request names comes from.
+type restoreSource int
+
+const (
+	restoreStored      restoreSource = iota // a backup this server took and stored, by id
+	restoreUpload                           // an archive uploaded with the admin request
+	restoreSetupUpload                      // an archive uploaded in the setup zone
+	restoreSetupDisk                        // an operator-placed file named in the setup zone
+)
 
 // writeRestoreResponse answers a restore request. Every answer carries
 // restarting and the id of this process: once restarting is true the server
 // restarts after the response, on success and on failure, and a client waits
-// until /health reports a different instance id (#1341). setupZone keeps
-// internal error detail out of the answers of the unauthenticated setup zone.
-func writeRestoreResponse(c *echo.Context, res backup.RestoreResult, err error, setupZone bool) error {
+// until /health reports a different instance id (#1341). The setup-zone
+// sources keep internal error detail out of the answers of the unauthenticated
+// setup zone.
+func writeRestoreResponse(c *echo.Context, res backup.RestoreResult, err error, source restoreSource) error {
 	ctx := c.Request().Context()
+	setupZone := source == restoreSetupUpload || source == restoreSetupDisk
 	body := map[string]any{
 		"restarting":  res.Restarting,
 		"instance_id": instanceID,
@@ -536,6 +548,15 @@ func writeRestoreResponse(c *echo.Context, res backup.RestoreResult, err error, 
 		status, msg = http.StatusNotFound, "backup not found"
 	case errors.As(err, &incompat):
 		status, msg = http.StatusBadRequest, incompat.Error()
+	// A damaged archive the caller supplied or chose is the caller's to fix. A
+	// stored backup that no longer verifies is the server's own data gone bad:
+	// it falls through to the 500 and the error log below.
+	case errors.Is(err, backup.ErrDamagedArchive) && source != restoreStored:
+		slog.WarnContext(ctx, "restore refused: the backup archive is damaged", logging.KeyErr, err)
+		status, msg = http.StatusBadRequest, "the backup archive is damaged or incomplete"
+		if !setupZone {
+			msg = err.Error()
+		}
 	case errors.Is(err, backup.ErrSetupNotPending):
 		status, msg = http.StatusForbidden, backup.ErrSetupNotPending.Error()
 	case errors.Is(err, backup.ErrSetupCheckFailed):

@@ -4,6 +4,8 @@ export interface HealthStatus {
   status: string;
   igdb_status: 'ok' | 'not_configured' | 'invalid_credentials';
   backup_available: boolean;
+  instance_id: string;
+  restore_in_progress: boolean;
 }
 
 export function useHealthStatus() {

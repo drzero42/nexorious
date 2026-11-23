@@ -33,6 +33,11 @@ var (
 	ErrSetupNotPending = errors.New("restore during setup is only available when no users exist")
 	// ErrSetupCheckFailed: a setup-zone restore could not count the users.
 	ErrSetupCheckFailed = errors.New("could not verify that setup is still pending")
+	// ErrDamagedArchive: the archive cannot be read as a backup (not gzip or
+	// tar, cut short, no database.sql) or its contents do not match the
+	// checksums in its manifest. A file the server could not open or read is
+	// not this error.
+	ErrDamagedArchive = errors.New("the backup archive is damaged")
 )
 
 // ErrBackgroundStillRunning: background work did not stop within the limit.
@@ -191,6 +196,11 @@ func (s *Service) restore(archivePath, backupID string, upload bool, opts Restor
 	}
 	manifest, err := s.ValidateArchive(archivePath, false, s.maxMigration, s.minMigration)
 	if err != nil {
+		var incompat *IncompatibleBackupError
+		var ioErr *fs.PathError
+		if !errors.As(err, &incompat) && !errors.As(err, &ioErr) {
+			err = fmt.Errorf("%w: %w", ErrDamagedArchive, err)
+		}
 		return res, fmt.Errorf("restore: validate: %w", err)
 	}
 	tmpDir, err := os.MkdirTemp("", "nexorious-restore-*")
@@ -203,7 +213,7 @@ func (s *Service) restore(archivePath, backupID string, upload bool, opts Restor
 		return res, fmt.Errorf("restore: %w", err)
 	}
 	if err := verifyExtracted(extracted, manifest); err != nil {
-		return res, fmt.Errorf("restore: checksum verification failed: %w", err)
+		return res, fmt.Errorf("restore: %w: checksum verification failed: %w", ErrDamagedArchive, err)
 	}
 
 	// A setup-zone restore is unauthenticated: establish here, under the lock,

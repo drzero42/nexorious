@@ -679,3 +679,96 @@ func TestBackupChangesRefusedWhileLocked(t *testing.T) {
 		})
 	}
 }
+
+// A damaged archive the caller uploaded or named is the caller's fault (400);
+// a stored backup that no longer verifies is the server's (500). Either way
+// the restore was refused before it started, so the server does not restart.
+func TestRestore_DamagedArchiveStatus(t *testing.T) {
+	backup.CheckTools()
+	if !backup.PsqlAvailable() {
+		t.Skip("psql not available — restore handlers return 503 before validation")
+	}
+	const storedID = "nexorious-backup-20260101-000000-abcdef"
+	junk := []byte("not an archive")
+
+	uploadTo := func(path string) *http.Request {
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		fw, err := mw.CreateFormFile("file", "backup.tar.gz")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fw.Write(junk); err != nil {
+			t.Fatal(err)
+		}
+		if err := mw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, path, &buf)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		return req
+	}
+	jsonTo := func(path string, body any) *http.Request {
+		b, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		return req
+	}
+
+	cases := []struct {
+		name       string
+		admin      bool
+		req        func() *http.Request
+		wantStatus int
+		wantError  string
+	}{
+		{"admin upload", true, func() *http.Request { return uploadTo("/api/admin/backups/restore/upload") },
+			http.StatusBadRequest, "the backup archive is damaged: read manifest"},
+		{"setup upload", false, func() *http.Request { return uploadTo("/api/auth/setup/restore") },
+			http.StatusBadRequest, "the backup archive is damaged or incomplete"},
+		{"setup disk", false, func() *http.Request {
+			return jsonTo("/api/auth/setup/restore/disk", map[string]string{"filename": storedID + ".tar.gz"})
+		}, http.StatusBadRequest, "the backup archive is damaged or incomplete"},
+		{"stored backup", true, func() *http.Request {
+			return jsonTo("/api/admin/backups/"+storedID+"/restore", map[string]any{"confirm": true})
+		}, http.StatusInternalServerError, "the backup archive is damaged"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			backupDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(backupDir, storedID+".tar.gz"), junk, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			svc := backup.NewService(testDB, "", backupDir, t.TempDir(), "0.1.0")
+			e := newTestEchoBackup(t, testDB, svc)
+			req := tc.req()
+			if tc.admin {
+				_, tok := setupAdminUser(t, testDB, e, "damaged-"+strings.ReplaceAll(tc.name, " ", "-"))
+				req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
+			}
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			var body struct {
+				Error      string `json:"error"`
+				Restarting bool   `json:"restarting"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(body.Error, tc.wantError) {
+				t.Errorf("error = %q, want it to contain %q", body.Error, tc.wantError)
+			}
+			if !tc.admin && strings.Contains(body.Error, "gzip") {
+				t.Errorf("setup-zone error leaks detail: %q", body.Error)
+			}
+			if body.Restarting {
+				t.Error("restarting = true after a refusal")
+			}
+		})
+	}
+}

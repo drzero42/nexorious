@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -119,16 +120,20 @@ func newSetupRestoreCmd() *cobra.Command {
 				if idx := strings.LastIndexByte(filePath, '/'); idx >= 0 {
 					filename = filePath[idx+1:]
 				}
-				if err := c.SetupRestoreUpload(cmd.Context(), filename, f); err != nil {
+				err = runRestore(cmd.Context(), out, c, func(ctx context.Context) (*cliclient.RestoreResult, error) {
+					return c.SetupRestoreUpload(ctx, filename, f)
+				})
+				if err != nil {
 					return fmt.Errorf("setup restore upload: %w", err)
 				}
-				fmt.Fprintln(out, "Backup restored. Log in with your restored credentials.")
 				return nil
 			}
-			if err := c.SetupRestoreFromDisk(cmd.Context(), args[0]); err != nil {
+			err = runRestore(cmd.Context(), out, c, func(ctx context.Context) (*cliclient.RestoreResult, error) {
+				return c.SetupRestoreFromDisk(ctx, args[0])
+			})
+			if err != nil {
 				return fmt.Errorf("setup restore: %w", err)
 			}
-			fmt.Fprintln(out, "Backup restored. Log in with your restored credentials.")
 			return nil
 		},
 	}

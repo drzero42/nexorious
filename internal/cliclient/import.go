@@ -100,6 +100,30 @@ type CSVInspect struct {
 // reads them incrementally (chunked transfer encoding). This lets large
 // uploads (e.g. backup restore) stream straight from a file.
 func (c *Client) doBearerMultipart(ctx context.Context, method, path, key, filename string, body io.Reader, fields map[string]string, out any) error {
+	req, err := c.newMultipartRequest(ctx, method, path, key, filename, body, fields)
+	if err != nil {
+		return err
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return httpError(resp)
+	}
+	if out != nil && resp.StatusCode != http.StatusNoContent {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+	}
+	return nil
+}
+
+// newMultipartRequest builds doBearerMultipart's request: one file part (field
+// "file") streamed from body through an io.Pipe, plus the text fields.
+func (c *Client) newMultipartRequest(ctx context.Context, method, path, key, filename string, body io.Reader, fields map[string]string) (*http.Request, error) {
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
 
@@ -133,28 +157,13 @@ func (c *Client) doBearerMultipart(ctx context.Context, method, path, key, filen
 
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, pr)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentType)
 	if key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
-
-	resp, err := c.hc.Do(req)
-	if err != nil {
-		return fmt.Errorf("request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return httpError(resp)
-	}
-	if out != nil && resp.StatusCode != http.StatusNoContent {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-			return fmt.Errorf("decode response: %w", err)
-		}
-	}
-	return nil
+	return req, nil
 }
 
 // ListImportSources returns the registered mapper-based import sources from

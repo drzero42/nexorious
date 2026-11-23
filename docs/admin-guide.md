@@ -382,6 +382,8 @@ Otherwise it goes on, in this order:
 
 The restored database has its own sessions, so you usually have to log in again.
 
+The admin page, the setup screen and `nexctl backup restore` / `nexctl setup restore` wait for the server to come back before they report the result. The browser then moves on to the login page (or the setup screen, after a failed restore from it) and shows the result there. They keep waiting as long as the server reports a restore still in progress, even when a proxy has given up on the request, and give up two minutes after it stops doing so. Then check the server logs.
+
 Do not stop the server while a restore runs. A load cut off that way leaves the database in the state described below.
 
 The restore needs room in the server's temporary directory (`/tmp`): it extracts the backup there and, while that is still there, stages the pre-restore backup (a database dump and a copy of the cover art). If it has to roll back, it extracts the pre-restore backup there as well. An uploaded backup file also passes through it. Allow roughly twice the uncompressed size of a backup, plus the upload. The Helm chart limits `/tmp` to 2 GiB; raise `nexorious.tmpDir.sizeLimit` if your backups are larger.

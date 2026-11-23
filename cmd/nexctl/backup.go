@@ -259,8 +259,8 @@ func newBackupRestoreCmd() *cobra.Command {
 				return err
 			}
 
-			confirmMsg := "WARNING: Restoring will close the database connection, clear ALL active sessions, " +
-				"and force every user to re-login. Proceed?"
+			confirmMsg := "WARNING: Restoring replaces the whole database, cancels all running and queued " +
+				"background work, and restarts the server; every user has to log in again. Proceed?"
 			ok, err := cliui.Confirm(in, out, confirmMsg, flagBool(cmd, "yes"))
 			if err != nil {
 				return err
@@ -281,17 +281,21 @@ func newBackupRestoreCmd() *cobra.Command {
 				if idx := strings.LastIndexByte(filePath, '/'); idx >= 0 {
 					filename = filePath[idx+1:]
 				}
-				if err := c.RestoreBackupUpload(cmd.Context(), p.Key, filename, f); err != nil {
+				err = runRestore(cmd.Context(), out, c, func(ctx context.Context) (*cliclient.RestoreResult, error) {
+					return c.RestoreBackupUpload(ctx, p.Key, filename, f)
+				})
+				if err != nil {
 					return fmt.Errorf("restore upload: %w", err)
 				}
-				fmt.Fprintln(out, "restore initiated from uploaded file")
 				return nil
 			}
 
-			if err := c.RestoreBackup(cmd.Context(), p.Key, args[0]); err != nil {
+			err = runRestore(cmd.Context(), out, c, func(ctx context.Context) (*cliclient.RestoreResult, error) {
+				return c.RestoreBackup(ctx, p.Key, args[0])
+			})
+			if err != nil {
 				return fmt.Errorf("restore: %w", err)
 			}
-			fmt.Fprintf(out, "restore initiated from backup %s\n", args[0])
 			return nil
 		},
 	}

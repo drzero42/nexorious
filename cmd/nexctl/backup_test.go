@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // runBackup drives newRootCmd with the given args, pre-seeded against srvURL.
@@ -353,8 +354,11 @@ func TestBackupDownloadLatestNoBackups(t *testing.T) {
 }
 
 func TestBackupRestoreByIDConfirmed(t *testing.T) {
+	fastRestart(t, time.Second)
+	f := newFakeRestarter()
 	var restored bool
 	mux := http.NewServeMux()
+	mux.HandleFunc("/health", f.health)
 	mux.HandleFunc("/api/admin/backups/bk-1/restore", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
@@ -365,7 +369,7 @@ func TestBackupRestoreByIDConfirmed(t *testing.T) {
 			t.Errorf("confirm = %v, want true", body["confirm"])
 		}
 		restored = true
-		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "message": "restore started"})
+		f.answerAndRestart(w, http.StatusOK, map[string]any{"success": true, "message": "Restore completed from bk-1."})
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -377,8 +381,8 @@ func TestBackupRestoreByIDConfirmed(t *testing.T) {
 	if !restored {
 		t.Fatal("POST /restore not received")
 	}
-	if !strings.Contains(out, "bk-1") {
-		t.Errorf("output = %q, want backup id", out)
+	if !strings.Contains(out, "bk-1") || !strings.Contains(out, "The server is back.") {
+		t.Errorf("output = %q, want the backup id and the restart", out)
 	}
 }
 
@@ -413,14 +417,17 @@ func TestBackupRestoreNeitherIDNorFileErrors(t *testing.T) {
 
 func TestBackupRestoreUpload(t *testing.T) {
 	const archiveContent = "fake-tar-gz"
+	fastRestart(t, time.Second)
+	f := newFakeRestarter()
 	var gotBytes []byte
 	mux := http.NewServeMux()
+	mux.HandleFunc("/health", f.health)
 	mux.HandleFunc("/api/admin/backups/restore/upload", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
 		gotBytes = readMultipartFile(t, r)
-		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "message": "restore started"})
+		f.answerAndRestart(w, http.StatusOK, map[string]any{"success": true, "message": "Restore completed from upload."})
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -433,8 +440,8 @@ func TestBackupRestoreUpload(t *testing.T) {
 	if string(gotBytes) != archiveContent {
 		t.Errorf("uploaded bytes = %q, want %q", gotBytes, archiveContent)
 	}
-	if !strings.Contains(out, "restore initiated") {
-		t.Errorf("output = %q, want 'restore initiated'", out)
+	if !strings.Contains(out, "Restore completed from upload.") || !strings.Contains(out, "The server is back.") {
+		t.Errorf("output = %q, want the result and the restart", out)
 	}
 }
 

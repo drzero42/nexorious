@@ -24,6 +24,7 @@ export default defineConfig({
     proxy: {
       '/api': apiTarget,
       '/static': apiTarget,
+      '/health': apiTarget,
     },
   },
   build: {

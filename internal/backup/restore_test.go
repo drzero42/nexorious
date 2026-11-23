@@ -257,8 +257,8 @@ func TestRestore_RefusedBeforeMarker(t *testing.T) {
 		upload := writeDamagedArchive(t, t.TempDir())
 		res, err := svc.RestoreFromUpload(upload, backup.RestoreOpts{})
 		assertRefused(t, svc, rec, res, err)
-		if err != nil && !strings.Contains(err.Error(), "checksum") {
-			t.Errorf("error = %v, want a checksum failure", err)
+		if !errors.Is(err, backup.ErrDamagedArchive) || !strings.Contains(err.Error(), "checksum") {
+			t.Errorf("error = %v, want ErrDamagedArchive for a checksum failure", err)
 		}
 		if entries, _ := os.ReadDir(backupDir); len(entries) != 0 {
 			t.Errorf("backup dir after a refused upload = %v, want empty", entries)

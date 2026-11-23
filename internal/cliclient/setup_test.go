@@ -79,7 +79,7 @@ func TestSetupRestoreFromDisk(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if err := New(srv.URL).SetupRestoreFromDisk(t.Context(), "b.tar.gz"); err != nil {
+	if _, err := New(srv.URL).SetupRestoreFromDisk(t.Context(), "b.tar.gz"); err != nil {
 		t.Fatalf("SetupRestoreFromDisk: %v", err)
 	}
 	if !strings.Contains(gotBody, `"filename":"b.tar.gz"`) {
@@ -109,7 +109,7 @@ func TestSetupRestoreUpload(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if err := New(srv.URL).SetupRestoreUpload(t.Context(), "b.tar.gz", strings.NewReader("ARCHIVE-BYTES")); err != nil {
+	if _, err := New(srv.URL).SetupRestoreUpload(t.Context(), "b.tar.gz", strings.NewReader("ARCHIVE-BYTES")); err != nil {
 		t.Fatalf("SetupRestoreUpload: %v", err)
 	}
 }

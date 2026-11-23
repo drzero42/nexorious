@@ -49,6 +49,7 @@
       </div>
       <p class="card-description">Upload a backup file, or pick one already on disk.</p>
       <div class="alert-destructive" id="restore-err"></div>
+      <p class="card-description" id="restore-status" style="display:none"></p>
 
       <input type="file" id="file-input" accept=".tar.gz" style="display:none">
       <div id="drop-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
@@ -190,23 +191,11 @@
       ).filter(b => !b.disabled);
       previouslyEnabled.forEach(b => { b.disabled = true; });
       const reenable = () => previouslyEnabled.forEach(b => { b.disabled = false; });
-      try {
-        const res = await fetch('/api/auth/setup/restore/disk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename }),
-        });
-        if (res.ok) {
-          window.location.href = '/login';
-          return;
-        }
-        const body = await res.json().catch(() => ({}));
-        showError('restore-err', body.error || 'Restore failed. Please try again.');
-        reenable();
-      } catch {
-        showError('restore-err', 'Restore failed. Please try again.');
-        reenable();
-      }
+      await runRestore(() => fetch('/api/auth/setup/restore/disk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename }),
+      }), reenable);
     }
     function showAdmin() {
       document.getElementById('restore-view').style.display = 'none';
@@ -305,24 +294,112 @@
       btn.disabled = true;
       btn.textContent = 'Restoring…';
 
-      try {
-        const form = new FormData();
-        form.append('file', file);
-        const res = await fetch('/api/auth/setup/restore', { method: 'POST', body: form });
-        if (res.ok) {
-          window.location.href = '/login';
-        } else {
-          const body = await res.json().catch(() => ({}));
-          showError('restore-err', body.error || 'Restore failed. Please try again.');
-          btn.disabled = false;
-          btn.textContent = 'Restore';
-        }
-      } catch {
-        showError('restore-err', 'Restore failed. Please try again.');
+      const form = new FormData();
+      form.append('file', file);
+      await runRestore(() => fetch('/api/auth/setup/restore', { method: 'POST', body: form }), () => {
         btn.disabled = false;
         btn.textContent = 'Restore';
+      });
+    }
+
+    // A restore that has started ends with the server restarting (#1341), on
+    // success and on failure. Wait until /health answers with a new instance
+    // id, then go on: to the login page after a success, back to this page
+    // (which the restarted server serves again) after a failure.
+    const RESTORE_ERROR_KEY = 'nexorious.setupRestoreError';
+
+    async function readHealth() {
+      try {
+        const res = await fetch('/health', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+        return res.ok ? await res.json() : null;
+      } catch {
+        return null;
       }
     }
+
+    // The grace period starts again each time the old server reports a
+    // restore still in progress: a restore can outlast a proxy's timeout.
+    async function waitForNewInstance(oldId) {
+      const graceMs = 120000;
+      let deadline = Date.now() + graceMs;
+      for (;;) {
+        const h = await readHealth();
+        if (h) {
+          if (oldId && h.instance_id && h.instance_id !== oldId) return true;
+          if (!oldId && !h.restore_in_progress) return true;
+          if (h.restore_in_progress) deadline = Date.now() + graceMs;
+        }
+        if (Date.now() > deadline) return false;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    function showStatus(msg) {
+      const el = document.getElementById('restore-status');
+      el.textContent = msg;
+      el.style.display = msg ? '' : 'none';
+    }
+
+    async function runRestore(send, reenable) {
+      const before = await readHealth();
+      let res = null;
+      let body = null;
+      try {
+        res = await send();
+        body = await res.json().catch(() => null);
+      } catch {
+        // No answer: the restore may still have started.
+      }
+      // A body from the restore handler says whether the server restarts;
+      // without one, a 5xx or no answer at all may have started a restore.
+      const restarting = body && typeof body.restarting === 'boolean'
+        ? body.restarting
+        : (!res || res.status >= 500);
+      if (!restarting) {
+        if (res && res.ok) {
+          window.location.href = '/login';
+          return;
+        }
+        showError('restore-err', (body && body.error) || 'Restore failed. Please try again.');
+        reenable();
+        return;
+      }
+
+      showStatus('The server is restarting. This page moves on when it is back…');
+      const oldId = (body && body.instance_id) || (before && before.instance_id);
+      const back = await waitForNewInstance(oldId);
+      showStatus('');
+      if (!back) {
+        showError('restore-err', 'The server did not come back after the restore. Check the server logs, then reload this page.');
+        return;
+      }
+      if (res && res.ok) {
+        window.location.href = '/login';
+        return;
+      }
+      try {
+        sessionStorage.setItem(RESTORE_ERROR_KEY, (body && body.error) ||
+          'The restore request got no answer, so its outcome is unknown. Check the server logs.');
+      } catch {
+        // Storage unavailable: the error is not shown after the reload.
+      }
+      window.location.reload();
+    }
+
+    // The error of a restore that failed before the server restarted.
+    (function showRestoreErrorAfterRestart() {
+      let msg = null;
+      try {
+        msg = sessionStorage.getItem(RESTORE_ERROR_KEY);
+        sessionStorage.removeItem(RESTORE_ERROR_KEY);
+      } catch {
+        return;
+      }
+      if (msg) {
+        showRestore();
+        showError('restore-err', msg);
+      }
+    })();
   </script>
 </body>
 </html>

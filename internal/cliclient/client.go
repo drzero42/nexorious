@@ -1204,9 +1204,3 @@ func (c *Client) SetupListBackups(ctx context.Context) ([]SetupBackupEntry, erro
 	}
 	return env.Backups, nil
 }
-
-// SetupRestoreFromDisk restores a fresh instance from a named on-disk backup
-// via POST /api/auth/setup/restore/disk. Unauthenticated (pre-bootstrap).
-func (c *Client) SetupRestoreFromDisk(ctx context.Context, filename string) error {
-	return c.doBearer(ctx, http.MethodPost, "/api/auth/setup/restore/disk", "", map[string]string{"filename": filename}, nil)
-}
