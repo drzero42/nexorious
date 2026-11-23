@@ -335,6 +335,10 @@ Backups and restores are produced by the standard PostgreSQL client tools — `p
 
 If they're missing, Nexorious starts normally but disables this whole section — backup creation and restore both return an error, and the startup log notes `pg_dump not found` / `psql not found`.
 
+A restore loads the backup's `database.sql` with `psql` in restricted mode, so psql commands in a backup file (such as `\!`, which runs a shell command) are refused and abort the restore; a backup can only change the database. This needs a `psql` with the `\restrict` command: PostgreSQL 18, or 17.6, 16.10, 15.14, 14.19, 13.22 or later in an older major version. With an older `psql`, restore fails with "psql is too old to restore safely". Backup files made by earlier Nexorious versions still restore. A restore runs as one transaction: if any statement in the backup fails, nothing from it is kept, and Nexorious then rolls back to the pre-restore backup when one was taken.
+
+The SQL in a backup still runs as Nexorious's database role, so **the role in `DATABASE_URL` must not be a PostgreSQL superuser**. A superuser can run programs on the database host from plain SQL (`COPY … TO PROGRAM`), and a crafted backup file could use that. Nexorious only needs a role that owns its database. The NixOS module's local database already uses one. The bundled PostgreSQL in the Docker Compose file and the Helm chart connects as the container's `POSTGRES_USER`, which the official image creates as a superuser. If you use those, only restore backup files you made yourself.
+
 Keeping backups somewhere off the server, especially before upgrades, is the safest habit while the project is still moving quickly.
 
 ### Maintenance

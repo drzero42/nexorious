@@ -71,22 +71,6 @@ func RunPgDump(conn DBConnParams, outputPath string) error {
 	return nil
 }
 
-func RunPsqlFile(conn DBConnParams, sqlFilePath string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "psql", //nolint:gosec // fixed binary; only validated DB-connection flag values are interpolated, not the command
-		"--host="+conn.Host, "--port="+conn.Port,
-		"--username="+conn.User, "--dbname="+conn.DBName,
-		"--file="+sqlFilePath,
-	)
-	cmd.Env = append(cmd.Environ(), "PGPASSWORD="+conn.Password)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("psql restore failed: %w\noutput: %s", err, output)
-	}
-	return nil
-}
-
 var RunPsqlCommand = func(conn DBConnParams, command string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
