@@ -131,7 +131,7 @@ func TestJobShowNilFields(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": "job-2", "job_type": "sync", "source": "steam", "status": "pending",
 			"priority": "normal", "total_items": 0, "created_at": "2026-06-18T00:00:00Z",
-			"is_terminal": false, "auto_retry_done": false,
+			"is_terminal": false,
 		})
 	})
 	srv := httptest.NewServer(mux)

@@ -32,7 +32,6 @@ type Job struct {
 	FilePath        *string     `json:"file_path"`
 	TotalItems      int         `json:"total_items"`
 	ErrorMessage    *string     `json:"error_message"`
-	AutoRetryDone   bool        `json:"auto_retry_done"`
 	CreatedAt       string      `json:"created_at"`
 	StartedAt       *string     `json:"started_at"`
 	CompletedAt     *string     `json:"completed_at"`

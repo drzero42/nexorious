@@ -61,7 +61,6 @@ type Job struct {
 	FilePath         *string `bun:"file_path"                json:"file_path"`
 	TotalItems       int     `bun:"total_items,notnull"      json:"total_items"`
 	ErrorMessage     *string `bun:"error_message"            json:"error_message"`
-	AutoRetryDone    bool    `bun:"auto_retry_done,notnull"   json:"auto_retry_done"`
 	DispatchComplete bool    `bun:"dispatch_complete,notnull" json:"-"`
 	// RiverJobID is the River job that owns the Job's dispatch while it is not
 	// done (internal/joblifecycle); NULL otherwise.
