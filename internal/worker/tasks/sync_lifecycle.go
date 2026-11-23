@@ -235,15 +235,16 @@ func emitAll(ctx context.Context, db *bun.DB, events ...notify.EmitParams) error
 
 // outageFailure is the outage rule that sync.failed and sync.recovered share
 // (#1344, #1385): a sync of the store, previous_job, that failed for anything
-// but its credentials since the store's last successful sync (cfg's
-// last_synced_at). The error text need not match: messages often carry
+// but its credentials since the store's last successful fetch (cfg's
+// last_fetched_at, which Reset sync data leaves alone, unlike last_synced_at:
+// #1405). The error text need not match: messages often carry
 // varying details, so matching would notify on every attempt again.
 // Credential failures do not count, since they send their own notice. The
 // caller joins previous_job (with the store's user_id and source) and cfg, and
 // binds credentialsErrorMessage.
 const outageFailure = `previous_job.job_type = 'sync' AND previous_job.status = 'failed'
 	AND previous_job.error_message IS DISTINCT FROM ?
-	AND (cfg.last_synced_at IS NULL OR previous_job.completed_at > cfg.last_synced_at)`
+	AND (cfg.last_fetched_at IS NULL OR previous_job.completed_at > cfg.last_fetched_at)`
 
 // previousSyncFailure reports whether an earlier sync of the same store failed
 // in this outage (outageFailure), which means the outage has already been
@@ -270,7 +271,7 @@ func previousSyncFailure(ctx context.Context, db bun.IDB, jobID string) (bool, e
 // emitSyncRecovered sends sync.recovered when the store is in an outage that
 // sent sync.failed (outageFailure), so the user learns it is over (#1385). It
 // runs in the transaction that records the successful fetch, before
-// last_synced_at moves past the outage. A store that failed only for its
+// last_fetched_at moves past the outage. A store that failed only for its
 // credentials sent no sync.failed, and the user's reconnect ended it, so it
 // sends nothing.
 func emitSyncRecovered(ctx context.Context, tx bun.Tx, p DispatchSyncArgs) error {

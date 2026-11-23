@@ -424,8 +424,8 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyn
 		return ctx.Err()
 	}
 
-	// Mark the dispatch done, with last_synced_at and the cleared
-	// credentials flag as this sync's own writes, after sync.recovered when
+	// Mark the dispatch done, with last_synced_at, last_fetched_at and the
+	// cleared credentials flag as this sync's own writes, after sync.recovered when
 	// this fetch ends an outage. The module then queues the items that can no
 	// longer wait and evaluates completion (an empty library completes here).
 	return exitOrRetry(ctx, w.LC.MarkDispatched(ctx, p.JobID, rj.ID, joblifecycle.Dispatched{
@@ -433,9 +433,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyn
 			if err := emitSyncRecovered(ctx, tx, p); err != nil {
 				return err
 			}
+			now := time.Now().UTC()
 			_, err := tx.NewRaw(
-				`UPDATE user_sync_configs SET last_synced_at = ?, credentials_error = false, updated_at = now() WHERE user_id = ? AND storefront = ?`,
-				time.Now().UTC(), p.UserID, p.Storefront,
+				`UPDATE user_sync_configs SET last_synced_at = ?, last_fetched_at = ?, credentials_error = false, updated_at = now() WHERE user_id = ? AND storefront = ?`,
+				now, now, p.UserID, p.Storefront,
 			).Exec(ctx)
 			return err
 		},
