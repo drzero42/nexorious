@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -84,7 +85,10 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 		return "", fmt.Errorf("create backup: %w", err)
 	}
 
-	id := fmt.Sprintf("nexorious-backup-%s", time.Now().UTC().Format("20060102-150405"))
+	id, err := newBackupID()
+	if err != nil {
+		return "", err
+	}
 
 	tmpDir, err := os.MkdirTemp("", "nexorious-backup-*")
 	if err != nil {
@@ -193,6 +197,19 @@ func (s *Service) ListBackups() ([]BackupInfo, error) {
 	})
 
 	return backups, nil
+}
+
+// newBackupID returns a fresh backup id: the UTC time to the second plus a
+// random suffix. Two backups made in the same second (an uploaded archive and
+// its pre-restore backup, #1349) must never share an id, because the id names
+// the archive file. Nothing parses the id; older archives without the suffix
+// stay valid.
+func newBackupID() (string, error) {
+	var b [3]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate backup id: %w", err)
+	}
+	return fmt.Sprintf("nexorious-backup-%s-%s", time.Now().UTC().Format("20060102-150405"), hex.EncodeToString(b[:])), nil
 }
 
 // validateBackupID rejects backup IDs that could escape the backup directory
@@ -552,7 +569,8 @@ func writeTarFile(tw *tar.Writer, srcPath, tarName string) error {
 }
 
 func createTarGz(archivePath, baseDir, dirName string) error {
-	f, err := os.Create(archivePath) //nolint:gosec // archivePath is an internally-derived backup destination under s.backupPath, not user input
+	// O_EXCL: never overwrite an existing backup (#1349).
+	f, err := os.OpenFile(archivePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // archivePath is an internally-derived backup destination under s.backupPath, not user input
 	if err != nil {
 		return err
 	}
@@ -780,16 +798,16 @@ func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (stri
 		return "", fmt.Errorf("validate uploaded archive: %w", err)
 	}
 
-	id := fmt.Sprintf("nexorious-backup-%s", time.Now().UTC().Format("20060102-150405"))
+	id, err := newBackupID()
+	if err != nil {
+		return "", err
+	}
 	destPath := filepath.Join(s.backupPath, id+".tar.gz")
 	if err := os.MkdirAll(s.backupPath, 0o750); err != nil {
 		return "", fmt.Errorf("create backup dir: %w", err)
 	}
-	if err := os.Rename(uploadedPath, destPath); err != nil {
-		if err := copyFile(uploadedPath, destPath); err != nil {
-			return "", fmt.Errorf("move uploaded archive: %w", err)
-		}
-		_ = os.Remove(uploadedPath)
+	if err := moveNoReplace(uploadedPath, destPath); err != nil {
+		return "", fmt.Errorf("move uploaded archive: %w", err)
 	}
 
 	return id, s.doRestore(destPath, id, opts)
@@ -985,19 +1003,47 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 	return fmt.Errorf("restore failed: %w (rolled back to pre-restore backup)", originalErr)
 }
 
+// moveNoReplace moves src to dst, refusing to overwrite an existing dst.
+// A rename across filesystems (the upload staging dir is often on another one)
+// falls back to an exclusive copy.
+func moveNoReplace(src, dst string) error {
+	if _, err := os.Lstat(dst); err == nil {
+		return fmt.Errorf("%s: %w", dst, fs.ErrExist)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	if err := copyFile(src, dst); err != nil {
+		return err
+	}
+	if err := os.Remove(src); err != nil {
+		slog.Warn("remove staged upload after copy", "path", src, logging.KeyErr, err)
+	}
+	return nil
+}
+
+// copyFile copies src to a new file dst. It never overwrites: an existing dst
+// is an error. A partially written dst is removed.
 func copyFile(src, dst string) error {
-	in, err := os.Open(src) //nolint:gosec // src/dst are internally-derived cover-art paths, not user input
+	in, err := os.Open(src) //nolint:gosec // src is an internally-staged upload path, not user input
 	if err != nil {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	out, err := os.Create(dst) //nolint:gosec // src/dst are internally-derived cover-art paths, not user input
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // dst is an internally-derived path under the backup dir, not user input
 	if err != nil {
 		return err
 	}
 	if _, err = io.Copy(out, in); err != nil {
 		_ = out.Close()
+		_ = os.Remove(dst)
 		return err
 	}
-	return out.Close()
+	if err := out.Close(); err != nil {
+		_ = os.Remove(dst)
+		return err
+	}
+	return nil
 }
