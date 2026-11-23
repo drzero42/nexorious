@@ -244,7 +244,8 @@ func TestCancelJob(t *testing.T) {
 
 	insertJob(t, testDB, "job-cancel-1", userID, "sync", "steam", "processing")
 	insertJobItem(t, testDB, "ji-cancel-1", "job-cancel-1", userID, "key-1", "Game 1", "pending")
-	riverID := insertRiverJob(t, testDB, "import_item", "available", "ji-cancel-1")
+	// A sync item's River job: Cancel cancels the River jobs of the Job's kind.
+	riverID := insertRiverJob(t, testDB, "igdb_match", "available", "ji-cancel-1")
 
 	rec := postJSONAuth(t, e, "/api/jobs/job-cancel-1/cancel", nil, token)
 	if rec.Code != http.StatusOK {
@@ -799,7 +800,8 @@ func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
 		status  string
 	}{
 		{name: "import", suffix: "jobs-retry-withfail", jobID: "job-retry-wf", jobType: "import", source: "steam", status: "completed"},
-		{name: "sync", suffix: "jobs-retry-sync", jobID: "job-retry-sync", jobType: "sync", source: "steam"},
+		// A failed sync is never reopened (TestRetryFailed_LifecycleKindFinishedJobIs409).
+		{name: "sync", suffix: "jobs-retry-sync", jobID: "job-retry-sync", jobType: "sync", source: "steam", status: "completed"},
 		// A kind on the lifecycle module (import, metadata_refresh) is retried
 		// only while active or completed (TestRetryFailed_LifecycleKindFinishedJobIs409).
 		{name: "metadata_refresh", suffix: "jobs-retry-meta", jobID: "job-retry-meta", jobType: "metadata_refresh", source: "system", status: "completed"},
