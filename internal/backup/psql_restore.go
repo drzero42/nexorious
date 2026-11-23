@@ -12,25 +12,12 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"time"
 )
 
 // ErrPsqlTooOld is returned when the installed psql does not know the
 // \restrict meta-command, so a dump cannot be loaded without letting it run
 // backslash commands.
 var ErrPsqlTooOld = errors.New("psql is too old to restore safely: it lacks \\restrict (PostgreSQL 18, or 17.6 / 16.10 / 15.14 / 14.19 / 13.22 or later, is required)")
-
-// restoreTimeoutBase is the minimum time a dump load may take; restoreTimeoutPerMiB
-// is added for every MiB of dump so large databases get proportionally longer.
-const (
-	restoreTimeoutBase   = 5 * time.Minute
-	restoreTimeoutPerMiB = 2 * time.Second
-)
-
-// restoreTimeout scales the psql deadline with the dump size.
-func restoreTimeout(dumpBytes int64) time.Duration {
-	return restoreTimeoutBase + time.Duration(dumpBytes/(1<<20))*restoreTimeoutPerMiB
-}
 
 // RunPsqlRestore loads a plain-format pg_dump file into the database.
 //
@@ -55,7 +42,7 @@ var RunPsqlRestore = func(conn DBConnParams, sqlFilePath string) error {
 		size = fi.Size()
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), restoreTimeout(size))
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout(size))
 	defer cancel()
 
 	key := rand.Text()
@@ -86,7 +73,7 @@ var RunPsqlRestore = func(conn DBConnParams, sqlFilePath string) error {
 			return fmt.Errorf("%w\noutput: %s", ErrPsqlTooOld, output)
 		}
 		if ctx.Err() != nil {
-			return fmt.Errorf("psql restore timed out after %s: %w\noutput: %s", restoreTimeout(size), err, output)
+			return fmt.Errorf("psql restore timed out after %s: %w\noutput: %s", toolTimeout(size), err, output)
 		}
 		return fmt.Errorf("psql restore failed: %w\noutput: %s", err, output)
 	}

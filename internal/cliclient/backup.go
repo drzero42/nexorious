@@ -81,7 +81,7 @@ func (c *Client) ListBackups(ctx context.Context, key string) ([]Backup, error) 
 // returns the new backup's ID and a status message.
 func (c *Client) CreateBackup(ctx context.Context, key string) (*CreateBackupResult, error) {
 	var out CreateBackupResult
-	if err := c.doBearer(ctx, http.MethodPost, "/api/admin/backups", key, nil, &out); err != nil {
+	if err := c.withTimeout(backupOpTimeout).doBearer(ctx, http.MethodPost, "/api/admin/backups", key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

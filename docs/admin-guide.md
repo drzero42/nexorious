@@ -355,6 +355,8 @@ If they're missing, Nexorious starts normally but disables this whole section â€
 
 A backup holds your data, not the background work that was queued when it was taken: queued and running background jobs are left out. Notifications that were still waiting to be sent at that moment are therefore not sent after the backup is restored.
 
+Neither tool may run forever, but the limit grows with your data: `pg_dump` gets 5 minutes plus 2 seconds for every MiB the database takes up, and a restore's `psql` gets 5 minutes plus 2 seconds for every MiB of the backup's `database.sql`. A run that goes over is stopped, and the backup or restore fails with "timed out". A restore on a running instance starts with a pre-restore backup, so a dump that times out there stops the restore before anything has changed.
+
 A restore loads the backup's `database.sql` with `psql` in restricted mode, so psql commands in a backup file (such as `\!`, which runs a shell command) are refused and abort the restore; a backup can only change the database. This needs a `psql` with the `\restrict` command: PostgreSQL 18, or 17.6, 16.10, 15.14, 14.19, 13.22 or later in an older major version. With an older `psql`, restore fails with "psql is too old to restore safely". Backup files made by earlier Nexorious versions still restore. A restore runs as one transaction: if any statement in the backup fails, nothing from it is kept, and Nexorious then rolls back to the pre-restore backup when one was taken.
 
 The SQL in a backup still runs as Nexorious's database role, so **the role in `DATABASE_URL` must not be a PostgreSQL superuser**. See [Database role](#database-role).

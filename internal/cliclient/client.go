@@ -544,6 +544,14 @@ func (c *Client) doBearer(ctx context.Context, method, path, key string, body, o
 	return nil
 }
 
+// withTimeout returns a copy of c whose requests give up after d instead of
+// the usual 30 s, for calls the server answers only once long work is done.
+func (c *Client) withTimeout(d time.Duration) *Client {
+	hc := *c.hc
+	hc.Timeout = d
+	return &Client{baseURL: c.baseURL, hc: &hc}
+}
+
 // mcpTimeout bounds one MCP exchange. A tool call fans out into several REST
 // sub-calls server-side (each under the server's own 30s client timeout), so
 // the default per-request timeout would cut off calls the server is still

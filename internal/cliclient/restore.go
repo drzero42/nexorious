@@ -12,11 +12,12 @@ import (
 	"time"
 )
 
-// restoreTimeout bounds one restore request. The server answers only once the
-// restore has ended: it stops background work (up to 30 s), takes a
-// pre-restore backup, loads the archive and migrates it, so the client's usual
-// 30 s would give up long before the answer.
-const restoreTimeout = 2 * time.Hour
+// backupOpTimeout bounds one backup or restore request. The server answers
+// only once the work has ended: a backup runs pg_dump, whose own deadline
+// grows with the database size; a restore also stops background work (up to
+// 30 s), takes a pre-restore backup, loads the archive and migrates it. The
+// client's usual 30 s would give up long before the answer.
+const backupOpTimeout = 2 * time.Hour
 
 // RestoreResult is the body of a restore response, success or failure. Every
 // response sent once the restore has started carries Restarting and the
@@ -94,15 +95,13 @@ func newJSONRequest(ctx context.Context, target, key string, body any) (*http.Re
 	return req, nil
 }
 
-// doRestore sends a restore request with restoreTimeout and decodes the body
+// doRestore sends a restore request with backupOpTimeout and decodes the body
 // whatever the status, since a failed restore's body still says whether the
 // server is restarting. A non-2xx status is returned as an *HTTPError next to
 // the decoded body (nil when the body was not JSON). A request that got no
 // answer returns a nil result.
 func (c *Client) doRestore(req *http.Request) (*RestoreResult, error) {
-	hc := *c.hc
-	hc.Timeout = restoreTimeout
-	resp, err := hc.Do(req)
+	resp, err := c.withTimeout(backupOpTimeout).hc.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request: %w", err)
 	}

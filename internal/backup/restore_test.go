@@ -345,7 +345,7 @@ func TestRestore_FailsBeforeDrop(t *testing.T) {
 	t.Run("pre-restore backup fails", func(t *testing.T) {
 		f := newRestoreFixture(t)
 		svc, rec := newRestoreService(t, f.backupDir, f.storageDir)
-		backup.SetRunPgDumpForTest(t, func(backup.DBConnParams, string) error { return errors.New("pg_dump: timed out") })
+		backup.SetRunPgDumpForTest(t, func(backup.DBConnParams, string, time.Duration) error { return errors.New("pg_dump: timed out") })
 		res, err := svc.RestoreBackup(f.backupID, backup.RestoreOpts{})
 		assertCleanRestart(t, svc, rec, f, res, err)
 	})

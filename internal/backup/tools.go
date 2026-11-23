@@ -67,8 +67,23 @@ var pgDumpExclusions = []string{
 	"--exclude-schema=nexorious_restore",
 }
 
-func RunPgDump(conn DBConnParams, outputPath string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+// toolTimeoutBase is the least time pg_dump or a psql load gets;
+// toolTimeoutPerMiB is added for every MiB of data, so a large database gets
+// proportionally longer. The deadline only guards against a hung tool.
+const (
+	toolTimeoutBase   = 5 * time.Minute
+	toolTimeoutPerMiB = 2 * time.Second
+)
+
+// toolTimeout scales a pg_dump or psql deadline with the size of the data.
+func toolTimeout(sizeBytes int64) time.Duration {
+	return toolTimeoutBase + time.Duration(sizeBytes/(1<<20))*toolTimeoutPerMiB
+}
+
+// RunPgDump dumps the database into outputPath as plain SQL, giving up after
+// timeout.
+func RunPgDump(conn DBConnParams, outputPath string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	args := append([]string{
 		"--format=plain", "--no-owner", "--no-acl",
@@ -80,6 +95,9 @@ func RunPgDump(conn DBConnParams, outputPath string) error {
 	cmd.Env = append(cmd.Environ(), "PGPASSWORD="+conn.Password)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("pg_dump timed out after %s: %w\noutput: %s", timeout, err, output)
+		}
 		return fmt.Errorf("pg_dump failed: %w\noutput: %s", err, output)
 	}
 	return nil
