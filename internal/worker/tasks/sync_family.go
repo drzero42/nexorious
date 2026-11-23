@@ -22,11 +22,6 @@ import (
 // Family lock order, shared with rematch: the parent row first, then its
 // children ordered by id.
 
-// errChildRepointed is returned to River when a child was re-pointed to a new
-// parent (promotion) while its igdb_match was deciding whether to wait; the
-// retry decides again against the new parent.
-var errChildRepointed = errors.New("igdb_match: child was re-pointed to another parent; retrying")
-
 // childUnmatchedParentMsg is the item error for a child whose parent is
 // unmatched and has nothing in this sync that could match it.
 const childUnmatchedParentMsg = "parent game is unmatched and is not part of this sync"
@@ -178,20 +173,6 @@ func promoteChild(ctx context.Context, db *bun.DB, parentID string) (string, err
 		).Exec(ctx); err != nil {
 			return fmt.Errorf("re-point siblings: %w", err)
 		}
-		// Unfinished items left in finished Jobs (a sync the user cancelled to
-		// escape the hang) would hide the promoted game from the storefront list,
-		// or keep the old parent showing as needing review.
-		if _, err := tx.NewRaw(`
-			UPDATE job_items ji SET status = 'cancelled', processed_at = now()
-			FROM jobs j
-			WHERE j.id = ji.job_id
-			  AND j.status NOT IN ('pending', 'processing')
-			  AND ji.status IN ('pending', 'pending_review')
-			  AND ji.external_game_id IN (?, ?)`,
-			promotedID, parentID,
-		).Exec(ctx); err != nil {
-			return fmt.Errorf("cancel leftover items: %w", err)
-		}
 		return nil
 	})
 	if err != nil {
@@ -225,130 +206,4 @@ func oldestAvailable(children []familyChild) string {
 		return ""
 	}
 	return best.ID
-}
-
-// childWaitAction is what igdb_match does with a child whose parent was
-// unmatched when it looked.
-type childWaitAction int
-
-const (
-	// childProceed: the facts changed (the game is skipped or matched, it is no
-	// longer a child, or its parent is matched now); carry on with fresh state.
-	childProceed childWaitAction = iota
-	// childWait: leave the item pending; the parent's progress wakes it.
-	childWait
-	// childFailed: the item was failed inside the decision's transaction.
-	childFailed
-)
-
-// childWaitResult carries the decision and the state it was taken on.
-type childWaitResult struct {
-	action childWaitAction
-	// Fresh state of the game, valid for childProceed.
-	isSkipped      bool
-	resolvedIGDBID *int32
-	parentID       *string
-	// The locked parent's match, valid for childProceed when parentID is set.
-	parentIGDBID *int32
-}
-
-// decideChildWait decides whether a child may wait for its unmatched parent,
-// in one short transaction on facts that cannot change underneath it. A child
-// waits only when the wait can end: its Job is active, the parent is top-level,
-// and the parent has an unfinished item in the Job or the dispatch is still
-// running (it may add one). Otherwise the item is failed.
-//
-// It runs on the worker's own ctx: a worker cut off by a shutdown must not
-// commit a failure. Database errors are returned for River to retry.
-func decideChildWait(ctx context.Context, db *bun.DB, itemID, jobID, gameID, parentID string) (childWaitResult, error) {
-	var res childWaitResult
-	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		res = childWaitResult{}
-		// Parent first: rematch and promotion lock it first too, so this waits
-		// for either to finish.
-		var parent struct {
-			ParentID       *string `bun:"parent_id"`
-			ResolvedIGDBID *int32  `bun:"resolved_igdb_id"`
-		}
-		err := tx.NewRaw(
-			`SELECT parent_id, resolved_igdb_id FROM external_games WHERE id = ? FOR SHARE`, parentID,
-		).Scan(ctx, &parent)
-		if errors.Is(err, sql.ErrNoRows) {
-			return failChildItem(ctx, tx, itemID, "external game not found", &res)
-		}
-		if err != nil {
-			return fmt.Errorf("lock parent: %w", err)
-		}
-
-		var game struct {
-			ParentID       *string `bun:"parent_id"`
-			ResolvedIGDBID *int32  `bun:"resolved_igdb_id"`
-			IsSkipped      bool    `bun:"is_skipped"`
-		}
-		err = tx.NewRaw(
-			`SELECT parent_id, resolved_igdb_id, is_skipped FROM external_games WHERE id = ?`, gameID,
-		).Scan(ctx, &game)
-		if errors.Is(err, sql.ErrNoRows) {
-			return failChildItem(ctx, tx, itemID, "external game not found", &res)
-		}
-		if err != nil {
-			return fmt.Errorf("reload game: %w", err)
-		}
-		if game.ParentID != nil && *game.ParentID != parentID {
-			return errChildRepointed
-		}
-
-		res.isSkipped = game.IsSkipped
-		res.resolvedIGDBID = game.ResolvedIGDBID
-		res.parentID = game.ParentID
-		res.parentIGDBID = parent.ResolvedIGDBID
-		if game.IsSkipped || game.ResolvedIGDBID != nil || game.ParentID == nil || parent.ResolvedIGDBID != nil {
-			res.action = childProceed
-			return nil
-		}
-
-		var facts struct {
-			JobActive       bool `bun:"job_active"`
-			ParentHasItem   bool `bun:"parent_has_item"`
-			DispatchRunning bool `bun:"dispatch_running"`
-		}
-		if err := tx.NewRaw(`
-			SELECT
-			  j.status IN ('pending', 'processing') AS job_active,
-			  EXISTS (
-			    SELECT 1 FROM job_items pi
-			    WHERE pi.job_id = j.id AND pi.external_game_id = ?
-			      AND pi.status IN ('pending', 'processing', 'pending_review')) AS parent_has_item,
-			  (NOT j.dispatch_complete AND EXISTS (
-			    SELECT 1 FROM river_job rj
-			    WHERE rj.kind = ? AND rj.args->>'job_id' = j.id::text
-			      AND rj.state NOT IN ('completed', 'cancelled', 'discarded'))) AS dispatch_running
-			FROM jobs j WHERE j.id = ?`,
-			parentID, DispatchSyncArgs{}.Kind(), jobID,
-		).Scan(ctx, &facts); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return failChildItem(ctx, tx, itemID, childUnmatchedParentMsg, &res)
-			}
-			return fmt.Errorf("load job facts: %w", err)
-		}
-
-		if facts.JobActive && parent.ParentID == nil && (facts.ParentHasItem || facts.DispatchRunning) {
-			res.action = childWait
-			return nil
-		}
-		return failChildItem(ctx, tx, itemID, childUnmatchedParentMsg, &res)
-	})
-	return res, err
-}
-
-func failChildItem(ctx context.Context, tx bun.Tx, itemID, msg string, res *childWaitResult) error {
-	if _, err := tx.NewRaw(
-		`UPDATE job_items SET status = 'failed', error_message = ?, processed_at = now()
-		 WHERE id = ? AND status = 'pending'`,
-		msg, itemID,
-	).Exec(ctx); err != nil {
-		return fmt.Errorf("fail child item: %w", err)
-	}
-	res.action = childFailed
-	return nil
 }

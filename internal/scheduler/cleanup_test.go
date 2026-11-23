@@ -591,23 +591,9 @@ func TestCleanupSyncChanges_DeletesOldRows(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildPeriodicJobs_InvalidMetadataRefreshInterval_DefaultsTo24h(t *testing.T) {
-	cfg := &config.Config{
-		MetadataRefreshInterval: "not-a-duration",
-		StaleJobThreshold:       "4h",
-	}
+	cfg := &config.Config{MetadataRefreshInterval: "not-a-duration"}
 	// Should not panic; falls back to 24h.
-	jobs := scheduler.BuildPeriodicJobs(cfg, 4*time.Hour)
-	if len(jobs) == 0 {
-		t.Fatal("expected non-empty periodic jobs slice")
-	}
-}
-
-func TestBuildPeriodicJobs_InvalidStaleJobThreshold_DefaultsTo4h(t *testing.T) {
-	cfg := &config.Config{
-		MetadataRefreshInterval: "24h",
-		StaleJobThreshold:       "not-a-duration",
-	}
-	jobs := scheduler.BuildPeriodicJobs(cfg, 4*time.Hour)
+	jobs := scheduler.BuildPeriodicJobs(cfg)
 	if len(jobs) == 0 {
 		t.Fatal("expected non-empty periodic jobs slice")
 	}

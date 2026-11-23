@@ -2,15 +2,11 @@ package scheduler
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/robfig/cron/v3"
 	"github.com/uptrace/bun"
@@ -22,15 +18,6 @@ import (
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
-
-// emitMaint emits an admin.maintenance.{completed,failed} event.
-func emitMaint(ctx context.Context, db *bun.DB, failed bool, p notify.MaintPayload) {
-	typ := notify.TypeAdminMaintCompleted
-	if failed {
-		typ = notify.TypeAdminMaintFailed
-	}
-	notify.Emit(ctx, db, notify.EmitParams{Type: typ, Scope: notify.ScopeAdmin, Payload: p})
-}
 
 // ── CleanupOldJobs ─────────────────────────────────────────────────────────────
 
@@ -97,46 +84,6 @@ func (w *CleanupExpiredSessionsWorker) Work(ctx context.Context, _ *river.Job[Cl
 	return nil
 }
 
-// ── RescueOrphanedPendingItems ────────────────────────────────────────────────
-
-type RescueOrphanedPendingItemsArgs struct{}
-
-func (RescueOrphanedPendingItemsArgs) Kind() string { return "rescue_orphaned_pending_items" }
-
-type RescueOrphanedPendingItemsWorker struct {
-	river.WorkerDefaults[RescueOrphanedPendingItemsArgs]
-	DB          *bun.DB
-	RiverClient *river.Client[pgx.Tx]
-}
-
-func (w *RescueOrphanedPendingItemsWorker) Work(ctx context.Context, _ *river.Job[RescueOrphanedPendingItemsArgs]) error {
-	RescueOrphanedPendingItems(ctx, w.DB, w.RiverClient, time.Hour)
-	return nil
-}
-
-// ── CleanupStaleJobs ──────────────────────────────────────────────────────────
-
-type CleanupStaleJobsArgs struct {
-	Threshold string `json:"threshold"`
-}
-
-func (CleanupStaleJobsArgs) Kind() string { return "cleanup_stale_jobs" }
-
-type CleanupStaleJobsWorker struct {
-	river.WorkerDefaults[CleanupStaleJobsArgs]
-	DB *bun.DB
-}
-
-func (w *CleanupStaleJobsWorker) Work(ctx context.Context, job *river.Job[CleanupStaleJobsArgs]) error {
-	d, err := time.ParseDuration(job.Args.Threshold)
-	if err != nil {
-		slog.WarnContext(ctx, "cleanup_stale_jobs: invalid threshold, defaulting to 4h", "threshold", job.Args.Threshold, logging.KeyErr, err)
-		d = 4 * time.Hour
-	}
-	CleanupStaleJobs(ctx, w.DB, d)
-	return nil
-}
-
 // ── CheckPendingSyncs ─────────────────────────────────────────────────────────
 
 type CheckPendingSyncsArgs struct{}
@@ -145,8 +92,8 @@ func (CheckPendingSyncsArgs) Kind() string { return "check_pending_syncs" }
 
 type CheckPendingSyncsWorker struct {
 	river.WorkerDefaults[CheckPendingSyncsArgs]
-	DB          *bun.DB
-	RiverClient *river.Client[pgx.Tx]
+	DB *bun.DB
+	LC *joblifecycle.Module
 }
 
 func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPendingSyncsArgs]) error {
@@ -183,51 +130,15 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 			continue
 		}
 
-		// Guard + insert run in one transaction fronted by a transaction-scoped
-		// advisory lock on the (sync, storefront, user) dedup key (same key the
-		// manual-trigger handler uses), so a scheduler tick and a concurrent
-		// manual trigger can't both pass the guard and create duplicate active
-		// sync jobs for the same user+storefront.
-		jobID := uuid.NewString()
-		var inserted bool
-		txErr := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-			if e := tasks.AcquireJobDedupLock(ctx, tx, "sync", cfg.Storefront, cfg.UserID); e != nil {
-				return e
+		// The module's duplicate check, under the (sync, storefront, user)
+		// lock the manual trigger shares: an active sync is left alone.
+		if _, err := w.LC.CreateWithDispatch(ctx, joblifecycle.NewJob{
+			UserID: cfg.UserID, JobType: models.JobTypeSync, Source: cfg.Storefront, Priority: models.JobPriorityLow,
+		}); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
-			var existingID string
-			e := tx.NewRaw(
-				`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
-				cfg.UserID, cfg.Storefront,
-			).Scan(ctx, &existingID)
-			if e == nil {
-				return nil // already running; leave inserted=false
-			}
-			if !errors.Is(e, sql.ErrNoRows) {
-				return e
-			}
-			if _, e := tx.NewRaw(
-				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at) VALUES (?, ?, 'sync', ?, 'pending', 'low', now())`,
-				jobID, cfg.UserID, cfg.Storefront,
-			).Exec(ctx); e != nil {
-				return e
-			}
-			inserted = true
-			return nil
-		})
-		if txErr != nil {
-			slog.ErrorContext(ctx, "CheckPendingSyncs: create job", logging.Cat(logging.CategoryDB), logging.KeyErr, txErr, logging.KeyUserID, cfg.UserID, logging.KeySource, cfg.Storefront)
-			continue
-		}
-		if !inserted {
-			continue // already running
-		}
-
-		if _, err := w.RiverClient.Insert(ctx, tasks.DispatchSyncArgs{
-			JobID:      jobID,
-			UserID:     cfg.UserID,
-			Storefront: cfg.Storefront,
-		}, nil); err != nil {
-			slog.ErrorContext(ctx, "CheckPendingSyncs: enqueue dispatch failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.KeyUserID, cfg.UserID, logging.Cat(logging.CategoryDB))
+			slog.ErrorContext(ctx, "CheckPendingSyncs: create job", logging.Cat(logging.CategoryDB), logging.KeyErr, err, logging.KeyUserID, cfg.UserID, logging.KeySource, cfg.Storefront)
 		}
 	}
 	return nil
@@ -290,8 +201,6 @@ func MaintenanceJobKinds() []string {
 		CleanupExportsArgs{}.Kind(),
 		CleanupUnreferencedGamesArgs{}.Kind(),
 		CleanupExpiredSessionsArgs{}.Kind(),
-		RescueOrphanedPendingItemsArgs{}.Kind(),
-		CleanupStaleJobsArgs{}.Kind(),
 		CheckPendingSyncsArgs{}.Kind(),
 		CleanupSyncChangesArgs{}.Kind(),
 		joblifecycle.RecoveryArgs{}.Kind(),
@@ -300,7 +209,7 @@ func MaintenanceJobKinds() []string {
 
 // BuildPeriodicJobs returns the list of River periodic jobs for the scheduler.
 // staleThreshold is passed from config (already parsed).
-func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*river.PeriodicJob {
+func BuildPeriodicJobs(cfg *config.Config) []*river.PeriodicJob {
 	interval, err := time.ParseDuration(cfg.MetadataRefreshInterval)
 	if err != nil {
 		slog.Warn("scheduler: invalid METADATA_REFRESH_INTERVAL, defaulting to 24h",
@@ -330,20 +239,8 @@ func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*rive
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 		river.NewPeriodicJob(
-			mustCron("0 * * * *"),
-			func() (river.JobArgs, *river.InsertOpts) {
-				return CleanupStaleJobsArgs{Threshold: staleThreshold.String()}, nil
-			},
-			&river.PeriodicJobOpts{RunOnStart: false},
-		),
-		river.NewPeriodicJob(
 			mustCron("*/15 * * * *"),
 			func() (river.JobArgs, *river.InsertOpts) { return CheckPendingSyncsArgs{}, nil },
-			&river.PeriodicJobOpts{RunOnStart: false},
-		),
-		river.NewPeriodicJob(
-			mustCron("*/30 * * * *"),
-			func() (river.JobArgs, *river.InsertOpts) { return RescueOrphanedPendingItemsArgs{}, nil },
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 		// The Job lifecycle's recovery rule, for the kinds on the module

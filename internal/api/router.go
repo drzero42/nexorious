@@ -456,7 +456,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		userGamesGroup.DELETE("/:id/platforms/:platform_id", ugh.HandleDeletePlatform)
 
 		// Jobs routes (all auth-protected)
-		jh := NewJobsHandler(db, riverClient, lifecycle)
+		jh := NewJobsHandler(db, lifecycle)
 		jobsGroup := e.Group("/api/jobs", auth.AuthMiddleware(db))
 		jobsGroup.GET("", jh.HandleListJobs)
 		jobsGroup.GET("/summary", jh.HandleJobsSummary)
@@ -470,7 +470,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		jobsGroup.POST("/:id/retry-failed", jh.HandleRetryFailed)
 
 		// Job Items routes (all auth-protected)
-		jih := NewJobItemsHandler(db, riverClient, lifecycle)
+		jih := NewJobItemsHandler(db, lifecycle)
 		jobItemsGroup := e.Group("/api/job-items", auth.AuthMiddleware(db))
 		jobItemsGroup.GET("/:id", jih.HandleGetJobItem)
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
@@ -549,7 +549,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		epicSvc := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 		gogSvc := gogsvc.NewClient()
 		humbleSvc := humblesvc.NewClient()
-		synch := NewSyncHandler(encrypter, db, riverClient, &steamClientAdapter{c: steamSvc}, &playstationStoreClientAdapter{c: psnSvc}, &epicGamesStoreClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc}, &humbleClientAdapter{c: humbleSvc}, &amazonGamesClientAdapter{c: amazongamessvc.NewClient()})
+		synch := NewSyncHandler(encrypter, db, riverClient, lifecycle, &steamClientAdapter{c: steamSvc}, &playstationStoreClientAdapter{c: psnSvc}, &epicGamesStoreClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc}, &humbleClientAdapter{c: humbleSvc}, &amazonGamesClientAdapter{c: amazongamessvc.NewClient()})
 		syncGroup := e.Group("/api/sync", auth.AuthMiddleware(db))
 		synch.RegisterRoutes(syncGroup)
 

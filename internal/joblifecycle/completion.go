@@ -129,7 +129,11 @@ func (w *EffectsWorker) Work(ctx context.Context, rj *river.Job[EffectsArgs]) er
 	if rj.Args.Outcome == OutcomeAwaitingReview && !job.IsActive() {
 		return nil
 	}
-	err := k.Effects(ctx, m.db, Effect{Job: &job, Outcome: rj.Args.Outcome, FirstFinish: rj.Args.FirstFinish, KindData: rj.Args.KindData})
+	insert := func(ctx context.Context, args river.JobArgs) error {
+		_, err := m.rc.Insert(ctx, args, nil)
+		return err
+	}
+	err := k.Effects(ctx, m.db, Effect{Job: &job, Outcome: rj.Args.Outcome, FirstFinish: rj.Args.FirstFinish, KindData: rj.Args.KindData, Insert: insert})
 	if err == nil {
 		return nil
 	}

@@ -441,7 +441,10 @@ type Failure struct {
 	// job is not cancelled.
 	CallerRiverJobID int64
 	KindData         json.RawMessage
-	Own              OwnWrite
+	// Own is the caller's own write, in the same transaction, after the
+	// ownership check. A non-nil result replaces KindData: what the effects
+	// need to know may only be known once the write ran.
+	Own func(ctx context.Context, tx bun.Tx) (json.RawMessage, error)
 }
 
 // Fail fails an active Job for its dispatch owner, with the caller's own
@@ -453,12 +456,17 @@ func (m *Module) Fail(ctx context.Context, jobID string, f Failure) error {
 		if err != nil {
 			return err
 		}
+		kindData := f.KindData
 		if f.Own != nil {
-			if err := f.Own(ctx, tx); err != nil {
+			data, err := f.Own(ctx, tx)
+			if err != nil {
 				return err
 			}
+			if data != nil {
+				kindData = data
+			}
 		}
-		return m.fail(ctx, tx, st, k, job, f.Message, f.KindData, f.CallerRiverJobID)
+		return m.fail(ctx, tx, st, k, job, f.Message, kindData, f.CallerRiverJobID)
 	})
 }
 

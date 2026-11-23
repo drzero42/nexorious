@@ -36,12 +36,13 @@ const syncNeedsReview = `(
 const syncFailed = `COALESCE(ni.status = 'failed'
 	AND (eg.library_written_at IS NULL OR eg.library_written_at < COALESCE(ni.processed_at, ni.created_at)), false)`
 
-// syncInFlight: the newest item is unfinished and being worked, by the same
-// test as rematch's 409: its Job is active, or a River job naming it can still
-// run. The River part is one uncorrelated subquery (a per-row lookup on args
-// cannot use an index, and the list is polled during a sync); IS NOT NULL keeps
-// a NULL out of the list, which would make NOT IN drop every row.
-const syncInFlight = `COALESCE(ni.status IN ('pending', 'processing') AND (
-	nj.status IN ('pending', 'processing')
-	OR ni.id IN (SELECT args->>'job_item_id' FROM river_job
-	             WHERE ` + liveRiverJobPredicate + ` AND args->>'job_item_id' IS NOT NULL)), false)`
+// syncRetryable: the game shows as failed and Retry could work: the newest
+// item's Job is active or completed. Retry never reopens a failed or
+// cancelled Job, so the view offers no retry there.
+const syncRetryable = `(` + syncFailed + ` AND NOT ` + syncNeedsReview + `
+	AND COALESCE(nj.status IN ('pending', 'processing', 'completed'), false))`
+
+// syncInFlight: the newest item is pending in an active Job, so a sync worker
+// still acts on it. No item is unfinished in a finished Job (the lifecycle
+// module cancels them with it).
+const syncInFlight = `COALESCE(ni.status IN ('pending', 'processing') AND nj.status IN ('pending', 'processing'), false)`

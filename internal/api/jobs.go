@@ -12,9 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
-	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/auth"
@@ -26,14 +24,13 @@ import (
 
 // JobsHandler handles job-related endpoints.
 type JobsHandler struct {
-	db          *bun.DB
-	riverClient *river.Client[pgx.Tx]
-	lc          *joblifecycle.Module
+	db *bun.DB
+	lc *joblifecycle.Module
 }
 
 // NewJobsHandler returns a new JobsHandler.
-func NewJobsHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], lc *joblifecycle.Module) *JobsHandler {
-	return &JobsHandler{db: db, riverClient: riverClient, lc: lc}
+func NewJobsHandler(db *bun.DB, lc *joblifecycle.Module) *JobsHandler {
+	return &JobsHandler{db: db, lc: lc}
 }
 
 // lifecycleHTTPError maps an error of a Job lifecycle operation to an HTTP
@@ -49,6 +46,8 @@ func lifecycleHTTPError(ctx context.Context, err error, what string) error {
 		return echo.NewHTTPError(http.StatusConflict, "only failed items of an active or completed job can be retried")
 	case errors.Is(err, joblifecycle.ErrDuplicateActive):
 		return echo.NewHTTPError(http.StatusConflict, "an equivalent job is already running")
+	case errors.Is(err, joblifecycle.ErrUnknownKind):
+		return echo.NewHTTPError(http.StatusConflict, "this kind of job cannot be changed")
 	}
 	slog.ErrorContext(ctx, "jobs: "+what+" failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to "+what)
@@ -632,36 +631,9 @@ func (h *JobsHandler) HandleCancelJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusConflict, "job is already terminal")
 	}
 
-	if h.lc.Handles(job.JobType, job.Source) {
-		if err := h.lc.Cancel(c.Request().Context(), jobID); err != nil {
-			return lifecycleHTTPError(c.Request().Context(), err, "cancel job")
-		}
-		return c.JSON(http.StatusOK, map[string]string{"status": "cancelled"})
+	if err := h.lc.Cancel(c.Request().Context(), jobID); err != nil {
+		return lifecycleHTTPError(c.Request().Context(), err, "cancel job")
 	}
-
-	now := time.Now().UTC()
-	_, err = h.db.NewRaw(`
-		UPDATE jobs SET status = ?, completed_at = ?
-		WHERE id = ?`,
-		models.JobStatusCancelled, now, jobID,
-	).Exec(context.Background())
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel job")
-	}
-
-	// Cancel any queued River jobs of the Job's items. Item args serialise as
-	// {"job_item_id": "..."}, so match against the job_items table.
-	if _, err := h.db.NewRaw(`
-		UPDATE river_job
-		SET state = 'cancelled', finalized_at = NOW()
-		WHERE state IN ('available', 'scheduled', 'retryable', 'pending')
-		  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE job_id = ?)`,
-		jobID,
-	).Exec(context.Background()); err != nil {
-		slog.ErrorContext(c.Request().Context(), "jobs: cancel river jobs failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel queued tasks")
-	}
-
 	return c.JSON(http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
@@ -715,82 +687,13 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job")
 	}
 
-	if h.lc.Handles(job.JobType, job.Source) {
-		n, err := h.lc.Retry(c.Request().Context(), jobID, nil)
-		if err != nil {
-			return lifecycleHTTPError(c.Request().Context(), err, "retry failed items")
-		}
-		msg := fmt.Sprintf("Retrying %d failed item(s)", n)
-		if n == 0 {
-			msg = "No failed items to retry"
-		}
-		return c.JSON(http.StatusOK, map[string]any{"success": true, "message": msg, "retried_count": n})
-	}
-
-	// Get failed items.
-	var failedItems []models.JobItem
-	err = h.db.NewRaw(`
-		SELECT * FROM job_items
-		WHERE job_id = ? AND status = ?`,
-		jobID, models.JobItemStatusFailed,
-	).Scan(context.Background(), &failedItems)
+	n, err := h.lc.Retry(c.Request().Context(), jobID, nil)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get failed items")
+		return lifecycleHTTPError(c.Request().Context(), err, "retry failed items")
 	}
-
-	if len(failedItems) == 0 {
-		return c.JSON(http.StatusOK, map[string]any{
-			"success":       true,
-			"message":       "No failed items to retry",
-			"retried_count": 0,
-		})
+	msg := fmt.Sprintf("Retrying %d failed item(s)", n)
+	if n == 0 {
+		msg = "No failed items to retry"
 	}
-
-	// Reset failed items to pending.
-	_, err = h.db.NewRaw(`
-		UPDATE job_items
-		SET status = ?, error_message = NULL, processed_at = NULL
-		WHERE job_id = ? AND status = ?`,
-		models.JobItemStatusPending, jobID, models.JobItemStatusFailed,
-	).Exec(context.Background())
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to reset items")
-	}
-
-	// Reset job status to processing.
-	if _, err := h.db.NewRaw(`
-		UPDATE jobs SET status = ?, auto_retry_done = false WHERE id = ?`,
-		models.JobStatusProcessing, jobID,
-	).Exec(context.Background()); err != nil {
-		slog.ErrorContext(c.Request().Context(), "jobs: reset job status failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to reset job status")
-	}
-
-	// Submit tasks for each reset item.
-	for _, item := range failedItems {
-		retryInsert(context.Background(), h.db, h.riverClient, job.JobType, job.Source, item.ID)
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"success":       true,
-		"message":       fmt.Sprintf("Retrying %d failed item(s)", len(failedItems)),
-		"retried_count": len(failedItems),
-	})
-}
-
-// retryInsert enqueues a River job for the given job_item. On any failure
-// (nil client, unknown job_type, River error) the job_item is marked 'failed'
-// by EnqueueOrFail so it does not get stranded in 'pending' with no backing
-// river_job.
-func retryInsert(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], jobType, source, jobItemID string) {
-	args, err := tasks.ArgsForJobType(jobType, jobItemID)
-	if err != nil {
-		slog.ErrorContext(ctx, "retryInsert: unsupported job_type",
-			"job_type", jobType, logging.KeySource, source, logging.KeyJobItemID, jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryValidation))
-		return
-	}
-	if err := tasks.EnqueueOrFail(ctx, db, rc, jobItemID, args); err != nil {
-		slog.ErrorContext(ctx, "retryInsert: enqueue failed",
-			"job_type", jobType, logging.KeySource, source, logging.KeyJobItemID, jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
+	return c.JSON(http.StatusOK, map[string]any{"success": true, "message": msg, "retried_count": n})
 }
