@@ -6,7 +6,10 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -518,9 +521,7 @@ func TestHandleSetupListBackups_RejectsWhenUsersExist(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("GET /backups: status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "no users exist") {
-		t.Errorf("GET /backups: body missing expected error message: %s", rec.Body.String())
-	}
+	assertOnlyRefusal(t, rec, "no users exist")
 }
 
 // TestHandleSetupRestoreFromDisk_RejectsWhenUsersExist asserts the disk-restore
@@ -549,7 +550,110 @@ func TestHandleSetupRestoreFromDisk_RejectsWhenUsersExist(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("POST /restore/disk: status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "no users exist") {
-		t.Errorf("POST /restore/disk: body missing expected error message: %s", rec.Body.String())
+	assertOnlyRefusal(t, rec, "no users exist")
+}
+
+// TestHandleSetupRestore_RejectsWhenUsersExist asserts the upload-restore
+// endpoint's requireNoUsers gate stops the handler: an unauthenticated caller
+// must not reach the restore once a user exists.
+func TestHandleSetupRestore_RejectsWhenUsersExist(t *testing.T) {
+	backup.CheckTools()
+	if !backup.PsqlAvailable() {
+		t.Skip("psql not available — upload-restore handler returns 503 before requireNoUsers")
+	}
+
+	truncateAllTables(t)
+
+	svc := backup.NewService(testDB, "", t.TempDir(), "", "0.1.0")
+	e := newTestEchoBackup(t, testDB, svc)
+	_, _ = setupAdminUser(t, testDB, e, "setup-gate-upload")
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, setupUploadRequest(t))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("POST /restore: status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	assertOnlyRefusal(t, rec, "no users exist")
+}
+
+// TestSetupRestoreGate_FailsClosedWhenUserCountFails asserts that when the
+// users count cannot be read, every setup-zone restore endpoint refuses
+// instead of treating the instance as not yet set up. The table is empty, so
+// only the failed query (cancelled request context) can cause the refusal.
+func TestSetupRestoreGate_FailsClosedWhenUserCountFails(t *testing.T) {
+	backup.CheckTools()
+	truncateAllTables(t)
+
+	svc := backup.NewService(testDB, "", t.TempDir(), "", "0.1.0")
+	e := newTestEchoBackup(t, testDB, svc)
+
+	diskBody, _ := json.Marshal(map[string]string{"filename": "anything.tar.gz"})
+	diskReq := httptest.NewRequest(http.MethodPost, "/api/auth/setup/restore/disk", bytes.NewReader(diskBody))
+	diskReq.Header.Set("Content-Type", "application/json")
+
+	cases := []struct {
+		name      string
+		req       *http.Request
+		needsPsql bool
+	}{
+		{"list", httptest.NewRequest(http.MethodGet, "/api/auth/setup/backups", nil), false},
+		{"disk", diskReq, true},
+		{"upload", setupUploadRequest(t), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.needsPsql && !backup.PsqlAvailable() {
+				t.Skip("psql not available — handler returns 503 before requireNoUsers")
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, tc.req.WithContext(ctx))
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Errorf("status = %d, want 503: %s", rec.Code, rec.Body.String())
+			}
+			assertOnlyRefusal(t, rec, "could not verify")
+		})
+	}
+}
+
+// setupUploadRequest builds a multipart POST to the setup-zone upload-restore
+// endpoint carrying a small non-archive file.
+func setupUploadRequest(t *testing.T) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", "backup.tar.gz")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := fw.Write([]byte("not an archive")); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("close multipart: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup/restore", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	return req
+}
+
+// assertOnlyRefusal asserts the response body is exactly one JSON object whose
+// "error" contains want. A second JSON value means the handler kept running
+// after the gate wrote its refusal — the status code alone cannot show that,
+// because the first WriteHeader wins.
+func assertOnlyRefusal(t *testing.T, rec *httptest.ResponseRecorder, want string) {
+	t.Helper()
+	dec := json.NewDecoder(rec.Body)
+	var got map[string]string
+	if err := dec.Decode(&got); err != nil {
+		t.Fatalf("decode refusal body: %v", err)
+	}
+	if !strings.Contains(got["error"], want) {
+		t.Errorf("error = %q, want it to contain %q", got["error"], want)
+	}
+	var extra json.RawMessage
+	if err := dec.Decode(&extra); err != io.EOF {
+		t.Errorf("handler continued after the refusal; extra body: %s (err=%v)", extra, err)
 	}
 }
