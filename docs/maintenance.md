@@ -40,30 +40,16 @@ Removes expired login sessions.
 
 Every 5 minutes, and once at startup before background work starts, applies the
 recovery rule of the Job lifecycle ([job-lifecycle.md](job-lifecycle.md#recovery))
-to every active Job of a kind on it (metadata refresh, store-link refresh,
-export). It has no age thresholds: each `pending` item and each unfinished
+to every active Job: metadata refresh, store-link refresh, export, imports and
+sync. It has no age thresholds: each `pending` item and each unfinished
 dispatch records the River job that owns it, so recovery can tell work that is
 still queued or running from work whose River job was lost (it is queued again)
 or gave up after its last attempt (it is failed). At startup it first settles
-the River jobs a stopped process left running. A periodic run that fails or
-re-queues something sends one admin maintenance notification (`job_recovery`);
-startup sends none.
-
-## Stale job cleanup
-
-Detects `sync` jobs whose dispatch never finished, stuck in an active state with
-no remaining unfinished items (indicating a crash during dispatch after River
-gave up), and marks them failed. This releases the duplicate-run guard so the
-next scheduled sync can proceed. The kinds on the Job lifecycle are left to job
-recovery above.
-
-## Orphaned item rescue
-
-Detects `job_items` of sync Jobs stuck in `pending` with no backing River job
-and re-enqueues them. This is a safety net for items whose River job was lost
-due to a crash or deployment. Only items older than one hour are considered, to
-avoid racing freshly-created items. Every other kind, imports included, is on
-the Job lifecycle and is left to job recovery above.
+the River jobs a stopped process left running, and deletes queued River jobs of
+the periodic kinds older versions used for this (the orphaned-item rescue and
+the stale-job cleanup). A sync child that is allowed to wait on its parent's
+item is left alone. A periodic run that fails or re-queues something sends one
+admin maintenance notification (`job_recovery`); startup sends none.
 
 ## Metadata refresh
 

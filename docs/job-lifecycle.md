@@ -2,16 +2,16 @@
 
 How a **Job** and its **Job items** move from creation to a finished state, who is allowed to move them, and what must always be true along the way. Terms in bold are defined in [`GLOSSARY.md`](../GLOSSARY.md).
 
-> **Status: target design.** This document describes how the lifecycle is meant to work. The code is being moved onto it one Job kind at a time (epic [#1265](https://github.com/drzero42/nexorious/issues/1265)). The table below says which kinds follow it today. Until a kind is listed as moved, its code is the authority for that kind, and `docs/sync.md` still describes the current sync behaviour.
->
-> | Job kind | Follows this document |
-> |---|---|
-> | Metadata refresh | yes |
-> | Store-link refresh | yes |
-> | Export | yes |
-> | Generic import (registry sources, CSV) | yes |
-> | Nexorious import | yes |
-> | Sync | no |
+Every Job kind follows this document; the code was moved onto it one kind at a time (epic [#1265](https://github.com/drzero42/nexorious/issues/1265)).
+
+| Job kind | Follows this document |
+|---|---|
+| Metadata refresh | yes |
+| Store-link refresh | yes |
+| Export | yes |
+| Generic import (registry sources, CSV) | yes |
+| Nexorious import | yes |
+| Sync | yes |
 
 ## What the lifecycle guarantees
 

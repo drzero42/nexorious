@@ -8,11 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
-	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -23,6 +20,8 @@ import (
 	bunmigrate "github.com/uptrace/bun/migrate"
 
 	"github.com/drzero42/nexorious/internal/db/migrations"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 var (
@@ -97,20 +96,6 @@ func truncateAllTables(t *testing.T) {
 	}
 }
 
-func newTestRiverClient(t *testing.T) *river.Client[pgx.Tx] {
-	t.Helper()
-	pool, err := pgxpool.New(context.Background(), testConnStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
-	if err != nil {
-		t.Fatalf("river.NewClient: %v", err)
-	}
-	return rc
-}
-
 func insertUser(t *testing.T, ctx context.Context, _ *bun.DB) string {
 	t.Helper()
 	id := fmt.Sprintf("user-%d", time.Now().UnixNano())
@@ -122,4 +107,17 @@ func insertUser(t *testing.T, ctx context.Context, _ *bun.DB) string {
 		t.Fatalf("insert user: %v", err)
 	}
 	return id
+}
+
+// newTestLC returns a lifecycle module with the registered kinds, inserting
+// River jobs through an insert-only client on the shared test database.
+func newTestLC(t *testing.T) *joblifecycle.Module {
+	t.Helper()
+	rc, err := river.NewClient(riverdatabasesql.New(testDB.DB), &river.Config{})
+	if err != nil {
+		t.Fatalf("insert-only river client: %v", err)
+	}
+	lc := joblifecycle.New(testDB, rc)
+	tasks.RegisterLifecycleKinds(lc)
+	return lc
 }
