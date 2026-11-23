@@ -184,6 +184,46 @@
         }
       }
     },
+    "cnpg": {
+      "type": "object",
+      "description": "Opt-in CloudNativePG Cluster as the database, replacing the bundled PostgreSQL StatefulSet. Requires the CloudNativePG operator and CRDs.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Render a postgresql.cnpg.io/v1 Cluster and connect the app to its <cluster>-app Secret."
+        },
+        "instances": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of PostgreSQL instances."
+        },
+        "imageName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "PostgreSQL image. Keep the major version at or below the nexorious image's pg_dump client."
+        },
+        "storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "size": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Size of each instance's data volume."
+            },
+            "storageClass": {
+              "type": "string",
+              "description": "StorageClass for the data volumes. Empty falls back to global.storageClass."
+            }
+          }
+        },
+        "extraSpec": {
+          "type": "object",
+          "description": "Extra fields deep-merged into the Cluster spec (resources, backup, monitoring, ...)."
+        }
+      }
+    },
     "controllers": {
       "type": "object",
       "additionalProperties": true

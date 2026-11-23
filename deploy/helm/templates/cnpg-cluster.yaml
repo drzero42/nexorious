@@ -1,0 +1,29 @@
+{{- if include "nexorious.cnpgEnabled" . }}
+{{- $storage := dict "size" .Values.cnpg.storage.size }}
+{{- $globalSc := dig "storageClass" "" (default dict .Values.global) }}
+{{- $sc := .Values.cnpg.storage.storageClass | default (ne $globalSc "-" | ternary $globalSc "") }}
+{{- if $sc }}
+{{- $_ := set $storage "storageClass" $sc }}
+{{- end }}
+{{- $spec := dict
+    "instances" (int .Values.cnpg.instances)
+    "imageName" .Values.cnpg.imageName
+    "storage"   $storage
+    "bootstrap" (dict "initdb" (dict
+      "database" .Values.nexorious.postgresql.database
+      "owner"    .Values.nexorious.postgresql.appUsername))
+}}
+{{- $spec = mergeOverwrite $spec (deepCopy (default dict .Values.cnpg.extraSpec)) }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "nexorious.cnpgClusterName" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "nexorious.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: database
+    helm.sh/chart: {{ include "nexorious.chart" . }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  {{- toYaml $spec | nindent 2 }}
+{{- end }}

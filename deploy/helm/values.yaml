@@ -148,6 +148,43 @@ nexorious:
       key: ""
 
 # =============================================================================
+# CloudNativePG (opt-in, recommended) — the database as a CNPG Cluster
+# =============================================================================
+# Renders a postgresql.cnpg.io/v1 Cluster instead of using the bundled
+# PostgreSQL StatefulSet, and connects the app (and the migrate initContainer)
+# to the `<fullname>-postgresql-app` Secret the operator creates. Requires the
+# CloudNativePG operator and its CRDs in the cluster
+# (https://cloudnative-pg.io/). To turn it on, also disable the bundled
+# PostgreSQL and leave nexorious.databaseUrl / databaseUrlFrom / db*From unset:
+#   cnpg.enabled: true
+#   controllers.postgresql.enabled: false
+#   service.postgresql.enabled: false
+#   persistence.postgresql-data.enabled: false
+# The database is nexorious.postgresql.database, owned by
+# nexorious.postgresql.appUsername (a plain role, not a superuser).
+cnpg:
+  # -- Render the CloudNativePG Cluster and connect the app to it.
+  enabled: false
+  # -- Number of PostgreSQL instances (1 primary + N-1 replicas).
+  instances: 1
+  # -- PostgreSQL image. Pinned to the major version the nexorious image's
+  # -- pg_dump client supports: backups fail if the server is newer than the
+  # -- client. Don't move to a newer major until the nexorious image ships
+  # -- that client.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18
+  storage:
+    # -- Size of each instance's data volume.
+    size: 5Gi
+    # -- StorageClass for the data volumes. Empty falls back to
+    # -- global.storageClass, then to the cluster default.
+    storageClass: ""
+  # -- Extra fields deep-merged into the Cluster spec, for anything the values
+  # -- above don't cover: resources, postgresql.parameters, backup, monitoring,
+  # -- affinity, ... See the CloudNativePG API reference. Lists replace
+  # -- rather than merge.
+  extraSpec: {}
+
+# =============================================================================
 # Alert rules (opt-in) — log-based alerting for Loki and/or VictoriaLogs
 # =============================================================================
 # Wraps the source-of-truth rules in deploy/observability/ into each backend's

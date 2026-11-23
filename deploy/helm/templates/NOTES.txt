@@ -50,7 +50,21 @@ WARNING: nexorious.igdbClientSecret is not set.
   Then open: http://localhost:8000
 {{- end }}
 
-== External Database ==
+== Database ==
+
+{{- if include "nexorious.cnpgEnabled" . }}
+
+  CloudNativePG Cluster: {{ include "nexorious.cnpgClusterName" . }}
+  The app connects with the {{ include "nexorious.cnpgClusterName" . }}-app Secret, which the
+  CloudNativePG operator creates. The pod waits until it exists. Check the cluster with:
+
+  kubectl get cluster {{ include "nexorious.cnpgClusterName" . }}
+{{- else if dig "postgresql" "enabled" true .Values.controllers }}
+
+  Using the bundled PostgreSQL StatefulSet, which is fine for trying Nexorious
+  out. For anything you care about, the chart recommends a CloudNativePG
+  Cluster instead (cnpg.enabled; see the chart README).
+{{- end }}
 
 To use an external database instead of in-cluster PostgreSQL, disable ALL three:
   controllers.postgresql.enabled: false

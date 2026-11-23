@@ -3,7 +3,9 @@
 Helm chart for [nexorious](https://github.com/drzero42/nexorious) (self-hosted game collection).
 
 Built on the [bjw-s common library](https://bjw-s-labs.github.io/helm-charts/).
-Ships an in-cluster PostgreSQL StatefulSet by default and a single Deployment
+Ships an in-cluster PostgreSQL StatefulSet by default (fine for trying
+Nexorious out; for anything you care about, use the
+[CloudNativePG option](#cloudnativepg-recommended)) and a single Deployment
 running the Go binary in two phases:
 
 1. `migrate` initContainer — runs `/app/nexorious migrate` to apply any
@@ -18,6 +20,8 @@ Image: `ghcr.io/drzero42/nexorious:<appVersion>`.
 - Kubernetes 1.31+
 - Helm 3.19+
 - An [IGDB API client](https://api.igdb.com/v4/getting-started)
+- Recommended: the [CloudNativePG](https://cloudnative-pg.io/) operator and
+  its CRDs, for the [CloudNativePG database option](#cloudnativepg-recommended)
 
 ## Required values
 
@@ -149,7 +153,9 @@ These configure how the **nexorious app** discovers its DSN:
 
 If none are set, the chart auto-builds `DATABASE_URL` from
 `nexorious.postgresql.{username,password,database}` pointing at the
-in-cluster `postgresql` StatefulSet.
+in-cluster `postgresql` StatefulSet. With `cnpg.enabled`, none may be set:
+the app reads the CloudNativePG cluster's `-app` Secret instead (see
+[CloudNativePG](#cloudnativepg-recommended)).
 
 ### In-cluster Postgres credentials
 
@@ -190,6 +196,87 @@ nexorious:
   reloader: false   # opt out, e.g. to control restart timing yourself
 ```
 
+## CloudNativePG (recommended)
+
+The chart can run its database as a [CloudNativePG](https://cloudnative-pg.io/)
+`Cluster` instead of the bundled StatefulSet. CloudNativePG handles what the
+bundled StatefulSet leaves to you: major-version upgrades, failover to a
+replica, and its own backups with point-in-time recovery. Use it for
+anything you care about; the bundled StatefulSet is fine for trying
+Nexorious out, and stays the default so existing installs don't change.
+
+**Prerequisite:** the CloudNativePG operator and its CRDs must be installed
+in the cluster (see its
+[installation guide](https://cloudnative-pg.io/documentation/current/installation_upgrade/)).
+Without them, `helm install`/`upgrade` fails on the unknown `Cluster` kind
+(`helm template` and `helm lint` work without them).
+
+```yaml
+cnpg:
+  enabled: true
+# The Cluster replaces the bundled PostgreSQL: turn all three off.
+controllers:
+  postgresql:
+    enabled: false
+service:
+  postgresql:
+    enabled: false
+persistence:
+  postgresql-data:
+    enabled: false
+```
+
+The chart renders a `Cluster` named `<fullname>-postgresql`. CloudNativePG
+creates the `nexorious.postgresql.database` database owned by
+`nexorious.postgresql.appUsername`, a plain role rather than a superuser,
+and puts its connection string in the `<fullname>-postgresql-app` Secret.
+The app and the `migrate` initContainer read `DATABASE_URL` from that
+Secret's `uri` key, so you don't set `nexorious.databaseUrl*` or `db*From`.
+Until the operator has created the Secret, the pod waits in
+`CreateContainerConfigError`; that's expected on first install. The
+`db-role` initContainer doesn't run, because the role is already a plain one.
+
+The chart refuses to render if `cnpg.enabled` is set while any of the three
+bundled PostgreSQL resources is still enabled, or while
+`nexorious.databaseUrl`, `databaseUrlFrom` or `db*From` is also set.
+
+| Key | Default | Description |
+|---|---|---|
+| `cnpg.enabled` | `false` | Render the `Cluster` and connect the app to it. |
+| `cnpg.instances` | `1` | Number of PostgreSQL instances (one primary, the rest replicas). |
+| `cnpg.imageName` | `ghcr.io/cloudnative-pg/postgresql:18` | PostgreSQL image. Pinned rather than left to the operator's default, which moves with operator releases. Backups run the `pg_dump` in the Nexorious image, which fails against a newer server major version, so don't move to a newer major until the Nexorious image ships its client. |
+| `cnpg.storage.size` | `5Gi` | Size of each instance's data volume. |
+| `cnpg.storage.storageClass` | `""` | StorageClass for the data volumes. Empty falls back to `global.storageClass`, then to the cluster default. |
+| `cnpg.extraSpec` | `{}` | Extra fields deep-merged into the `Cluster` spec. Lists replace rather than merge. |
+
+`cnpg.extraSpec` covers anything the keys above don't, using the
+[CloudNativePG API](https://cloudnative-pg.io/documentation/current/cloudnative-pg.v1/),
+for example resources and PostgreSQL parameters:
+
+```yaml
+cnpg:
+  enabled: true
+  instances: 2
+  extraSpec:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 512Mi
+    postgresql:
+      parameters:
+        shared_buffers: 128MB
+```
+
+### Moving an existing install to CloudNativePG
+
+The chart doesn't copy data from the bundled StatefulSet to the new cluster,
+and turning off `persistence.postgresql-data` deletes the bundled database.
+Move your data with a Nexorious backup and restore: see
+[Switching to CloudNativePG](../../docs/admin-guide.md#switching-to-cloudnativepg)
+in the admin guide.
+
 ## In-cluster vs external PostgreSQL
 
 The chart ships PostgreSQL in-cluster (`postgresql.enabled: true` by
@@ -207,7 +294,10 @@ crafted backup restore from running programs in the database pod; see
 
 ### Bring your own PostgreSQL (e.g. CloudNativePG)
 
-To use a database managed outside the chart, disable all three in-cluster
+To have the chart create a CloudNativePG cluster for you, see
+[CloudNativePG (recommended)](#cloudnativepg-recommended). To use a database
+managed outside the chart, including a CloudNativePG cluster you create
+yourself, disable all three in-cluster
 Postgres resources and point the nexorious app at the external DB. Three
 typical styles:
 
@@ -281,7 +371,8 @@ needed.
 
 By default each enabled PVC (`storage`, `postgresql-data`) is provisioned
 without a `storageClassName`, so the cluster's default StorageClass is
-used. To pin every PVC to a specific class in one place:
+used. To pin every PVC (and the CloudNativePG data volumes, unless
+`cnpg.storage.storageClass` is set) to a specific class in one place:
 
 ```yaml
 global:

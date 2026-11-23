@@ -52,7 +52,7 @@ credentials-secret.yaml body in `{{- if include "nexorious.credentialsSecretNeed
 {{- $pgUsernameFrom := default dict .Values.nexorious.postgresql.usernameFrom -}}
 {{- $pgPasswordFrom := default dict .Values.nexorious.postgresql.passwordFrom -}}
 {{- $pgDatabaseFrom := default dict .Values.nexorious.postgresql.databaseFrom -}}
-{{- $omitDbUrl := or $databaseUrlFrom.name $dbHostFrom.name $dbPortFrom.name $dbUserFrom.name $dbPasswordFrom.name $dbNameFrom.name -}}
+{{- $omitDbUrl := or $databaseUrlFrom.name $dbHostFrom.name $dbPortFrom.name $dbUserFrom.name $dbPasswordFrom.name $dbNameFrom.name (include "nexorious.cnpgEnabled" .) -}}
 {{- $pgEnabled := dig "postgresql" "enabled" true .Values.controllers -}}
 {{- if or
       (not $dbEncryptionKeyFrom.name)
@@ -164,10 +164,33 @@ Validate required values.
   {{- fail "db*From individual-keys mode: all five fields (dbHostFrom, dbPortFrom, dbUserFrom, dbPasswordFrom, dbNameFrom) must be configured together" }}
 {{- end -}}
 
+{{/* --- CloudNativePG guard --- */}}
+{{/* The CNPG Cluster replaces the bundled PostgreSQL and supplies the app's
+     connection itself, so it can't be combined with either. */}}
+{{- $cnpgEnabled := include "nexorious.cnpgEnabled" . -}}
+{{- if $cnpgEnabled -}}
+  {{- $bundled := list -}}
+  {{- if dig "postgresql" "enabled" true .Values.controllers -}}
+    {{- $bundled = append $bundled "controllers.postgresql.enabled" -}}
+  {{- end -}}
+  {{- if dig "postgresql" "enabled" true (default dict .Values.service) -}}
+    {{- $bundled = append $bundled "service.postgresql.enabled" -}}
+  {{- end -}}
+  {{- if dig "postgresql-data" "enabled" true (default dict .Values.persistence) -}}
+    {{- $bundled = append $bundled "persistence.postgresql-data.enabled" -}}
+  {{- end -}}
+  {{- if $bundled -}}
+    {{- fail (printf "cnpg.enabled replaces the bundled PostgreSQL: set %s to false" (join ", " $bundled)) -}}
+  {{- end -}}
+  {{- if or $modeA $modeB $modeC -}}
+    {{- fail "cnpg.enabled connects the app to the CloudNativePG cluster itself: unset nexorious.databaseUrl, databaseUrlFrom and db*From" -}}
+  {{- end -}}
+{{- end -}}
+
 {{/* --- postgresql-disabled guard --- */}}
 {{- $postgresqlEnabled := dig "postgresql" "enabled" true .Values.controllers -}}
 {{- if not $postgresqlEnabled -}}
-  {{- if not (or $modeA $modeB $modeC) -}}
+  {{- if not (or $modeA $modeB $modeC $cnpgEnabled) -}}
     {{- fail "postgresql is disabled but no database configuration provided" }}
   {{- end -}}
 {{- end -}}
@@ -269,7 +292,9 @@ IGDB_CLIENT_SECRET
 {{- end }}
 
 {{- define "nexorious.databaseUrlSecretName" -}}
-{{- if and .Values.nexorious.databaseUrlFrom .Values.nexorious.databaseUrlFrom.name -}}
+{{- if include "nexorious.cnpgEnabled" . -}}
+{{- include "nexorious.cnpgClusterName" . }}-app
+{{- else if and .Values.nexorious.databaseUrlFrom .Values.nexorious.databaseUrlFrom.name -}}
 {{- .Values.nexorious.databaseUrlFrom.name -}}
 {{- else -}}
 {{- include "nexorious.fullname" . }}-credentials
@@ -277,7 +302,9 @@ IGDB_CLIENT_SECRET
 {{- end }}
 
 {{- define "nexorious.databaseUrlSecretKey" -}}
-{{- if and .Values.nexorious.databaseUrlFrom .Values.nexorious.databaseUrlFrom.key -}}
+{{- if include "nexorious.cnpgEnabled" . -}}
+uri
+{{- else if and .Values.nexorious.databaseUrlFrom .Values.nexorious.databaseUrlFrom.key -}}
 {{- .Values.nexorious.databaseUrlFrom.key -}}
 {{- else -}}
 DATABASE_URL
@@ -587,5 +614,44 @@ Call BEFORE bjw-s.common.loader.all.
   -}}
   {{- $_ := set $inits "db-role" $dbRole -}}
   {{- $_ = set $migrate "dependsOn" "db-role" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Returns "true" when cnpg.enabled is set: the chart renders a CloudNativePG
+Cluster and connects the app to the `<cluster>-app` Secret it creates.
+*/}}
+{{- define "nexorious.cnpgEnabled" -}}
+{{- if dig "enabled" false (default dict .Values.cnpg) -}}
+true
+{{- end -}}
+{{- end }}
+
+{{/*
+Name of the CloudNativePG Cluster. The operator names its Secrets and
+Services after it (`<name>-app`, `<name>-rw`, ...).
+*/}}
+{{- define "nexorious.cnpgClusterName" -}}
+{{- include "nexorious.fullname" . }}-postgresql
+{{- end }}
+
+{{/*
+With CloudNativePG, make the DATABASE_URL reference of the migrate init
+container and the main container required. The values file marks it optional
+so the other DB modes can leave it out; for CNPG it is the only connection,
+and a required reference keeps the pod waiting until the operator has
+created the `<cluster>-app` Secret, instead of starting without a URL.
+Call BEFORE bjw-s.common.loader.all.
+*/}}
+{{- define "nexorious.injectCnpgDatabaseUrl" -}}
+{{- if include "nexorious.cnpgEnabled" . -}}
+  {{- $ctrl := .Values.controllers.nexorious -}}
+  {{- $envs := list (dig "containers" "main" "env" dict $ctrl) (dig "initContainers" "migrate" "env" dict $ctrl) -}}
+  {{- range $envs -}}
+    {{- $ref := dig "DATABASE_URL" "valueFrom" "secretKeyRef" nil . -}}
+    {{- if $ref -}}
+      {{- $_ := set $ref "optional" false -}}
+    {{- end -}}
+  {{- end -}}
 {{- end -}}
 {{- end }}

@@ -206,6 +206,23 @@ jobs:
               --set dashboard.enabled=true
           done
 
+      - name: Lint and render Helm chart with CloudNativePG
+        run: |
+          cnpg_values=(
+            --set nexorious.dbEncryptionKey=x
+            --set nexorious.igdbClientId=x
+            --set nexorious.igdbClientSecret=x
+            --set cnpg.enabled=true
+            --set controllers.postgresql.enabled=false
+            --set service.postgresql.enabled=false
+            --set persistence.postgresql-data.enabled=false
+          )
+          helm lint --strict deploy/helm/ "${cnpg_values[@]}"
+          helm template nexorious deploy/helm/ "${cnpg_values[@]}" > /tmp/cnpg.yaml
+          # The Cluster is rendered and the app reads the operator's app Secret.
+          grep -q '^kind: Cluster$' /tmp/cnpg.yaml
+          grep -q 'name: nexorious-postgresql-app$' /tmp/cnpg.yaml
+
   # Single required status check. Passes when every suite either succeeded or
   # was skipped (area untouched); fails if any suite failed or was cancelled.
   # Branch protection requires only this job, so path-skipped suites never
