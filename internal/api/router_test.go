@@ -682,3 +682,52 @@ func TestHealth_InstanceIDAndRestoreInProgress(t *testing.T) {
 		t.Errorf("instance_id changed within one process: %v -> %v", id, during["instance_id"])
 	}
 }
+
+// A restore that did not finish is held in the first gate (#1341): only the
+// error page, its stylesheet, /health and /metrics are reachable. The
+// migration routes are refused too, unlike in the migration states.
+func TestRestoreFailed_Gate(t *testing.T) {
+	e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateRestoreFailed), nil, "", nil, nil, nil, "dev", "unknown", nil)
+	get := func(path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		return rec
+	}
+
+	for _, path := range []string{"/api/games", "/api/migrate/status"} {
+		rec := get(path)
+		var body map[string]string
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		if rec.Code != http.StatusServiceUnavailable || body["app_state"] != "restore_failed" {
+			t.Errorf("%s: got %d %v, want 503 app_state=restore_failed", path, rec.Code, body)
+		}
+	}
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/migrate/run", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("POST /api/migrate/run: got %d, want 503", rec.Code)
+	}
+	for _, path := range []string{"/migrate", "/", "/setup"} {
+		rec := get(path)
+		if loc := rec.Header().Get("Location"); rec.Code != http.StatusFound || !strings.HasPrefix(loc, "/db-error") {
+			t.Errorf("%s: got %d to %q, want a redirect to /db-error", path, rec.Code, loc)
+		}
+	}
+
+	page := get("/db-error")
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Restore Did Not Finish") {
+		t.Errorf("/db-error: got %d, want the restore-failed page", page.Code)
+	}
+	if strings.Contains(page.Body.String(), "location.reload") {
+		t.Error("/db-error reloads itself in restore_failed; only a restart can leave the state")
+	}
+
+	health := get("/health")
+	var body map[string]any
+	if err := json.Unmarshal(health.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if health.Code != http.StatusOK || body["status"] != "restore_failed" {
+		t.Errorf("/health: got %d status=%v, want 200 restore_failed", health.Code, body["status"])
+	}
+}

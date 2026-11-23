@@ -145,10 +145,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		if err := migrator.DetermineState(); err != nil {
 			return fmt.Errorf("initAppState: determineState: %w", err)
 		}
-		if migrator.State() == migrate.AppStateReady {
+		switch migrator.State() {
+		case migrate.AppStateReady:
 			if err := migrator.InitNeedsSetup(ctx, db); err != nil {
 				return fmt.Errorf("initAppState: InitNeedsSetup: %w", err)
 			}
+		case migrate.AppStateRestoreFailed:
+			logRestoreFailed(migrator)
 		}
 		return nil
 	}
@@ -572,6 +575,11 @@ func runStartupMigrations(ctx context.Context, db *bun.DB, migrator *migrate.Mig
 	case migrate.AppStateMigrationRefused:
 		return fmt.Errorf("serve --migrate: refused — database is not a clean v0.17.1 or baseline install; " +
 			"upgrade to v0.17.1 first then v0.90.0+, or export → fresh install → import")
+	case migrate.AppStateRestoreFailed:
+		// Never migrate a database a restore may have left half-loaded, but do
+		// start: the server serves the restore-failed page (#1341).
+		slog.Error("serve --migrate: a backup restore did not finish — not migrating", logging.Cat(logging.CategoryDB))
+		return nil
 	}
 	// AppStateNeedsMigration and AppStateNeedsAdopt proceed.
 	migrator.SetLogWriter(slog.NewLogLogger(slog.Default().Handler(), slog.LevelInfo).Writer())
@@ -580,6 +588,17 @@ func runStartupMigrations(ctx context.Context, db *bun.DB, migrator *migrate.Mig
 	}
 	slog.Info("serve --migrate: migrations complete")
 	return nil
+}
+
+// logRestoreFailed logs the restore-failed state with what the marker names.
+func logRestoreFailed(migrator *migrate.Migrator) {
+	var backupID, preRestore string
+	if m := migrator.RestoreMarker(); m != nil {
+		backupID, preRestore = m.BackupID, m.PreRestoreBackupID
+	}
+	slog.Error("a backup restore did not finish — not migrating and not starting background work; "+
+		"see \"Backups and restore\" in the admin guide",
+		"backup_id", backupID, "pre_restore_backup_id", preRestore, logging.Cat(logging.CategoryDB))
 }
 
 // parseSlogLevel maps a LOG_LEVEL string to a slog.Level.

@@ -32,6 +32,9 @@ func Preflight(ctx context.Context, out io.Writer, client *cliclient.Client, url
 		return nil
 	case "db_unavailable":
 		return fmt.Errorf("database is unavailable")
+	case "restore_failed":
+		return fmt.Errorf("a backup restore did not finish and the server needs an administrator — " +
+			"see \"Backups and restore\" in the admin guide")
 	case "needs_migration", "migrating", "needs_adopt":
 		// needs_adopt (a v0.17.1 schema present, pending adoption) is resolved by
 		// the same migrate run, which performs adopt + catch-up server-side.

@@ -13,7 +13,7 @@ import (
 	"github.com/drzero42/nexorious/ui"
 )
 
-// DBErrorHandler serves the database-unavailable error page.
+// DBErrorHandler serves the database-unavailable and restore-failed error page.
 type DBErrorHandler struct {
 	migrator    *migrate.Migrator
 	redactedDSN string
@@ -28,10 +28,12 @@ func NewDBErrorHandler(resolvedDatabaseURL string, migrator *migrate.Migrator) *
 	return &DBErrorHandler{migrator: migrator, redactedDSN: redacted, tmpl: tmpl}
 }
 
-// HandleDBError serves the error page when state is DBUnavailable, or redirects
-// to the `from` query param (sanitised to local paths only) when the DB has recovered.
+// HandleDBError serves the error page when state is DBUnavailable or
+// RestoreFailed, or redirects to the `from` query param (sanitised to local
+// paths only) when the DB has recovered.
 func (h *DBErrorHandler) HandleDBError(c *echo.Context) error {
-	if h.migrator.State() != migrate.AppStateDBUnavailable {
+	state := h.migrator.State()
+	if state != migrate.AppStateDBUnavailable && state != migrate.AppStateRestoreFailed {
 		from := c.QueryParam("from")
 		if from == "" || !strings.HasPrefix(from, "/") {
 			from = "/"
@@ -47,9 +49,23 @@ func (h *DBErrorHandler) HandleDBError(c *echo.Context) error {
 	data := struct {
 		RedactedDSN       string
 		LastUnavailableAt string
+		Reason            string
+		RestoreFailed     bool
+		BackupID          string
+		PreRestoreBackup  string
+		MarkerUpdatedAt   string
 	}{
 		RedactedDSN:       h.redactedDSN,
 		LastUnavailableAt: lastStr,
+		Reason:            h.migrator.UnavailableReason(),
+		RestoreFailed:     state == migrate.AppStateRestoreFailed,
+	}
+	if m := h.migrator.RestoreMarker(); m != nil && data.RestoreFailed {
+		data.BackupID = m.BackupID
+		data.PreRestoreBackup = m.PreRestoreBackupID
+		if !m.UpdatedAt.IsZero() {
+			data.MarkerUpdatedAt = m.UpdatedAt.UTC().Format(time.RFC3339)
+		}
 	}
 
 	c.Response().Header().Set("Content-Type", "text/html; charset=utf-8")

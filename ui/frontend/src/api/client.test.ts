@@ -307,6 +307,17 @@ describe('client.ts', () => {
         expect(assignSpy).toHaveBeenCalledWith('/db-error');
       });
 
+      it('redirects to /db-error on 503 app_state=restore_failed', async () => {
+        server.use(
+          http.get(`${API_URL}/games`, () => {
+            return HttpResponse.json({ app_state: 'restore_failed' }, { status: 503 });
+          }),
+        );
+
+        await expect(apiCall('/games')).rejects.toThrow(ApiErrorException);
+        expect(assignSpy).toHaveBeenCalledWith('/db-error');
+      });
+
       it('redirects to /setup on 503 app_state=needs_setup', async () => {
         server.use(
           http.get(`${API_URL}/games`, () => {
