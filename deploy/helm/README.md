@@ -105,7 +105,7 @@ and override them for production. Defaults:
 
 | Container             | requests        | limits    |
 |-----------------------|-----------------|-----------|
-| nexorious main        | 100m / 128Mi    | – / 128Mi |
+| nexorious main        | 100m / 256Mi    | – / 256Mi |
 | migrate initContainer | 100m / 128Mi    | – / 128Mi |
 | postgres              | 100m / 256Mi    | – / 256Mi |
 

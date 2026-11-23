@@ -11,13 +11,6 @@ To run migrations manually:
 For the first run, open the URL above and create the admin account via the
 embedded setup UI.
 
-{{- if eq .Values.nexorious.secretKey "change-me-in-production" }}
-
-WARNING: nexorious.secretKey is set to the default placeholder value.
-   Set it to a secure random value:
-   --set nexorious.secretKey=$(openssl rand -hex 32)
-{{- end }}
-
 {{- if eq .Values.nexorious.dbEncryptionKey "change-me-in-production" }}
 
 WARNING: nexorious.dbEncryptionKey is set to the default placeholder value.
