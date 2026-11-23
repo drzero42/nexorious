@@ -135,9 +135,13 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 		return nil, fmt.Errorf("steam HTTP %d", resp.StatusCode)
 	}
 
+	// An account that owns nothing answers {"response":{"game_count":0}}, with
+	// no games key; one whose game details are private can answer
+	// {"response":{}}. GameCount is a pointer so an absent count differs from 0.
 	var body struct {
 		Response struct {
-			Games []struct {
+			GameCount *int `json:"game_count"`
+			Games     []struct {
 				AppID           int    `json:"appid"`
 				Name            string `json:"name"`
 				PlaytimeForever int    `json:"playtime_forever"`
@@ -146,6 +150,13 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, fmt.Errorf("steam decode error: %w", err)
+	}
+	count := body.Response.GameCount
+	if count == nil && len(body.Response.Games) == 0 {
+		return nil, ErrOwnedGamesUnavailable
+	}
+	if count != nil && *count != len(body.Response.Games) {
+		return nil, ErrOwnedGamesUnavailable
 	}
 
 	games := make([]OwnedGame, 0, len(body.Response.Games))
@@ -167,6 +178,11 @@ var ErrRateLimited = errors.New("steam: rate limited (429)")
 // ErrAPIKeyRejected is returned by GetOwnedGames when the Steam API responds
 // with HTTP 401 or 403, indicating the API key is invalid or revoked.
 var ErrAPIKeyRejected = errors.New("steam: API key rejected")
+
+// ErrOwnedGamesUnavailable means Steam's response cannot be used for a
+// removal sweep: it has no games and no explicit zero count, or its count
+// differs from the number of games listed.
+var ErrOwnedGamesUnavailable = errors.New("incomplete library from Steam; check that Game details on your Steam profile are Public, then retry")
 
 // GetAppDetailsPlatforms fetches platform availability for the given appID.
 // Returns (Platforms{}, nil) when success=false (removed/delisted app) — caller decides fallback.

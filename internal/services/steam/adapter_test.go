@@ -151,3 +151,34 @@ func TestSteamAdapter_AppdetailsHardError_FailsSync(t *testing.T) {
 		t.Error("expected error for hard appdetails failure, got nil")
 	}
 }
+
+// TestSteamAdapter_OwnedGamesUnavailable_FailsWithoutBatches verifies that a
+// reply with neither games nor game_count fails the library fetch before any
+// batch is sent, so the sync job fails instead of sweeping every game as
+// removed (#1310). It is not a credentials error: the key works, the account's
+// game details are hidden.
+func TestSteamAdapter_OwnedGamesUnavailable_FailsWithoutBatches(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"response":{}}`)
+	}))
+	defer srv.Close()
+
+	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
+	a := steam.NewAdapter(c, "key", "76561198000000001")
+
+	var batches atomic.Int32
+	err := a.GetLibrary(context.Background(), 10, func([]storefrontadapter.ExternalGameEntry) error {
+		batches.Add(1)
+		return nil
+	})
+	if !errors.Is(err, steam.ErrOwnedGamesUnavailable) {
+		t.Errorf("expected steam.ErrOwnedGamesUnavailable, got %v", err)
+	}
+	if errors.Is(err, storefrontadapter.ErrCredentials) {
+		t.Errorf("must not be storefrontadapter.ErrCredentials, got %v", err)
+	}
+	if n := batches.Load(); n != 0 {
+		t.Errorf("onBatch called %d times, want 0", n)
+	}
+}
