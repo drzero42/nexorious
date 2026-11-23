@@ -444,6 +444,26 @@ func TestImportNexorious_CreatesPoolsItemHiddenFromListing(t *testing.T) {
 			t.Errorf("listing leaked synthetic __pools__ item")
 		}
 	}
+	// ...and from the Job's progress counts (#1343).
+	jobReq := httptest.NewRequest(http.MethodGet, "/api/jobs/"+jobID, nil)
+	jobReq.AddCookie(&http.Cookie{Name: "session_id", Value: token})
+	jobRec := httptest.NewRecorder()
+	e.ServeHTTP(jobRec, jobReq)
+	if jobRec.Code != http.StatusOK {
+		t.Fatalf("get job status = %d, want 200; body=%s", jobRec.Code, jobRec.Body.String())
+	}
+	var jobResp struct {
+		Progress map[string]any `json:"progress"`
+	}
+	if err := json.Unmarshal(jobRec.Body.Bytes(), &jobResp); err != nil {
+		t.Fatalf("decode job resp: %v", err)
+	}
+	if got := jobResp.Progress["total"]; got != float64(1) {
+		t.Errorf("progress.total = %v, want 1 (synthetic pools item excluded)", got)
+	}
+	if got := jobResp.Progress["completed"]; got != float64(0) {
+		t.Errorf("progress.completed = %v, want 0 (synthetic pools item excluded)", got)
+	}
 }
 
 // assertImportItemOrder checks the exact order job items will be listed and

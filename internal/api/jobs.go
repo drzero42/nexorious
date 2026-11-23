@@ -54,7 +54,8 @@ func lifecycleHTTPError(ctx context.Context, err error, what string) error {
 }
 
 // jobItemCounts fetches aggregated item status counts for a job and returns a
-// progress map ready for the API response.
+// progress map ready for the API response. A nexorious import's synthetic
+// pools item is not a game, so it is left out, as in the item listing.
 func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[string]any, error) {
 	type statusCount struct {
 		Status string `bun:"status"`
@@ -64,9 +65,9 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[stri
 	if err := h.db.NewRaw(`
 		SELECT status, COUNT(*)::int AS count
 		FROM job_items
-		WHERE job_id = ?
+		WHERE job_id = ? AND item_key <> ?
 		GROUP BY status`,
-		jobID,
+		jobID, tasks.PoolsItemKey,
 	).Scan(ctx, &counts); err != nil {
 		return nil, err
 	}
