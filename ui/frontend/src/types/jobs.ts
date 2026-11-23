@@ -63,6 +63,7 @@ export interface JobProgress {
   pendingReview: number;
   skipped: number;
   failed: number;
+  done: number;
   total: number;
   percent: number;
 }

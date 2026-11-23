@@ -27,6 +27,7 @@ const mockJobApiResponse = {
     pending_review: 3,
     skipped: 2,
     failed: 0,
+    done: 35,
     total: 50,
     percent: 70,
   },
@@ -73,6 +74,7 @@ describe('jobsApi', () => {
       expect(result.jobs[0].progress.completed).toBe(30);
       expect(result.jobs[0].progress.pendingReview).toBe(3);
       expect(result.jobs[0].progress.total).toBe(50);
+      expect(result.jobs[0].progress.done).toBe(35);
       expect(result.jobs[0].progress.percent).toBe(70);
       expect(result.jobs[0].totalItems).toBe(50);
       expect(result.jobs[0].isTerminal).toBe(false);

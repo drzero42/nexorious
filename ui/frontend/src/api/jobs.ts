@@ -34,6 +34,7 @@ interface JobProgressApiResponse {
   pending_review: number;
   skipped: number;
   failed: number;
+  done: number;
   total: number;
   percent: number;
 }
@@ -147,16 +148,7 @@ interface RecentJobDetailApiResponse {
   completed_at: string | null;
   error_message: string | null;
   total_items: number;
-  progress: {
-    completed: number;
-    skipped: number;
-    failed: number;
-    pending: number;
-    processing: number;
-    pending_review: number;
-    total: number;
-    percent: number;
-  };
+  progress: JobProgressApiResponse;
   added_items: SyncChangeItemApiResponse[];
   updated_items?: SyncChangeItemApiResponse[];
   removed_items: SyncChangeItemApiResponse[];
@@ -181,6 +173,7 @@ function transformProgress(apiProgress: JobProgressApiResponse): JobProgress {
     pendingReview: apiProgress.pending_review,
     skipped: apiProgress.skipped,
     failed: apiProgress.failed,
+    done: apiProgress.done,
     total: apiProgress.total,
     percent: apiProgress.percent,
   };
@@ -252,6 +245,7 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
     pending: 0,
     processing: 0,
     pending_review: 0,
+    done: 0,
     total: 0,
     percent: 0,
   };
@@ -267,16 +261,7 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
     completedCount: p.completed,
     skippedCount: p.skipped,
     failedCount: p.failed,
-    progress: {
-      pending: p.pending,
-      processing: p.processing,
-      completed: p.completed,
-      pendingReview: p.pending_review,
-      skipped: p.skipped,
-      failed: p.failed,
-      total: p.total,
-      percent: p.percent,
-    },
+    progress: transformProgress(p),
     addedItems: (api.added_items ?? []).map(transformSyncChangeItem),
     updatedItems: (api.updated_items ?? []).map(transformSyncChangeItem),
     removedItems: (api.removed_items ?? []).map(transformSyncChangeItem),

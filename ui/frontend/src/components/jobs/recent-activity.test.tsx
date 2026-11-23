@@ -43,6 +43,7 @@ const baseJob = (over: Partial<RecentJobDetail>): RecentJobDetail => ({
     pendingReview: 0,
     skipped: 0,
     failed: 0,
+    done: 1,
     total: 1,
     percent: 100,
   },

@@ -14,6 +14,7 @@ type JobProgress struct {
 	PendingReview int `json:"pending_review"`
 	Skipped       int `json:"skipped"`
 	Failed        int `json:"failed"`
+	Done          int `json:"done"`
 	Total         int `json:"total"`
 	Percent       int `json:"percent"`
 }
