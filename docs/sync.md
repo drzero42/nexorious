@@ -38,7 +38,7 @@ The sync system reads and writes these core tables:
 | Table | Role |
 |---|---|
 | `user_sync_configs` | Credentials, sync frequency, and last sync timestamp per user and storefront |
-| `external_games` | One row per user + storefront + game; persists across sync runs. `parent_id` (nullable FK to self) marks duplicate-SKU siblings established at Stage 1. `store_link` (nullable) holds the product-page identifier written by store-link enrichment; `source_metadata` (jsonb, nullable) captures per-source resolution inputs (e.g. Epic's namespace) at Stage 1 |
+| `external_games` | One row per user + storefront + game; persists across sync runs. `parent_id` (nullable FK to self) marks duplicate-SKU siblings established at Stage 1. `store_link` (nullable) holds the product-page identifier written by store-link enrichment; `source_metadata` (jsonb, nullable) captures per-source resolution inputs (e.g. Epic's namespace) at Stage 1. `library_written_at` (nullable) is set by the library write only, and lets the storefront view ignore items older than the last write (see [The storefront view](#the-storefront-view)) |
 | `external_game_platforms` | Platform slugs and per-platform playtime for each ExternalGame |
 | `jobs` | One row per sync run; tracks status and lifecycle |
 | `job_items` | One row per game per sync run; tracks matching progress |
@@ -221,7 +221,7 @@ A sibling is another `external_games` row for the same user, storefront, and tit
 
 **Waking a waiting child.** After writing the parent's library entries, Stage 3 re-enqueues Stage 2 for the parent's children that are not yet resolved and have a `pending` job item. A child that waited while the dispatch was running is re-queued when the dispatch is done (Stage 1, step 5). A child waiting on a parent that ends after that is picked up by the orphaned-item rescue (see [docs/maintenance.md](maintenance.md)).
 
-**Manual match / skip (cascade).** `HandleRematchExternalGame` and `HandleSkipGame` look up children via `parent_id = eg.id` and propagate the resolution or skip flag to each child, then enqueue Stage 3 (rematch) or mark job items skipped (skip).
+**Manual match / skip (cascade).** `HandleRematchExternalGame` and `HandleUnskipGame` act on the whole family: the game and its children via `parent_id = eg.id`, locked in that order. They write the library themselves (see [User Interactions](#user-interactions)). `HandleSkipGame` propagates the skip flag to each child and marks their job items skipped.
 
 Child rows (`parent_id IS NOT NULL`) are filtered from all UI lists and counts — only the parent row is visible and actionable by the user.
 
@@ -231,17 +231,20 @@ Both item workers do nothing for an item that is no longer `pending`, so a late 
 
 ## Stage 3 — User Game Write
 
-One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a user action.
+One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a retry.
 
-1. If `is_skipped` is true: skip steps 2, 3, and 4
-2. If `external_game.resolved_igdb_id` is not already set (i.e. Stage 3 was triggered by a manual user resolution, not auto-resolve), propagate `job_item.resolved_igdb_id` to `external_game.resolved_igdb_id` — this durably records the match for future sync runs
-3. Upsert `user_games`: one row per user + IGDB game ID. If this is an INSERT (new game), write an `added` entry to `sync_changes`
-4. For each platform row in `external_game_platforms`:
-   - Upsert `user_game_platforms` with conflict key `(user_game_id, platform, storefront)`
-   - On conflict: apply the ownership rank guard (never downgrade ownership status); update `hours_played` only if the incoming value from `external_game_platforms.hours_played` is greater; if the ownership status changed, write a `status_changed` entry to `sync_changes`
-   - Set `external_game_id` to the specific ExternalGame row that produced this platform entry
-5. Update `external_game.updated_at` — always, whether the game was skipped or not
-6. After writing all platform rows, if IGDB is configured and the `games` row has no description, an immediate metadata fetch is enqueued for that game. This ensures newly added games have cover art and full IGDB data within seconds rather than waiting for the next scheduled bulk refresh. The enqueue is fire-and-forget and non-fatal — the periodic bulk refresh (see [docs/maintenance.md](maintenance.md) § "Metadata refresh") remains the safety net.
+1. If `is_skipped` is true: record a `skipped` change, mark the item `skipped`, and stop
+2. If `external_game.resolved_igdb_id` is not set but `job_item.resolved_igdb_id` is (a manual resolution), copy it to the external game, only while the game is still unmatched: a rematch that committed meanwhile wins
+3. In one transaction, the **library write** (`tasks.WriteExternalGameToLibrary`, shared with rematch and unskip), the item's `sync_changes` rows and the item's completion:
+   - Lock the `external_games` row (`FOR UPDATE`) and read `resolved_igdb_id` and `is_skipped` again under the lock. A writer that loaded the game before a rematch committed writes the rematch's match, never the old one; a game skipped meanwhile is handled as in step 1
+   - Ensure the `games` row, then `usergame.Acquire` (`ModeUpsert`) on every row in `external_game_platforms`: one `user_games` row per user + IGDB game ID, and one `user_game_platforms` row per `(user_game_id, platform, storefront)` with `external_game_id` set. On conflict the ownership rank guard applies (never downgrade ownership status), and `hours_played` is updated only if the incoming value is greater
+   - Set `external_games.updated_at` and `library_written_at`
+   - Write `added` (new user game), `status_changed` (ownership upgrade) or `already_in_library` to `sync_changes`
+   - Complete the item, only if it is still `pending`; otherwise everything rolls back
+   - A game with no match or no platform rows fails the item; so does any other error in the write
+4. After commit, if IGDB is configured and the `games` row has no description, an immediate metadata fetch is enqueued for that game. This ensures newly added games have cover art and full IGDB data within seconds rather than waiting for the next scheduled bulk refresh. The enqueue is fire-and-forget and non-fatal — the periodic bulk refresh (see [docs/maintenance.md](maintenance.md) § "Metadata refresh") remains the safety net.
+
+Stage 2 never overwrites a match: its writes of `resolved_igdb_id` (a confident search result, a child inheriting from its parent) apply only while the game has none, so a rematch that commits during an IGDB search wins. A child inherits in a transaction that reads the parent `FOR SHARE`, and an item goes to `pending_review` only in a transaction that first reads the game `FOR SHARE` and finds it still unmatched; otherwise the item goes on to Stage 3.
 
 ### Play Status
 
@@ -309,7 +312,7 @@ Not covered: the sync diff can be wrong for the one game that was being written 
 |---|---|
 | `pending` | Waiting to be picked up by a Stage 2 or Stage 3 worker |
 | `processing` | Currently being worked on |
-| `completed` | Successfully written to the user's library |
+| `completed` | Successfully written to the user's library (by Stage 3, or by a rematch that settled it) |
 | `skipped` | Game is marked `is_skipped`; no user_game entry was created |
 | `pending_review` | Awaiting the user to pick an IGDB match or skip the game |
 | `cancelled` | Job failed mid-run; this item will not be processed |
@@ -319,9 +322,20 @@ Not covered: the sync diff can be wrong for the one game that was being written 
 
 ## User Interactions
 
-### Resolving a pending_review item
+Rematch and unskip are edits to one game and its children, not sync work ([ADR 0002](adr/0002-rematch-and-unskip-are-not-job-work.md)). They write the library in the request's own transaction, using the same library write as Stage 3, and create no Job, no job item and no River job. They are complete when the request returns. Both act only on a top-level game; a child's id is refused with 400.
 
-The user searches IGDB and selects a match. Once a match is chosen, the resolve endpoint (`HandleRematchExternalGame`) sets `resolved_igdb_id` on the parent `external_game` and enqueues Stage 3 immediately. Any children (`parent_id = eg.id`) are resolved with the same IGDB ID and also enqueued for Stage 3 at the time of the user's action. Siblings never appear in the Needs Review list — only the parent does.
+### Matching or rematching a game
+
+The user searches IGDB and picks a match, for a game in review, an unmatched game, or a matched game whose match is wrong. `HandleRematchExternalGame`, in one transaction:
+
+1. Locks the game, then its children ordered by id (the family lock order).
+2. Refuses with 409 `a sync is still working on this game` while any item of the game or a child is `pending` or `processing` and being worked: its Job is active, or a River job naming it can still run. One exception: a child's `pending` item does not count when the child and its parent are both unmatched; no worker can write it, and it is waiting for exactly this rematch.
+3. Removes the platform links of the game and its children. Every user game this leaves with no links from outside the family is orphaned, except the user game of the new match: without `orphan_action` the request is refused with 409 `orphan_action required`; `keep` keeps them, `remove` deletes them.
+4. Sets the match on the whole family and clears `is_skipped` on it.
+5. Writes the game and each child to the library. A member with no platform rows is not written; the match is still recorded.
+6. Completes the items this rematch settles, in **active** Jobs only: every item of the family in `pending_review`, in any Job, and the waiting children's items from step 2. Each completion is conditional on the status read, so a Skip that got there first wins. For each it writes the `sync_changes` rows the worker would have (one `added` per Job when the write created the user game), and after commit each of those Jobs' completion is checked.
+
+Items in a Job that is not active are left alone, and a rematch outside an active sync writes no `sync_changes`. The immediate metadata fetch is queued after commit.
 
 ### Skipping a game
 
@@ -329,11 +343,23 @@ The user marks a game as ignored. `is_skipped` is set to `true` on the `external
 
 ### Unskipping a game
 
-The user removes the skip. `is_skipped` is cleared. A new job_item is created and a Stage 2 job is enqueued immediately to begin IGDB matching.
+The user removes the skip. In one transaction `HandleUnskipGame` locks the family, clears `is_skipped` on the game and its children, and, if the game is matched, gives every child whose match differs the parent's match (removing the child's old platform links; the user game they were on is kept) and writes the family to the library. An unmatched game is only unskipped: it shows as **Unmatched**, where the user can match it; the next sync matches it if it is still in the storefront library.
 
-### Rematching a game
+### Retrying failed games
 
-The user replaces an existing IGDB match with a different one. `external_game.resolved_igdb_id` is updated and a Stage 3 job is enqueued immediately to update the user_game and platform associations.
+"Retry all" on a storefront retries the games the view shows as failed, and the children whose own newest item failed by the same rule. All their items are reset to `pending` first and queued afterwards, parents first.
+
+### The storefront view
+
+The External Games list reads a game's status from its **newest** item (`ORDER BY created_at DESC, id DESC`), and only while nothing has written the game to the library since (`library_written_at`). Older items are history.
+
+- **needs_review**: the newest item is `pending_review` and was created after the last write, or any item of the game is `pending_review` in an active Job (an older Job reopened by a retry, which blocks new syncs until the game is reviewed).
+- **skipped** comes next: a skipped game whose newest item failed shows as skipped, where it can be unskipped.
+- **failed**: the newest item failed after the last write. `failed_job_item_id` is that item, and null unless the game shows as failed.
+- **matched** / **unmatched** otherwise.
+- A game is hidden only while its newest item is `pending` or `processing` and being worked (same test as the rematch 409), so a cancelled sync's leftover items do not hide it.
+
+The orphan fields (`has_user_game`, `user_game_id`, `user_game_other_platform_count`) are per family, with the same definition as the rematch's orphan check. The pending-review badge counts sync review by the same `needs_review` rule, per top-level game.
 
 ---
 
@@ -524,17 +550,18 @@ Shown only while a sync job is active. Displays:
 
 When the job reaches a terminal state the progress box collapses to a single summary line showing the outcome and timestamp, or disappears entirely.
 
-Games that are currently in-flight (being processed by Stage 2 or Stage 3) do not appear in the External Games section — only the counts in the progress box reflect their existence until they settle into a stable state.
+Games that are currently in-flight (their newest item is being processed by Stage 2 or Stage 3) do not appear in the External Games section — only the counts in the progress box reflect their existence until they settle into a stable state.
 
 #### External Games Section
 
-A permanent view of all external games for this storefront, organised into four groups. Only games in stable states are shown here.
+A permanent view of all external games for this storefront, organised into five groups (see [The storefront view](#the-storefront-view) for the rules). Only games in stable states are shown here.
 
 | Group | Condition | Default | Actions |
 |---|---|---|---|
-| **Needs Review** | `pending_review` job item | Expanded | Pick IGDB match, Skip |
-| **Failed** | Permanent Stage 2 or Stage 3 failure | Expanded | Retry (per game), Retry All |
-| **Matched** | `resolved_igdb_id` set, Stage 3 complete | Collapsed | Change match |
+| **Needs Review** | Newest job item in `pending_review` | Expanded | Pick IGDB match, Skip |
+| **Failed** | Newest job item failed | Expanded | Retry (per game), Retry All |
+| **Unmatched** | Not skipped and no match, e.g. after unskipping a game that was never matched | Expanded | Pick IGDB match, Skip |
+| **Matched** | `resolved_igdb_id` set | Collapsed | Change match |
 | **Skipped** | `is_skipped = true` | Collapsed | Unskip |
 
 The Needs Review group is the most prominent — these games are blocking the job from completing and require user action.

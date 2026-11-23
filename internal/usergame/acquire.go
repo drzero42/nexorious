@@ -15,8 +15,9 @@ import (
 
 // Acquire ensures the user owns the game on the supplied platforms, running the
 // full acquire invariant set (clear-wishlist, promote-if-played, optional tag
-// reconcile) atomically (#1056).
-func Acquire(ctx context.Context, db *bun.DB, p AcquireParams) (Result, error) {
+// reconcile) atomically (#1056). Given a bun.Tx it runs in a savepoint of the
+// caller's transaction.
+func Acquire(ctx context.Context, db bun.IDB, p AcquireParams) (Result, error) {
 	var res Result
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if err := validatePlatformRefs(ctx, tx, p.Platforms); err != nil {

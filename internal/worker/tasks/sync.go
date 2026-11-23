@@ -23,7 +23,6 @@ import (
 	"github.com/drzero42/nexorious/internal/services/matching"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
-	"github.com/drzero42/nexorious/internal/usergame"
 )
 
 // ExternalGameEntry is the normalised game representation yielded by any storefront adapter.
@@ -635,7 +634,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			return fmt.Errorf("igdb_match: load parent: %w", err)
 		}
 		if err == nil && parent.ResolvedIGDBID != nil {
-			return w.inheritFromParent(ctx, &item, &eg, *parent.ResolvedIGDBID)
+			return w.inheritFromParent(ctx, &item, &eg)
 		}
 
 		// The parent is unmatched (or gone): wait only if the wait can end.
@@ -662,7 +661,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			return w.enqueueUserGame(ctx, item.ID, item.JobID)
 		}
 		if eg.ParentID != nil && res.parentIGDBID != nil {
-			return w.inheritFromParent(ctx, &item, &eg, *res.parentIGDBID)
+			return w.inheritFromParent(ctx, &item, &eg)
 		}
 		// No longer a child (promoted): searched like any other game.
 	}
@@ -680,9 +679,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			if job.Attempt >= job.MaxAttempts {
 				slog.WarnContext(ctx, "igdb_match: IGDB failed on final attempt, marking pending_review",
 					logging.KeyJobItemID, p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-				syncMarkItemPendingReview(ctx, w.DB, &item)
-				SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-				return nil
+				return w.toPendingReview(ctx, &item, eg.ID)
 			}
 			return fmt.Errorf("igdb_match: search failed (will retry): %w", err)
 		}
@@ -712,8 +709,10 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			).Exec(ctx); err != nil {
 				slog.WarnContext(ctx, "igdb_match: insert game row (auto-resolve)", logging.KeyErr, err, "igdb_id", bestID, logging.Cat(logging.CategoryDB))
 			}
+			// IS NULL: a rematch that committed during the search wins (#1338);
+			// either way the write stage writes whatever match the game has.
 			if _, err := w.DB.NewRaw(
-				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL`,
 				bestID, eg.ID,
 			).Exec(ctx); err != nil {
 				slog.WarnContext(ctx, "igdb_match: auto-resolve external_game", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
@@ -734,34 +733,90 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		item.IGDBCandidates = candidatesJSON
 		bs := decision.BestScore
 		item.MatchConfidence = &bs
-		syncMarkItemPendingReview(ctx, w.DB, &item)
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-		return nil
+		return w.toPendingReview(ctx, &item, eg.ID)
 	}
 
 	// No IGDB client configured — mark pending_review.
 	slog.DebugContext(ctx, "igdb_match: no IGDB client configured, marking pending_review", logging.KeyJobItemID, p.JobItemID, "title", eg.Title)
-	syncMarkItemPendingReview(ctx, w.DB, &item)
-	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+	return w.toPendingReview(ctx, &item, eg.ID)
+}
+
+// toPendingReview puts the item in Pending review, unless the game was matched
+// meanwhile (a rematch committed during the search): then the item goes on to
+// the write stage. The game is read FOR SHARE first, so a rematch in progress
+// is waited for (#1338).
+func (w *IGDBMatchWorker) toPendingReview(ctx context.Context, item *models.JobItem, externalGameID string) error {
+	matched, marked := false, false
+	err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var resolved *int32
+		if err := tx.NewRaw(
+			`SELECT resolved_igdb_id FROM external_games WHERE id = ? FOR SHARE`, externalGameID,
+		).Scan(ctx, &resolved); err != nil {
+			return fmt.Errorf("lock external game: %w", err)
+		}
+		if resolved != nil {
+			matched = true
+			return nil
+		}
+		upd := *item
+		upd.Status = models.JobItemStatusPendingReview
+		res, err := tx.NewUpdate().Model(&upd).
+			Column("status", "igdb_candidates", "match_confidence").
+			Where("id = ? AND status = ?", item.ID, models.JobItemStatusPending).
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("mark pending_review: %w", err)
+		}
+		n, _ := res.RowsAffected() //nolint:errcheck // pgdriver always reports RowsAffected
+		marked = n > 0
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("igdb_match: %w", err)
+	}
+	if matched {
+		slog.DebugContext(ctx, "igdb_match: game matched meanwhile, going to the write stage", logging.KeyJobItemID, item.ID)
+		return w.enqueueUserGame(ctx, item.ID, item.JobID)
+	}
+	if marked {
+		item.Status = models.JobItemStatusPendingReview
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+	}
 	return nil
 }
 
 // inheritFromParent gives a child its parent's match and hands it to the write
-// stage.
-func (w *IGDBMatchWorker) inheritFromParent(ctx context.Context, item *models.JobItem, eg *models.ExternalGame, igdbID int32) error {
-	slog.DebugContext(ctx, "igdb_match: child inheriting from resolved parent",
-		logging.KeyJobItemID, item.ID, "title", eg.Title, "igdb_id", igdbID, "parent_id", *eg.ParentID)
-	if _, err := w.DB.NewRaw(
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
-		igdbID, eg.Title,
-	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "igdb_match: insert game row (child inherit)", logging.KeyErr, err, "igdb_id", igdbID, logging.Cat(logging.CategoryDB))
-	}
-	if _, err := w.DB.NewRaw(
-		`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
-		igdbID, eg.ID,
-	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "igdb_match: apply child inherit", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
+// stage. The parent is read FOR SHARE in the same transaction, so a child never
+// takes a match a rematch in progress is replacing; and the child only takes it
+// while it has none (a rematch sets the whole family's match itself) (#1338).
+func (w *IGDBMatchWorker) inheritFromParent(ctx context.Context, item *models.JobItem, eg *models.ExternalGame) error {
+	err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var parentMatch *int32
+		if err := tx.NewRaw(
+			`SELECT resolved_igdb_id FROM external_games WHERE id = ? FOR SHARE`, *eg.ParentID,
+		).Scan(ctx, &parentMatch); err != nil {
+			return fmt.Errorf("lock parent: %w", err)
+		}
+		if parentMatch == nil {
+			// Not reachable while rematch never unsets a match; the write
+			// stage fails the item if the child has none either.
+			return nil
+		}
+		slog.DebugContext(ctx, "igdb_match: child inheriting from resolved parent",
+			logging.KeyJobItemID, item.ID, "title", eg.Title, "igdb_id", *parentMatch, "parent_id", *eg.ParentID)
+		if err := EnsureGameRow(ctx, tx, *parentMatch, eg.Title); err != nil {
+			return err
+		}
+		if _, err := tx.NewRaw(
+			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL`,
+			*parentMatch, eg.ID,
+		).Exec(ctx); err != nil {
+			return fmt.Errorf("apply child inherit: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("igdb_match: inherit from parent: %w", err)
 	}
 	return w.enqueueUserGame(ctx, item.ID, item.JobID)
 }
@@ -826,149 +881,66 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 
 	// Skipped games: record the outcome, mark the item skipped, and check completion.
 	if eg.IsSkipped {
-		if _, err := w.DB.NewRaw(
-			`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
-		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "user_game_write: update external_game updated_at (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		}
-		// NOT EXISTS: this item can run twice across a restart (see the dispatch's
-		// 'skipped' insert).
-		if _, err := w.DB.NewRaw(
-			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-			 SELECT ?, ?, ?, ?, 'skipped', ?, now()
-			 WHERE NOT EXISTS (
-			   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
-			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title, item.JobID, eg.ID,
-		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "user_game_write: insert sync_change (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		}
-		markItemSkipped(ctx, w.DB, &item, "process_sync_item: markItemSkipped")
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		w.finishSkipped(ctx, &item, &eg)
 		return nil
 	}
 
 	// Manual resolution propagation: job_item has resolved_igdb_id but external_game doesn't.
+	// Only an unmatched game takes it: a rematch that committed meanwhile wins.
 	if eg.ResolvedIGDBID == nil && item.ResolvedIGDBID != nil {
 		igdbID := int32(*item.ResolvedIGDBID) //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
-		eg.ResolvedIGDBID = &igdbID
-		if _, err := w.DB.NewRaw(
-			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
-			igdbID, eg.Title,
-		).Exec(ctx); err != nil {
+		if err := EnsureGameRow(ctx, w.DB, igdbID, eg.Title); err != nil {
 			slog.WarnContext(ctx, "user_game_write: insert game row (manual resolve)", logging.KeyErr, err, "igdb_id", igdbID, logging.Cat(logging.CategoryDB))
 		}
 		if _, err := w.DB.NewRaw(
-			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL`,
 			igdbID, eg.ID,
 		).Exec(ctx); err != nil {
 			slog.WarnContext(ctx, "user_game_write: apply manual resolution", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
 		}
 	}
 
-	if eg.ResolvedIGDBID == nil {
-		markItemFailed(ctx, w.DB, &item, "no resolved_igdb_id on external_game", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+	// The library write, its diff rows and the item's completion commit
+	// together. The write re-reads the match and skip flag under the game's
+	// row lock, so a rematch that committed after we loaded eg wins.
+	var lw LibraryWrite
+	err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var err error
+		if lw, err = WriteExternalGameToLibrary(ctx, tx, item.UserID, eg.ID); err != nil {
+			return err
+		}
+		if err := InsertLibraryWriteChanges(ctx, tx, item.JobID, item.UserID, lw, lw.Result.Created); err != nil {
+			return err
+		}
+		res, err := tx.NewRaw(
+			`UPDATE job_items SET status = 'completed', processed_at = now() WHERE id = ? AND status = 'pending'`, item.ID,
+		).Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("complete item: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // pgdriver always reports RowsAffected
+			return errItemNotPending
+		}
 		return nil
-	}
-
-	// Ensure games row exists.
-	if _, err := w.DB.NewRaw(
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
-		*eg.ResolvedIGDBID, eg.Title,
-	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "user_game_write: ensure game row", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-
-	// Load platform rows from external_game_platforms.
-	var egPlatforms []models.ExternalGamePlatform
-	if err := w.DB.NewSelect().Model(&egPlatforms).
-		Where("external_game_id = ?", eg.ID).
-		Scan(ctx); err != nil {
-		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("load platforms: %v", err), "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-		return nil
-	}
-	if len(egPlatforms) == 0 {
-		markItemFailed(ctx, w.DB, &item, "external game has no platform rows", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-		return nil
-	}
-
-	storefrontSlug := eg.Storefront
-
-	ownership := "owned"
-	if eg.OwnershipStatus != nil {
-		ownership = *eg.OwnershipStatus
-	} else if eg.IsSubscription {
-		ownership = "subscription"
-	}
-	plats := make([]usergame.PlatformInput, 0, len(egPlatforms))
-	for _, egp := range egPlatforms {
-		egp := egp
-		plats = append(plats, usergame.PlatformInput{
-			Platform: &egp.Platform, Storefront: &storefrontSlug,
-			HoursPlayed: &egp.HoursPlayed, OwnershipStatus: &ownership,
-			IsAvailable: boolptr(true), ExternalGameID: &eg.ID,
-			SyncFromSource:       true,
-			AchievementsUnlocked: egp.AchievementsUnlocked,
-			AchievementsTotal:    egp.AchievementsTotal,
-		})
-	}
-	res, err := usergame.Acquire(ctx, w.DB, usergame.AcquireParams{
-		UserID: item.UserID, GameID: *eg.ResolvedIGDBID, Mode: usergame.ModeUpsert, Platforms: plats,
 	})
-	if err != nil {
-		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("acquire: %v", err), "process_sync_item: markItemFailed")
+	switch {
+	case errors.Is(err, errItemNotPending):
+		slog.DebugContext(ctx, "user_game_write: item stopped being pending during the write, nothing written", logging.KeyJobItemID, item.ID)
+		return nil
+	case errors.Is(err, ErrExternalGameSkipped):
+		w.finishSkipped(ctx, &item, &eg)
+		return nil
+	case err != nil:
+		markItemFailed(ctx, w.DB, &item, err.Error(), "process_sync_item: markItemFailed")
 		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
-	ugID := res.UserGameID
 
-	platformUpgraded := false
-	for _, pc := range res.PlatformChanges {
-		if pc.OwnershipUpgraded {
-			platformUpgraded = true
-			if _, err := w.DB.NewRaw(
-				`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, old_status, new_status, created_at)
-				 VALUES (?, ?, ?, ?, ?, 'status_changed', ?, ?, ?, now())`,
-				uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title, pc.OldOwnership, pc.NewOwnership,
-			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "user_game_write: insert sync_change (status_changed)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			}
-		}
+	// Immediate metadata fetch for a game with no description yet. Checked
+	// here so an instance without IGDB does not queue a no-op per game.
+	if w.IGDBClient != nil && w.IGDBClient.Configured() {
+		EnqueueImmediateMetadataFetch(ctx, w.DB, w.RiverClient, lw.IGDBID)
 	}
-
-	if _, err := w.DB.NewRaw(
-		`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
-	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "user_game_write: update external_game updated_at", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-
-	if res.Created {
-		if _, err := w.DB.NewRaw(
-			`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, created_at)
-			 VALUES (?, ?, ?, ?, ?, 'added', ?, now())`,
-			uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title,
-		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "user_game_write: insert sync_change (added)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		}
-	} else if !platformUpgraded {
-		if _, err := w.DB.NewRaw(
-			`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, created_at)
-			 VALUES (?, ?, ?, ?, ?, 'already_in_library', ?, now())`,
-			uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title,
-		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "user_game_write: insert sync_change (already_in_library)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		}
-	}
-
-	// Immediate metadata fetch: if IGDB is configured and the games row has no
-	// description yet, enqueue a fire-and-forget fetch so newly added games get
-	// cover art and full IGDB data within seconds rather than waiting for the
-	// next scheduled bulk refresh. Non-fatal — the bulk refresh is the safety net.
-	w.maybeEnqueueImmediateMetadataFetch(ctx, *eg.ResolvedIGDBID)
-
-	markItemCompleted(ctx, w.DB, &item, "process_sync_item: markItemCompleted")
 
 	// Sibling trigger: re-enqueue Stage 2 for children waiting on this parent.
 	if w.RiverClient != nil {
@@ -1000,48 +972,31 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	return nil
 }
 
-// maybeEnqueueImmediateMetadataFetch enqueues a fire-and-forget metadata_fetch
-// job for gameID when IGDB is configured and the games row has no description
-// yet. Every failure mode is non-fatal — the periodic bulk refresh is the
-// safety net — so we log at warn and move on rather than failing the job_item.
-func (w *UserGameWorker) maybeEnqueueImmediateMetadataFetch(ctx context.Context, gameID int32) {
-	if w.IGDBClient == nil || !w.IGDBClient.Configured() {
-		return
-	}
+// errItemNotPending rolls back a write whose item a Skip or a cancel finished
+// meanwhile.
+var errItemNotPending = errors.New("job item is no longer pending")
 
-	var descriptionIsNull bool
-	if err := w.DB.NewRaw(
-		`SELECT description IS NULL FROM games WHERE id = ?`, gameID,
-	).Scan(ctx, &descriptionIsNull); err != nil {
-		slog.WarnContext(ctx, "user_game_write: check game description for immediate metadata fetch",
-			logging.KeyErr, err, "game_id", gameID, logging.Cat(logging.CategoryDB))
-		return
+// finishSkipped records a skipped game in the Job's diff, marks the item
+// skipped, and checks completion.
+func (w *UserGameWorker) finishSkipped(ctx context.Context, item *models.JobItem, eg *models.ExternalGame) {
+	if _, err := w.DB.NewRaw(
+		`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
+	).Exec(ctx); err != nil {
+		slog.WarnContext(ctx, "user_game_write: update external_game updated_at (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
-	if !descriptionIsNull {
-		return // already has metadata
+	// NOT EXISTS: this item can run twice across a restart (see the dispatch's
+	// 'skipped' insert).
+	if _, err := w.DB.NewRaw(
+		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+		 SELECT ?, ?, ?, ?, 'skipped', ?, now()
+		 WHERE NOT EXISTS (
+		   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
+		uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title, item.JobID, eg.ID,
+	).Exec(ctx); err != nil {
+		slog.WarnContext(ctx, "user_game_write: insert sync_change (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
-
-	if w.RiverClient == nil {
-		slog.WarnContext(ctx, "user_game_write: river client unavailable, skipping immediate metadata fetch",
-			"game_id", gameID)
-		return
-	}
-	if _, err := w.RiverClient.Insert(ctx, MetadataFetchArgs{GameID: gameID}, nil); err != nil {
-		slog.WarnContext(ctx, "user_game_write: enqueue immediate metadata fetch failed",
-			logging.KeyErr, err, "game_id", gameID)
-	}
-}
-
-// syncMarkItemPendingReview sets a job_item to pending_review and persists any IGDB candidates.
-func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.JobItem) {
-	item.Status = models.JobItemStatusPendingReview
-	_, err := db.NewUpdate().Model(item).
-		Column("status", "igdb_candidates", "match_confidence").
-		Where("id = ?", item.ID).
-		Exec(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "process_sync_item: syncMarkItemPendingReview", "id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
+	markItemSkipped(ctx, w.DB, item, "process_sync_item: markItemSkipped")
+	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 }
 
 // SyncCheckJobCompletion checks whether active processing of job_items is complete and

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import * as syncApi from '@/api/sync';
+import { jobsKeys } from '@/hooks/use-jobs';
 import { SyncStorefront } from '@/types';
 import type {
   SyncConfig,
@@ -378,7 +379,7 @@ export function useExternalGames(platform: SyncStorefront, options?: { refetchIn
 }
 
 /**
- * Invalidates all sync queries on success.
+ * Invalidates all sync queries and the review badge on success.
  */
 export function useSkipExternalGame() {
   const queryClient = useQueryClient();
@@ -386,6 +387,8 @@ export function useSkipExternalGame() {
     mutationFn: (id: string) => syncApi.skipExternalGame(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.all });
+      // The review badge follows the storefront list (#1338).
+      queryClient.invalidateQueries({ queryKey: jobsKeys.pendingReviewCount() });
     },
     onError: (err: Error) => {
       toast.error(err.message ?? 'Failed to skip game');
@@ -394,7 +397,7 @@ export function useSkipExternalGame() {
 }
 
 /**
- * Invalidates all sync queries on success.
+ * Invalidates all sync queries and the review badge on success.
  */
 export function useUnskipExternalGame() {
   const queryClient = useQueryClient();
@@ -402,6 +405,8 @@ export function useUnskipExternalGame() {
     mutationFn: (id: string) => syncApi.unskipExternalGame(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.all });
+      // The review badge follows the storefront list (#1338).
+      queryClient.invalidateQueries({ queryKey: jobsKeys.pendingReviewCount() });
     },
     onError: (err: Error) => {
       toast.error(err.message ?? 'Failed to unskip game');
@@ -426,7 +431,7 @@ export function useRetryFailedExternalGames() {
 }
 
 /**
- * Invalidates all sync queries on success.
+ * Invalidates all sync queries and the review badge on success.
  */
 export function useRematchExternalGame() {
   const queryClient = useQueryClient();
@@ -442,6 +447,8 @@ export function useRematchExternalGame() {
     }) => syncApi.rematchExternalGame(id, igdbId, orphanAction),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.all });
+      // The review badge follows the storefront list (#1338).
+      queryClient.invalidateQueries({ queryKey: jobsKeys.pendingReviewCount() });
     },
     onError: (err: Error) => {
       toast.error(err.message ?? 'Failed to rematch game');

@@ -3,10 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/drzero42/nexorious/internal/cliclient"
 )
 
 const reviewUUID = "11111111-1111-1111-1111-111111111111"
@@ -221,5 +225,55 @@ func TestSyncReviewOffTTY(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "interactive") {
 		t.Fatalf("error = %v, want it to mention interactive", err)
+	}
+}
+
+func TestRematchErrHint_OnlyForTheOrphan409(t *testing.T) {
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{&cliclient.HTTPError{Status: 409, Message: "orphan_action required: game would lose its only storefront link"}, true},
+		{&cliclient.HTTPError{Status: 409, Message: "a sync is still working on this game"}, false},
+		{&cliclient.HTTPError{Status: 500, Message: "failed to rematch external game"}, false},
+		{fmt.Errorf("wrapped: %w", &cliclient.HTTPError{Status: 409, Message: "orphan_action required: x"}), true},
+		{errors.New("orphan_action required"), false},
+	}
+	for _, tc := range cases {
+		if got := rematchErrHint(tc.err) != ""; got != tc.want {
+			t.Errorf("rematchErrHint(%v): hint=%v, want %v", tc.err, got, tc.want)
+		}
+	}
+}
+
+// An unmatched game (e.g. unskipped, never matched) is resolvable by title
+// like one in review (#1338).
+func TestSyncResolveUnmatchedGameByTitle(t *testing.T) {
+	mux := http.NewServeMux()
+	serveSyncConfigs(mux, "steam")
+	mux.HandleFunc("/api/sync/steam/external-games", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": reviewUUID, "storefront": "steam", "external_id": "ext-1", "title": "Celeste", "sync_status": "unmatched"},
+		})
+	})
+	var rematched bool
+	mux.HandleFunc("/api/sync/external-games/"+reviewUUID+"/rematch", func(w http.ResponseWriter, _ *http.Request) {
+		rematched = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"sync", "resolve", "steam", "celeste", "--igdb-id", "7"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("resolve: %v\n%s", err, out.String())
+	}
+	if !rematched {
+		t.Fatal("rematch not received")
 	}
 }

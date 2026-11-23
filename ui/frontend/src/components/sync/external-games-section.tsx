@@ -85,6 +85,7 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
 
   const needsReview = games.filter((g) => g.sync_status === 'needs_review');
   const failed = games.filter((g) => g.sync_status === 'failed');
+  const unmatched = games.filter((g) => g.sync_status === 'unmatched');
   const skipped = games.filter((g) => g.sync_status === 'skipped');
   const matched = games.filter((g) => g.sync_status === 'matched');
 
@@ -191,6 +192,49 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
                           disabled={retryingItemId === game.id || !game.failed_job_item_id}
                         >
                           Retry
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {unmatched.length > 0 && (
+          <Card id="unmatched" className="scroll-mt-4">
+            <CardHeader>
+              <CardTitle className="text-base">Unmatched ({unmatched.length})</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Not matched to a game yet, for example after unskipping. Find a match to add it to
+                your library.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableBody>
+                  {unmatched.map((game) => (
+                    <TableRow key={game.id}>
+                      <TableCell>
+                        <GameTitle game={game} />
+                      </TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setMatchingGame(game)}
+                          disabled={isRematching}
+                        >
+                          Find Match
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => skip(game.id)}
+                          disabled={isSkipping}
+                        >
+                          Skip
                         </Button>
                       </TableCell>
                     </TableRow>
