@@ -7,9 +7,20 @@ vi.mock('@/hooks/use-health-status', () => ({
   useHealthStatus: () => mockUseHealthStatus(),
 }));
 
+const mockUseAuth = vi.fn();
+vi.mock('@/providers', () => ({
+  useAuth: () => mockUseAuth(),
+}));
+
+const mockUseAdminHealthWarnings = vi.fn();
+vi.mock('@/hooks/use-admin-health-warnings', () => ({
+  useAdminHealthWarnings: (enabled: boolean) => mockUseAdminHealthWarnings(enabled),
+}));
+
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => ({}),
   Outlet: () => null,
+  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }));
 
 vi.mock('@/components/route-guard', () => ({
@@ -35,6 +46,8 @@ vi.mock('@tanstack/react-query', () => ({
 describe('AuthenticatedLayout IGDB banner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { isAdmin: false } });
+    mockUseAdminHealthWarnings.mockReturnValue({ data: undefined });
   });
 
   it('shows "not configured" banner when igdb_status is not_configured', () => {
@@ -60,6 +73,39 @@ describe('AuthenticatedLayout IGDB banner', () => {
 
   it('does not show IGDB banner while health data is loading', () => {
     mockUseHealthStatus.mockReturnValue({ data: undefined });
+    render(<AuthenticatedLayout />);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe('AuthenticatedLayout database role banner', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseHealthStatus.mockReturnValue({ data: { igdb_status: 'ok' } });
+  });
+
+  it('shows the warning to admins when the database role is privileged', () => {
+    mockUseAuth.mockReturnValue({ user: { isAdmin: true } });
+    mockUseAdminHealthWarnings.mockReturnValue({
+      data: [{ code: 'db_role_privileged', role: 'nexorious' }],
+    });
+    render(<AuthenticatedLayout />);
+    expect(mockUseAdminHealthWarnings).toHaveBeenCalledWith(true);
+    expect(screen.getByRole('alert')).toHaveTextContent(/database role is a superuser/);
+    expect(screen.getByText('nexorious')).toBeInTheDocument();
+  });
+
+  it('does not query admin warnings for non-admins', () => {
+    mockUseAuth.mockReturnValue({ user: { isAdmin: false } });
+    mockUseAdminHealthWarnings.mockReturnValue({ data: undefined });
+    render(<AuthenticatedLayout />);
+    expect(mockUseAdminHealthWarnings).toHaveBeenCalledWith(false);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows nothing when there are no warnings', () => {
+    mockUseAuth.mockReturnValue({ user: { isAdmin: true } });
+    mockUseAdminHealthWarnings.mockReturnValue({ data: [] });
     render(<AuthenticatedLayout />);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });

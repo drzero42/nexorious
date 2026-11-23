@@ -196,6 +196,15 @@ The chart ships PostgreSQL in-cluster (`postgresql.enabled: true` by
 default). The bundled Postgres password is auto-generated on first
 install — see [Required values](#required-values).
 
+The app does not connect to the bundled Postgres as its superuser
+(`nexorious.postgresql.username`). A `db-role` initContainer runs
+`nexorious ensure-db-role` before `migrate` on every start and makes
+`nexorious.postgresql.appUsername` (default `nexorious_app`) a
+non-superuser role that owns the database, using the same password. Existing
+installs are taken over on their first start after upgrading. This keeps a
+crafted backup restore from running programs in the database pod; see
+"Database role" in the admin guide.
+
 ### Bring your own PostgreSQL (e.g. CloudNativePG)
 
 To use a database managed outside the chart, disable all three in-cluster
@@ -218,7 +227,10 @@ nexorious:
 ```
 
 **Full DSN from an external Secret** (e.g. the `app` Secret a CloudNativePG
-`Cluster` creates, which contains a `uri` key):
+`Cluster` creates, which contains a `uri` key). Use the `-app` Secret, not
+`-superuser`: Nexorious must not connect as a superuser, and warns at startup
+and in the admin UI if it does. The `db-role` initContainer only runs with the
+bundled Postgres, so nothing changes for an external database:
 ```yaml
 controllers:
   postgresql:

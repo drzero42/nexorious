@@ -180,6 +180,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		pingCancel()
 		if pingErr == nil {
 			slog.Info("database connected")
+			warnIfPrivilegedDBRole(ctx, db)
 			if err := initAppState(ctx); err != nil {
 				slog.Error("initAppState failed — starting in DBUnavailable state", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			}
