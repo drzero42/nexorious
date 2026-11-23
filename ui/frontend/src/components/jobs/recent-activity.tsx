@@ -256,7 +256,7 @@ function JobActivityItem({
             ) : showBreakdown ? (
               <ChangeBreakdown job={job} />
             ) : (
-              <JobItemsDetails jobId={job.id} progress={job.progress} isTerminal />
+              <JobItemsDetails jobId={job.id} progress={job.progress} jobStatus={job.status} />
             )}
           </div>
         </CollapsibleContent>

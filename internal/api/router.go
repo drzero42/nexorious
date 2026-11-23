@@ -17,11 +17,13 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/crypto"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	migrate "github.com/drzero42/nexorious/internal/migrate"
@@ -36,6 +38,7 @@ import (
 	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
 	"github.com/drzero42/nexorious/internal/services/updatecheck"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 	"github.com/drzero42/nexorious/ui"
 )
 
@@ -97,14 +100,53 @@ func registerObservabilityMiddleware(e *echo.Echo) {
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, version, commit string, updateState *updatecheck.State, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
+// Option configures New.
+type Option func(*options)
+
+type options struct {
+	riverClient *river.Client[pgx.Tx]
+	lifecycle   *joblifecycle.Module
+}
+
+// WithRiverClient gives the handlers the working River client.
+func WithRiverClient(rc *river.Client[pgx.Tx]) Option {
+	return func(o *options) { o.riverClient = rc }
+}
+
+// WithLifecycle gives the handlers the process's Job lifecycle module. Without
+// it New builds one on db (tests).
+func WithLifecycle(lc *joblifecycle.Module) Option {
+	return func(o *options) { o.lifecycle = lc }
+}
+
+// newDefaultLifecycle builds a lifecycle module on db with the registered
+// kinds, for callers that did not pass the process's own.
+func newDefaultLifecycle(db *bun.DB) *joblifecycle.Module {
+	if db == nil {
+		return nil
+	}
+	txc, err := river.NewClient(riverdatabasesql.New(db.DB), &river.Config{})
+	if err != nil {
+		panic("api: insert-only river client: " + err.Error())
+	}
+	lc := joblifecycle.New(db, txc)
+	tasks.RegisterLifecycleKinds(lc)
+	return lc
+}
+
+func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, version, commit string, updateState *updatecheck.State, opts ...Option) *echo.Echo {
 	// Echo v5.3 groups auto-register catch-all 404 routes that run the group's
 	// middleware; the empty-prefix admin group would then auth-gate "/" (the SPA).
 	e := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
 
-	var rc *river.Client[pgx.Tx]
-	if len(riverClient) > 0 {
-		rc = riverClient[0]
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	rc := o.riverClient
+	lifecycle := o.lifecycle
+	if lifecycle == nil {
+		lifecycle = newDefaultLifecycle(db)
 	}
 
 	registerObservabilityMiddleware(e)
@@ -187,12 +229,12 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 	}
 
 	mh := migrate.NewHandler(migrator, db)
-	registerRoutes(e, encrypter, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, version, commit, updateState, rc)
+	registerRoutes(e, encrypter, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, version, commit, updateState, rc, lifecycle)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, version, commit string, updateState *updatecheck.State, riverClient *river.Client[pgx.Tx]) {
+func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, version, commit string, updateState *updatecheck.State, riverClient *river.Client[pgx.Tx], lifecycle *joblifecycle.Module) {
 	// Migration routes (bypass gate 2 via prefix)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
@@ -378,7 +420,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		docsGroup.GET("/:slug", dch.HandleGetDoc)
 
 		// Games routes (all auth-protected)
-		gh := NewGamesHandler(db, igdbClient, cfg, riverClient)
+		gh := NewGamesHandler(db, igdbClient, cfg, riverClient, lifecycle)
 		gamesGroup := e.Group("/api/games", auth.AuthMiddleware(db))
 		gamesGroup.GET("", gh.HandleListGames)
 		gamesGroup.POST("/metadata/refresh-job", gh.HandleStartMetadataRefreshJob)
@@ -414,7 +456,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		userGamesGroup.DELETE("/:id/platforms/:platform_id", ugh.HandleDeletePlatform)
 
 		// Jobs routes (all auth-protected)
-		jh := NewJobsHandler(db, riverClient)
+		jh := NewJobsHandler(db, riverClient, lifecycle)
 		jobsGroup := e.Group("/api/jobs", auth.AuthMiddleware(db))
 		jobsGroup.GET("", jh.HandleListJobs)
 		jobsGroup.GET("/summary", jh.HandleJobsSummary)
@@ -428,7 +470,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		jobsGroup.POST("/:id/retry-failed", jh.HandleRetryFailed)
 
 		// Job Items routes (all auth-protected)
-		jih := NewJobItemsHandler(db, riverClient)
+		jih := NewJobItemsHandler(db, riverClient, lifecycle)
 		jobItemsGroup := e.Group("/api/job-items", auth.AuthMiddleware(db))
 		jobItemsGroup.GET("/:id", jih.HandleGetJobItem)
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
@@ -447,7 +489,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		}
 
 		// Export routes (all auth-protected)
-		exh := NewExportHandler(db, riverClient, cfg)
+		exh := NewExportHandler(db, lifecycle, cfg)
 		exportGroup := e.Group("/api/export", auth.AuthMiddleware(db))
 		exportGroup.POST("/json", exh.HandleExportJSON)
 		exportGroup.POST("/csv", exh.HandleExportCSV)

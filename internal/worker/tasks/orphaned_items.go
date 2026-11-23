@@ -22,6 +22,8 @@ import (
 //   - created_at older than age (0 = no age limit)
 //   - its Job is still active (status IN ('pending', 'processing'))
 //   - no river_job exists for it in a non-ended state
+//   - its Job's kind is not on internal/joblifecycle (its recovery rule owns
+//     those)
 //
 // jobID restricts the query to one Job; "" means every Job. The scheduled
 // orphan rescue and the startup recovery call it for every Job; the sync
@@ -41,12 +43,13 @@ func RequeueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clie
 		WHERE ji.status = 'pending'
 		  AND ji.created_at < now() - (?::text || ' seconds')::interval
 		  AND j.status IN ('pending', 'processing')
+		  AND j.job_type NOT IN (?)
 		  AND NOT EXISTS (
 		    SELECT 1 FROM river_job rj
 		    WHERE rj.args->>'job_item_id' = ji.id::text
 		      AND rj.state NOT IN ('completed', 'discarded', 'cancelled')
 		  )`
-	args := []any{int64(age.Seconds())}
+	args := []any{int64(age.Seconds()), bun.List(lifecycleJobTypes)}
 	if jobID != "" {
 		q += ` AND ji.job_id = ?`
 		args = append(args, jobID)

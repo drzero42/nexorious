@@ -140,8 +140,8 @@ severity (`critical` / `warning`):
 | `NexoriousPanicRecovered` | generic | critical | any recovered panic in 5m |
 | `NexoriousCredentialFailures` | credentials | warning | > 3 auth failures per source in 15m |
 | `NexoriousSyncErrors` | sync/job | warning | > 3 external-API failures per source in 15m |
-| `NexoriousStuckJobs` | sync/job | warning | any stuck-job reaping in 15m |
-| `NexoriousJobDispatchFailures` | sync/job | warning | any enqueue/dispatch failure in 10m |
+| `NexoriousStuckJobs` | sync/job | warning | any stuck-job reaping (`marked stale`, sync) or Job recovery failing interrupted work (`job recovery: failed interrupted work`) in 15m |
+| `NexoriousJobDispatchFailures` | sync/job | warning | any enqueue/dispatch failure (`enqueue`, kinds not yet on the Job lifecycle module), failed Job transition (`job lifecycle: transition failed`) or finishing effect that used its last attempt (`job lifecycle: finishing effects failed`) in 10m |
 | `NexoriousHighErrorRate` | generic | warning | > 10 ERROR lines in 10m |
 
 Thresholds and windows are conservative starting points — **tune to your volume.**

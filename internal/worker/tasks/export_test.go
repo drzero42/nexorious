@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,9 +12,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -57,18 +58,12 @@ func TestExportJSON_Task(t *testing.T) {
 	}
 
 	// Create export job.
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
-		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert export job: %v", err)
-	}
+	lc := newTestLC(t)
+	jobID, rid := createExportJob(t, lc, userID, "nexorious")
 
 	// Build and run the worker.
-	w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: tmpDir}
-	if err := w.Work(ctx, &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: jobID}}); err != nil {
+	w := &tasks.ExportJSONWorker{DB: testDB, LC: lc, StoragePath: tmpDir}
+	if err := w.Work(ctx, riverJob(rid, 1, tasks.ExportJSONArgs{JobID: jobID})); err != nil {
 		t.Fatalf("worker returned error: %v", err)
 	}
 
@@ -182,18 +177,12 @@ func TestExportCSV_Task(t *testing.T) {
 	}
 
 	// Create export job.
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
-		 VALUES (?, ?, 'export', 'csv', 'pending', 'normal', 0)`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert export job: %v", err)
-	}
+	lc := newTestLC(t)
+	jobID, rid := createExportJob(t, lc, userID, "csv")
 
 	// Build and run the worker.
-	w := &tasks.ExportCSVWorker{DB: testDB, StoragePath: tmpDir}
-	if err := w.Work(ctx, &river.Job[tasks.ExportCSVArgs]{Args: tasks.ExportCSVArgs{JobID: jobID}}); err != nil {
+	w := &tasks.ExportCSVWorker{DB: testDB, LC: lc, StoragePath: tmpDir}
+	if err := w.Work(ctx, riverJob(rid, 1, tasks.ExportCSVArgs{JobID: jobID})); err != nil {
 		t.Fatalf("worker returned error: %v", err)
 	}
 
@@ -276,15 +265,15 @@ func TestExport_JobNotFound(t *testing.T) {
 		{
 			name: "json",
 			run: func(t *testing.T) error {
-				w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: t.TempDir()}
-				return w.Work(context.Background(), &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: "non-existent-job"}})
+				w := &tasks.ExportJSONWorker{DB: testDB, LC: newTestLC(t), StoragePath: t.TempDir()}
+				return w.Work(context.Background(), riverJob(1, 1, tasks.ExportJSONArgs{JobID: "non-existent-job"}))
 			},
 		},
 		{
 			name: "csv",
 			run: func(t *testing.T) error {
-				w := &tasks.ExportCSVWorker{DB: testDB, StoragePath: t.TempDir()}
-				return w.Work(context.Background(), &river.Job[tasks.ExportCSVArgs]{Args: tasks.ExportCSVArgs{JobID: "non-existent-job"}})
+				w := &tasks.ExportCSVWorker{DB: testDB, LC: newTestLC(t), StoragePath: t.TempDir()}
+				return w.Work(context.Background(), riverJob(1, 1, tasks.ExportCSVArgs{JobID: "non-existent-job"}))
 			},
 		},
 	}
@@ -312,17 +301,11 @@ func TestExportCSV_MarkJobFailed_OnWriteError(t *testing.T) {
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
 
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
-		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job: %v", err)
-	}
+	lc := newTestLC(t)
+	jobID, rid := createExportJob(t, lc, userID, "nexorious")
 
-	w := &tasks.ExportCSVWorker{DB: testDB, StoragePath: tmpDir}
-	if err := w.Work(ctx, &river.Job[tasks.ExportCSVArgs]{Args: tasks.ExportCSVArgs{JobID: jobID}}); err != nil {
+	w := &tasks.ExportCSVWorker{DB: testDB, LC: lc, StoragePath: tmpDir}
+	if err := w.Work(ctx, riverJob(rid, 1, tasks.ExportCSVArgs{JobID: jobID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -354,19 +337,14 @@ func TestExportJSON_EmitsExportCompleted(t *testing.T) {
 		t.Fatalf("insert game: %v", err)
 	}
 
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
-		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job: %v", err)
-	}
+	lc := newTestLC(t)
+	jobID, rid := createExportJob(t, lc, userID, "nexorious")
 
-	w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: tmpDir}
-	if err := w.Work(ctx, &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: jobID}}); err != nil {
+	w := &tasks.ExportJSONWorker{DB: testDB, LC: lc, StoragePath: tmpDir}
+	if err := w.Work(ctx, riverJob(rid, 1, tasks.ExportJSONArgs{JobID: jobID})); err != nil {
 		t.Fatalf("worker returned error: %v", err)
 	}
+	runEffects(t, lc)
 
 	dedupKey := jobID + ":" + notify.TypeExportCompleted
 	var count int
@@ -395,17 +373,11 @@ func TestExportJSON_EmitsExportFailed(t *testing.T) {
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
 
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
-		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job: %v", err)
-	}
+	lc := newTestLC(t)
+	jobID, rid := createExportJob(t, lc, userID, "nexorious")
 
-	w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: tmpDir}
-	if err := w.Work(ctx, &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: jobID}}); err != nil {
+	w := &tasks.ExportJSONWorker{DB: testDB, LC: lc, StoragePath: tmpDir}
+	if err := w.Work(ctx, riverJob(rid, 1, tasks.ExportJSONArgs{JobID: jobID})); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -419,7 +391,8 @@ func TestExportJSON_EmitsExportFailed(t *testing.T) {
 		t.Errorf("expected job status=failed when write fails, got %q", status)
 	}
 
-	// …and emit the export.failed event.
+	// …and emit the export.failed event, as its finishing effect.
+	runEffects(t, lc)
 	dedupKey := jobID + ":" + notify.TypeExportFailed
 	var count int
 	if err := testDB.QueryRowContext(ctx,
@@ -544,5 +517,177 @@ func TestLoadPoolsForExport_TranslatesMembershipToIGDBID(t *testing.T) {
 	}
 	if p.Games[1].IGDBID != 5001 || p.Games[1].Position != nil {
 		t.Errorf("member1 = %+v, want igdb 5001 candidate", p.Games[1])
+	}
+}
+
+// createExportJob creates an export Job with its dispatch (the export River
+// job) through the lifecycle module, as the export handler does.
+func createExportJob(t *testing.T, lc *joblifecycle.Module, userID, source string) (string, int64) {
+	t.Helper()
+	c, err := lc.CreateWithDispatch(context.Background(), joblifecycle.NewJob{
+		UserID: userID, JobType: models.JobTypeExport, Source: source, Priority: models.JobPriorityNormal,
+	})
+	if err != nil {
+		t.Fatalf("create export job: %v", err)
+	}
+	return c.JobID, dispatchOwner(t, c.JobID)
+}
+
+// runEffects runs every queued finishing-effects River job.
+func runEffects(t *testing.T, lc *joblifecycle.Module) {
+	t.Helper()
+	var rows []struct {
+		ID   int64           `bun:"id"`
+		Args json.RawMessage `bun:"args"`
+	}
+	if err := testDB.NewRaw(`SELECT id, args FROM river_job WHERE kind = ? AND state = 'available' ORDER BY id`, joblifecycle.EffectsArgs{}.Kind()).Scan(context.Background(), &rows); err != nil {
+		t.Fatalf("list effects jobs: %v", err)
+	}
+	w := &joblifecycle.EffectsWorker{Module: lc}
+	for _, r := range rows {
+		var args joblifecycle.EffectsArgs
+		if err := json.Unmarshal(r.Args, &args); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Work(context.Background(), riverJob(r.ID, 1, args)); err != nil {
+			t.Fatalf("effects: %v", err)
+		}
+	}
+}
+
+func insertExportableGame(t *testing.T, userID string, gameID int32) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := testDB.NewInsert().Model(&models.Game{ID: gameID, Title: "G", LastUpdated: time.Now().UTC(), CreatedAt: time.Now().UTC()}).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testDB.NewInsert().Model(&models.UserGame{ID: uuid.NewString(), UserID: userID, GameID: gameID, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func exportFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(dir, "exports"))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
+}
+
+// A cancelled export never becomes completed, and leaves no file.
+func TestExport_CancelledDoesNotComplete(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertExportableGame(t, userID, 47001)
+	lc := newTestLC(t)
+	jobID, rid := createExportJob(t, lc, userID, "nexorious")
+	if err := lc.Cancel(ctx, jobID); err != nil {
+		t.Fatal(err)
+	}
+	w := &tasks.ExportJSONWorker{DB: testDB, LC: lc, StoragePath: tmpDir}
+	if err := w.Work(ctx, riverJob(rid, 1, tasks.ExportJSONArgs{JobID: jobID})); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	if s := jobStatus(t, jobID); s != models.JobStatusCancelled {
+		t.Fatalf("job = %s, want cancelled", s)
+	}
+	if files := exportFiles(t, tmpDir); len(files) != 0 {
+		t.Fatalf("cancelled export left files: %v", files)
+	}
+}
+
+// An export interrupted by a shutdown records nothing and is completed when
+// River runs it again after the restart.
+func TestExport_InterruptedIsCompletedAfterRestart(t *testing.T) {
+	truncateAllTables(t)
+	tmpDir := t.TempDir()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertExportableGame(t, userID, 47002)
+	lc := newTestLC(t)
+	jobID, rid := createExportJob(t, lc, userID, "csv")
+	w := &tasks.ExportCSVWorker{DB: testDB, LC: lc, StoragePath: tmpDir}
+
+	stopped, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := w.Work(stopped, riverJob(rid, 1, tasks.ExportCSVArgs{JobID: jobID})); !errors.Is(err, context.Canceled) {
+		t.Fatalf("interrupted Work = %v, want context.Canceled", err)
+	}
+	if s := jobStatus(t, jobID); s != models.JobStatusPending {
+		t.Fatalf("interrupted export = %s, want pending", s)
+	}
+	if err := w.Work(context.Background(), riverJob(rid, 1, tasks.ExportCSVArgs{JobID: jobID})); err != nil {
+		t.Fatalf("re-run: %v", err)
+	}
+	if s := jobStatus(t, jobID); s != models.JobStatusCompleted {
+		t.Fatalf("re-run export = %s, want completed", s)
+	}
+}
+
+// Two exports started in the same second write different files.
+func TestExport_SameSecondExportsGetDifferentFiles(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertExportableGame(t, userID, 47003)
+	lc := newTestLC(t)
+	w := &tasks.ExportJSONWorker{DB: testDB, LC: lc, StoragePath: tmpDir}
+	var paths []string
+	for range 2 {
+		jobID, rid := createExportJob(t, lc, userID, "nexorious")
+		if err := w.Work(ctx, riverJob(rid, 1, tasks.ExportJSONArgs{JobID: jobID})); err != nil {
+			t.Fatal(err)
+		}
+		var job models.Job
+		if err := testDB.NewSelect().Model(&job).Where("id = ?", jobID).Scan(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if job.FilePath == nil {
+			t.Fatalf("job %s has no file", jobID)
+		}
+		paths = append(paths, *job.FilePath)
+	}
+	if paths[0] == paths[1] {
+		t.Fatalf("both exports wrote %s", paths[0])
+	}
+	if files := exportFiles(t, tmpDir); len(files) != 2 {
+		t.Fatalf("files = %v, want 2", files)
+	}
+}
+
+// Both export kinds can be retried after a hard kill, and given time for a
+// large library: River's defaults (1 attempt here, a one-minute timeout) are
+// overridden.
+func TestExport_AttemptsAndTimeout(t *testing.T) {
+	if got := (tasks.ExportJSONArgs{}).InsertOpts().MaxAttempts; got != 5 {
+		t.Errorf("json MaxAttempts = %d, want 5", got)
+	}
+	if got := (tasks.ExportCSVArgs{}).InsertOpts().MaxAttempts; got != 5 {
+		t.Errorf("csv MaxAttempts = %d, want 5", got)
+	}
+	if got := (&tasks.ExportJSONWorker{}).Timeout(nil); got <= time.Minute {
+		t.Errorf("json Timeout = %v, want more than a minute", got)
+	}
+	if got := (&tasks.ExportCSVWorker{}).Timeout(nil); got <= time.Minute {
+		t.Errorf("csv Timeout = %v, want more than a minute", got)
+	}
+	if got := (&tasks.MetadataRefreshDispatchWorker{}).Timeout(nil); got <= time.Minute {
+		t.Errorf("metadata dispatch Timeout = %v, want more than a minute", got)
+	}
+	if got := (&tasks.StoreLinkRefreshDispatchWorker{}).Timeout(nil); got <= time.Minute {
+		t.Errorf("store-link dispatch Timeout = %v, want more than a minute", got)
 	}
 }

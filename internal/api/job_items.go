@@ -14,6 +14,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -21,10 +22,11 @@ import (
 type JobItemsHandler struct {
 	db          *bun.DB
 	riverClient *river.Client[pgx.Tx]
+	lc          *joblifecycle.Module
 }
 
-func NewJobItemsHandler(db *bun.DB, riverClient *river.Client[pgx.Tx]) *JobItemsHandler {
-	return &JobItemsHandler{db: db, riverClient: riverClient}
+func NewJobItemsHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], lc *joblifecycle.Module) *JobItemsHandler {
+	return &JobItemsHandler{db: db, riverClient: riverClient, lc: lc}
 }
 
 // HandleGetJobItem handles GET /api/job-items/:id.
@@ -57,9 +59,39 @@ func (h *JobItemsHandler) HandleRetryItem(c *echo.Context) error {
 	}
 
 	itemID := c.Param("id")
+	ctx := c.Request().Context()
+
+	// A Job on the lifecycle module is authorised on the Job's owner: in an
+	// admin-triggered refresh the Job is the admin's while each item belongs to
+	// the storefront's user.
+	var owner struct {
+		JobID     string `bun:"job_id"`
+		JobType   string `bun:"job_type"`
+		Source    string `bun:"source"`
+		JobUserID string `bun:"job_user_id"`
+	}
+	err := h.db.NewRaw(
+		`SELECT ji.job_id, j.job_type, j.source, j.user_id AS job_user_id
+		 FROM job_items ji JOIN jobs j ON j.id = ji.job_id WHERE ji.id = ?`, itemID,
+	).Scan(ctx, &owner)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job item")
+	}
+	if err == nil && h.lc.Handles(owner.JobType, owner.Source) {
+		if owner.JobUserID != userID {
+			return echo.NewHTTPError(http.StatusNotFound, "not found")
+		}
+		if _, err := h.lc.Retry(ctx, owner.JobID, []string{itemID}); err != nil {
+			if errors.Is(err, joblifecycle.ErrNotRetryable) {
+				return echo.NewHTTPError(http.StatusConflict, "item is not failed, or its job is failed or cancelled")
+			}
+			return lifecycleHTTPError(ctx, err, "retry item")
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	}
 
 	var item models.JobItem
-	err := h.db.NewRaw(`SELECT * FROM job_items WHERE id = ? AND user_id = ?`, itemID, userID).
+	err = h.db.NewRaw(`SELECT * FROM job_items WHERE id = ? AND user_id = ?`, itemID, userID).
 		Scan(context.Background(), &item)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

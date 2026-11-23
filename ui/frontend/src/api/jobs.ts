@@ -34,6 +34,7 @@ interface JobProgressApiResponse {
   pending_review: number;
   skipped: number;
   failed: number;
+  cancelled: number;
   done: number;
   total: number;
   percent: number;
@@ -173,6 +174,7 @@ function transformProgress(apiProgress: JobProgressApiResponse): JobProgress {
     pendingReview: apiProgress.pending_review,
     skipped: apiProgress.skipped,
     failed: apiProgress.failed,
+    cancelled: apiProgress.cancelled,
     done: apiProgress.done,
     total: apiProgress.total,
     percent: apiProgress.percent,
@@ -245,6 +247,7 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
     pending: 0,
     processing: 0,
     pending_review: 0,
+    cancelled: 0,
     done: 0,
     total: 0,
     percent: 0,

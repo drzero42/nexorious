@@ -11,6 +11,8 @@ import (
 	"github.com/riverqueue/river"
 	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 
+	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -84,21 +86,18 @@ func TestStoreLinkRefreshDispatch_HandlerOwned_PopulatesExistingRow(t *testing.T
 		t.Fatalf("insert external_game: %v", err)
 	}
 
-	// Handler-created pending row.
-	jobID := uuid.NewString()
-	if _, err := testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-		 VALUES (?, ?, 'store_link_refresh', 'system', 'pending', 'low', 0, now())`,
-		jobID, adminID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert pending job: %v", err)
+	// The admin handler creates the Job with its dispatch.
+	lc := newTestLC(t)
+	c, err := lc.CreateWithDispatch(ctx, joblifecycle.NewJob{
+		UserID: adminID, JobType: models.JobTypeStoreLinkRefresh, Source: models.JobSourceSystem, Priority: models.JobPriorityLow,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	jobID := c.JobID
 
-	rc := newTestMetadataRiverClient(t)
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, RiverClient: rc}
-	if err := w.Work(ctx, &river.Job[tasks.StoreLinkRefreshDispatchArgs]{
-		Args: tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID},
-	}); err != nil {
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc}
+	if err := w.Work(ctx, riverJob(dispatchOwner(t, jobID), 1, tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -129,19 +128,16 @@ func TestStoreLinkRefreshDispatch_HandlerOwned_EmptyFinalizesCompleted(t *testin
 	adminID := insertMetaRefreshAdminUser(t)
 	// No external_games rows → 0 groups.
 
-	jobID := uuid.NewString()
-	if _, err := testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-		 VALUES (?, ?, 'store_link_refresh', 'system', 'pending', 'low', 0, now())`,
-		jobID, adminID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert pending job: %v", err)
+	lc := newTestLC(t)
+	c, err := lc.CreateWithDispatch(ctx, joblifecycle.NewJob{
+		UserID: adminID, JobType: models.JobTypeStoreLinkRefresh, Source: models.JobSourceSystem, Priority: models.JobPriorityLow,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.StoreLinkRefreshDispatchArgs]{
-		Args: tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID},
-	}); err != nil {
+	jobID := c.JobID
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc}
+	if err := w.Work(ctx, riverJob(dispatchOwner(t, jobID), 1, tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 

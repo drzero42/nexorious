@@ -106,7 +106,7 @@ func newTestEchoConfiguredIGDB(t *testing.T, db *bun.DB, cfg *config.Config, igd
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	rc := newTestRiverClient(t)
-	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, "dev", "unknown", nil, rc)
+	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, "dev", "unknown", nil, api.WithRiverClient(rc))
 }
 
 // ─── Import tests ─────────────────────────────────────────────────────────────

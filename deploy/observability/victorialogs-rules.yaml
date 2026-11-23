@@ -93,22 +93,22 @@ groups:
           description: "{{ $value }} external_api failures for source '{{ index .Labels \"source\" }}' in 15m."
 
       - alert: NexoriousStuckJobs
-        expr: '_time:15m | unpack_json | filter msg:"marked stale" | stats count(*) as logs | filter logs:>0'
+        expr: '_time:15m | unpack_json | filter (msg:"marked stale" or msg:"job recovery: failed interrupted work") | stats count(*) as logs | filter logs:>0'
         for: 0s
         labels:
           severity: warning
         annotations:
-          summary: "Nexorious reaped stuck jobs"
-          description: "{{ $value }} stale-job reaping event(s) in 15m — jobs were stuck and force-marked failed."
+          summary: "Nexorious failed stuck or interrupted jobs"
+          description: "{{ $value }} stale-job reaping or job-recovery failure(s) in 15m — work was stuck or gave up and was marked failed."
 
       - alert: NexoriousJobDispatchFailures
-        expr: '_time:10m | unpack_json | filter category:="db" level:="ERROR" msg:"enqueue" | stats count(*) as logs | filter logs:>0'
+        expr: '_time:10m | unpack_json | filter category:="db" level:="ERROR" (msg:"enqueue" or msg:"job lifecycle: transition failed" or msg:"job lifecycle: finishing effects failed") | stats count(*) as logs | filter logs:>0'
         for: 0s
         labels:
           severity: warning
         annotations:
           summary: "Nexorious job enqueue/dispatch failures"
-          description: "{{ $value }} job enqueue/dispatch failure(s) in 10m — River jobs may not have been scheduled."
+          description: "{{ $value }} job enqueue/dispatch, job-transition or finishing-effect failure(s) in 10m — River jobs may not have been scheduled, or a notification was not sent."
 
   - name: nexorious-generic
     type: vlogs

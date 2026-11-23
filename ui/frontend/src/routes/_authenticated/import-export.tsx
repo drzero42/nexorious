@@ -435,29 +435,31 @@ export function ImportExportPage() {
               <JobItemsDetails
                 jobId={activeJob.id}
                 progress={activeJob.progress}
-                isTerminal={activeJob.isTerminal}
+                jobStatus={activeJob.status}
               />
             )}
 
           {/* Actions for completed jobs */}
           {activeJob.isTerminal && (
             <div className="flex gap-3">
-              {/* Retry Failed — only when the finished job has failed items */}
-              {(activeJob.progress?.failed ?? 0) > 0 && (
-                <Button onClick={handleRetryFailed} disabled={isRetrying}>
-                  {isRetrying ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Retrying...
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                      Retry Failed
-                    </>
-                  )}
-                </Button>
-              )}
+              {/* Retry Failed — only when a completed job has failed items: a
+                  failed or cancelled job is never reopened. */}
+              {activeJob.status === JobStatus.COMPLETED &&
+                (activeJob.progress?.failed ?? 0) > 0 && (
+                  <Button onClick={handleRetryFailed} disabled={isRetrying}>
+                    {isRetrying ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Retrying...
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="mr-2 h-4 w-4" />
+                        Retry Failed
+                      </>
+                    )}
+                  </Button>
+                )}
 
               {/* Download button for completed exports */}
               {isActiveJobCompletedExport && (

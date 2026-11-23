@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
@@ -31,9 +32,9 @@ const QueueMetadataRefresh = "metadata_refresh"
 // ─── Dispatch worker ─────────────────────────────────────────────────────────
 
 // MetadataRefreshDispatchArgs is the River job args type for "metadata_refresh_dispatch".
-// JobID, when set, names a pre-created (handler-owned) jobs row the worker must
-// populate instead of inserting its own; empty means the worker self-creates the
-// row (the periodic-scheduler path).
+// JobID, when set, names the Job an admin created (internal/joblifecycle, with
+// this River job as its dispatch owner); empty means the scheduled path, where
+// the dispatch runs before any Job exists and creates its Job with all items.
 type MetadataRefreshDispatchArgs struct {
 	JobID string `json:"job_id,omitempty"`
 }
@@ -41,84 +42,127 @@ type MetadataRefreshDispatchArgs struct {
 func (MetadataRefreshDispatchArgs) Kind() string { return "metadata_refresh_dispatch" }
 
 func (MetadataRefreshDispatchArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 1, Priority: 3}
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3}
 }
 
-// MetadataRefreshDispatchWorker is a River worker that:
-//  1. Guards on IGDB configured and admin user present.
-//  2. Checks no active metadata_refresh job.
-//  3. Selects games (optionally filtered by MinAge) ordered by last_updated ASC.
-//  4. Creates job + job_items and enqueues metadata_refresh_item River jobs in a single transaction.
+// MetadataRefreshDispatchWorker selects the games to refresh (optionally only
+// those older than MinAge, oldest first) and creates one item per game.
 type MetadataRefreshDispatchWorker struct {
 	river.WorkerDefaults[MetadataRefreshDispatchArgs]
-	DB          *bun.DB
-	IGDBClient  *igdbsvc.Client
-	RiverClient *river.Client[pgx.Tx]
+	DB         *bun.DB
+	LC         *joblifecycle.Module
+	IGDBClient *igdbsvc.Client
 	// MinAge, when > 0, restricts dispatch to games whose last_updated is older
 	// than the window. 0 means "all games" (back-compat for unset callers).
 	MinAge time.Duration
 }
 
+// Timeout leaves room for selecting and inserting thousands of items.
+func (w *MetadataRefreshDispatchWorker) Timeout(*river.Job[MetadataRefreshDispatchArgs]) time.Duration {
+	return dispatchTimeout
+}
+
+// dispatchTimeout bounds a refresh dispatch, which inserts every item in one
+// transaction.
+const dispatchTimeout = 10 * time.Minute
+
 func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job[MetadataRefreshDispatchArgs]) error {
+	if job.Args.JobID != "" {
+		return w.dispatchJob(ctx, job)
+	}
+	return w.dispatchScheduled(ctx, job)
+}
+
+// dispatchJob fills a Job an admin created.
+func (w *MetadataRefreshDispatchWorker) dispatchJob(ctx context.Context, rj *river.Job[MetadataRefreshDispatchArgs]) error {
+	jobID := rj.Args.JobID
+	ctx = logging.WithJobID(ctx, jobID)
+	j, err := w.LC.StartDispatch(ctx, jobID, rj.ID)
+	if err != nil {
+		return exitOrRetry(ctx, err)
+	}
+	if !w.IGDBClient.Configured() {
+		return failMaintDispatch(ctx, w.LC, jobID, rj.JobRow, "metadata_refresh_dispatch", "IGDB is not configured")
+	}
+	games, err := w.selectGames(ctx)
+	if err != nil {
+		if ctx.Err() == nil && lastAttempt(rj.JobRow) {
+			return failMaintDispatch(ctx, w.LC, jobID, rj.JobRow, "metadata_refresh_dispatch", err.Error())
+		}
+		return exitOrRetry(ctx, err)
+	}
+	n := len(games)
+	err = w.LC.MarkDispatched(ctx, jobID, rj.ID, joblifecycle.Dispatched{
+		Items:      metadataItems(games, j.UserID),
+		TotalItems: &n,
+		Own: func(ctx context.Context, tx bun.Tx) error {
+			if n == 0 {
+				return nil // an empty refresh completes and tells nobody
+			}
+			return notify.EmitTx(ctx, tx, maintCompletedNotice(jobID, "metadata_refresh_dispatch", n))
+		},
+	})
+	if err != nil {
+		if ctx.Err() == nil && !joblifecycle.IsRefusal(err) && lastAttempt(rj.JobRow) {
+			return failMaintDispatch(ctx, w.LC, jobID, rj.JobRow, "metadata_refresh_dispatch", err.Error())
+		}
+		return exitOrRetry(ctx, err)
+	}
+	slog.InfoContext(ctx, "metadata_refresh_dispatch: dispatched", "game_count", n)
+	return nil
+}
+
+// dispatchScheduled runs before any Job exists: it creates the Job with all
+// its items, or nothing when there is nothing to do.
+func (w *MetadataRefreshDispatchWorker) dispatchScheduled(ctx context.Context, rj *river.Job[MetadataRefreshDispatchArgs]) error {
 	if !w.IGDBClient.Configured() {
 		slog.WarnContext(ctx, "metadata_refresh_dispatch: IGDB not configured, skipping")
 		return nil
 	}
-
-	jobID := job.Args.JobID
-	handlerOwned := jobID != ""
-
-	// Resolve the job owner (used to stamp job_items). Handler-owned rows already
-	// carry user_id; the self-created (periodic) path falls back to the first admin.
 	var ownerID string
-	if handlerOwned {
-		err := w.DB.NewRaw(`SELECT user_id FROM jobs WHERE id = ?`, jobID).Scan(ctx, &ownerID)
-		if errors.Is(err, sql.ErrNoRows) {
-			slog.WarnContext(ctx, "metadata_refresh_dispatch: handler job row missing, skipping", logging.KeyJobID, jobID)
-			return nil
-		}
-		if err != nil {
-			slog.ErrorContext(ctx, "metadata_refresh_dispatch: load job owner", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			return nil
-		}
-	} else {
-		err := w.DB.NewRaw(`SELECT id FROM users WHERE is_admin = true LIMIT 1`).Scan(ctx, &ownerID)
-		if errors.Is(err, sql.ErrNoRows) {
-			slog.WarnContext(ctx, "metadata_refresh_dispatch: no admin user found, skipping")
-			return nil
-		}
-		if err != nil {
-			slog.ErrorContext(ctx, "metadata_refresh_dispatch: query admin user", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			return nil
-		}
-
-		// Skip if a refresh job is already active. Only the self-created path runs
-		// this guard; for handler-owned jobs the handler owns dedup (and the row it
-		// created would otherwise match here and make the worker skip its own work).
-		var existingJobID string
-		err = w.DB.NewRaw(
-			`SELECT id FROM jobs WHERE job_type = ? AND status IN ('pending', 'processing') LIMIT 1`,
-			models.JobTypeMetadataRefresh,
-		).Scan(ctx, &existingJobID)
-		if err == nil {
-			slog.InfoContext(ctx, "metadata_refresh_dispatch: job already active, skipping", "existing_job_id", existingJobID)
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			slog.ErrorContext(ctx, "metadata_refresh_dispatch: duplicate check", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			return nil
-		}
-
-		jobID = uuid.NewString()
+	err := w.DB.NewRaw(`SELECT id FROM users WHERE is_admin = true ORDER BY created_at LIMIT 1`).Scan(ctx, &ownerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		slog.WarnContext(ctx, "metadata_refresh_dispatch: no admin user found, skipping")
+		return nil
 	}
-
-	// Oldest-refreshed first; skip games refreshed within MinAge. last_updated is
-	// NOT NULL (DEFAULT now()), so a never-metadata-refreshed game carries its
-	// creation timestamp and ages into eligibility — no NULL handling needed.
-	var games []struct {
-		ID    int32  `bun:"id"`
-		Title string `bun:"title"`
+	if err != nil {
+		return maintDispatchError(ctx, w.DB, rj.JobRow, "metadata_refresh_dispatch", fmt.Errorf("query admin user: %w", err))
 	}
+	games, err := w.selectGames(ctx)
+	if err != nil {
+		return maintDispatchError(ctx, w.DB, rj.JobRow, "metadata_refresh_dispatch", err)
+	}
+	if len(games) == 0 {
+		return nil
+	}
+	jobID := uuid.NewString()
+	c, err := w.LC.CreateWithItems(ctx, joblifecycle.NewJob{
+		ID: jobID, UserID: ownerID, JobType: models.JobTypeMetadataRefresh, Source: models.JobSourceSystem,
+		Priority: models.JobPriorityLow, TotalItems: len(games),
+	}, metadataItems(games, ownerID), func(ctx context.Context, tx bun.Tx) error {
+		return notify.EmitTx(ctx, tx, maintCompletedNotice(jobID, "metadata_refresh_dispatch", len(games)))
+	})
+	if err != nil {
+		return maintDispatchError(ctx, w.DB, rj.JobRow, "metadata_refresh_dispatch", err)
+	}
+	if !c.Created {
+		slog.InfoContext(ctx, "metadata_refresh_dispatch: job already active, skipping", "existing_job_id", c.JobID)
+		return nil
+	}
+	slog.InfoContext(ctx, "metadata_refresh_dispatch: job created", logging.KeyJobID, jobID, "game_count", len(games))
+	return nil
+}
+
+type refreshGame struct {
+	ID    int32  `bun:"id"`
+	Title string `bun:"title"`
+}
+
+// selectGames returns the games to refresh, oldest-refreshed first, skipping
+// games refreshed within MinAge. last_updated is NOT NULL (DEFAULT now()), so a
+// never-refreshed game carries its creation time and ages into eligibility.
+func (w *MetadataRefreshDispatchWorker) selectGames(ctx context.Context) ([]refreshGame, error) {
+	var games []refreshGame
 	var err error
 	if w.MinAge > 0 {
 		err = w.DB.NewRaw(
@@ -131,74 +175,62 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		err = w.DB.NewRaw(`SELECT id, title FROM games ORDER BY last_updated ASC`).Scan(ctx, &games)
 	}
 	if err != nil {
-		slog.ErrorContext(ctx, "metadata_refresh_dispatch: query games", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return nil
+		return nil, fmt.Errorf("query games: %w", err)
 	}
-	if len(games) == 0 {
-		// A handler-owned row is already pending; finalize it so it never sticks
-		// in 'pending' forever. The self-created path created nothing, so no-op.
-		if handlerOwned {
-			finalizeJobCompleted(ctx, w.DB, jobID, "metadata_refresh_dispatch: finalize empty", false)
-		}
-		return nil
-	}
+	return games, nil
+}
 
-	// River jobs must be inserted AFTER the transaction commits: riverClient.Insert uses a
-	// separate connection and commits immediately, so workers can dequeue and attempt to load
-	// job_items before the bun transaction is visible — causing "no rows" errors.
-	// itemIDs is populated by the insertItems closure (run once inside the tx) and
-	// read only after writeMaintenanceJobInTx returns.
-	itemIDs := make([]string, 0, len(games))
-	skipped, err := writeMaintenanceJobInTx(ctx, w.DB, maintenanceJobParams{
-		HandlerOwned: handlerOwned,
-		JobID:        jobID,
-		OwnerID:      ownerID,
-		JobType:      models.JobTypeMetadataRefresh,
-		Source:       models.JobSourceSystem,
-		TotalItems:   len(games),
-	}, func(ctx context.Context, tx bun.Tx) error {
-		for _, g := range games {
-			itemID := uuid.NewString()
-			itemIDs = append(itemIDs, itemID)
-
-			sourceMeta, _ := json.Marshal(map[string]any{"game_id": g.ID}) //nolint:errcheck // marshaling a fixed map cannot fail
-
-			if _, err := tx.NewRaw(
-				`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-				itemID, jobID, ownerID, strconv.Itoa(int(g.ID)), g.Title, json.RawMessage(sourceMeta),
-			).Exec(ctx); err != nil {
-				return fmt.Errorf("insert job_item for game %d: %w", g.ID, err)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "metadata_refresh_dispatch: transaction failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		notify.Emit(ctx, w.DB, notify.EmitParams{
-			Type: notify.TypeAdminMaintFailed, Scope: notify.ScopeAdmin,
-			Payload: notify.MaintPayload{Action: "metadata_refresh_dispatch", Error: err.Error()},
-		})
-		return nil
-	}
-	if skipped {
-		slog.InfoContext(ctx, "metadata_refresh_dispatch: job already active (in-tx guard), skipping", logging.KeyJobID, jobID)
-		return nil
-	}
-
-	// Enqueue River jobs now that job_items are committed and visible.
-	for _, itemID := range itemIDs {
-		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, MetadataRefreshItemArgs{JobItemID: itemID}); err != nil {
-			slog.WarnContext(ctx, "metadata_refresh_dispatch: enqueue item failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.KeyJobItemID, itemID, logging.Cat(logging.CategoryDB))
+func metadataItems(games []refreshGame, ownerID string) []joblifecycle.NewItem {
+	items := make([]joblifecycle.NewItem, len(games))
+	for i, g := range games {
+		meta, _ := json.Marshal(metadataRefreshSourceMeta{GameID: g.ID}) //nolint:errcheck // marshaling a fixed struct cannot fail
+		items[i] = joblifecycle.NewItem{
+			UserID: ownerID, ItemKey: strconv.Itoa(int(g.ID)), SourceTitle: g.Title, SourceMetadata: meta,
 		}
 	}
+	return items
+}
 
-	slog.InfoContext(ctx, "metadata_refresh_dispatch: job created", logging.KeyJobID, jobID, "game_count", len(games))
-	notify.Emit(ctx, w.DB, notify.EmitParams{
+func maintCompletedNotice(jobID, action string, count int) notify.EmitParams {
+	return notify.EmitParams{
 		Type: notify.TypeAdminMaintCompleted, Scope: notify.ScopeAdmin,
-		Payload: notify.MaintPayload{Action: "metadata_refresh_dispatch", Count: len(games)},
-	})
-	return nil
+		Payload:  notify.MaintPayload{Action: action, Count: count},
+		DedupKey: maintDedupKey(jobID, notify.TypeAdminMaintCompleted),
+	}
+}
+
+func maintFailedNotice(riverJobID int64, action, msg string) notify.EmitParams {
+	return notify.EmitParams{
+		Type: notify.TypeAdminMaintFailed, Scope: notify.ScopeAdmin,
+		Payload:  notify.MaintPayload{Action: action, Error: logging.ScrubURLQueries(msg)},
+		DedupKey: maintDedupKey(riverJobID, notify.TypeAdminMaintFailed),
+	}
+}
+
+// failMaintDispatch fails a refresh Job whose dispatch cannot go on, telling
+// the admin in the same transaction, so the Job is finished at once and the
+// admin is told once.
+func failMaintDispatch(ctx context.Context, lc *joblifecycle.Module, jobID string, rj *rivertype.JobRow, action, msg string) error {
+	return exitOrRetry(ctx, lc.Fail(ctx, jobID, joblifecycle.Failure{
+		Message:          msg,
+		CallerRiverJobID: rj.ID,
+		Own: func(ctx context.Context, tx bun.Tx) error {
+			return notify.EmitTx(ctx, tx, maintFailedNotice(rj.ID, action, msg))
+		},
+	}))
+}
+
+// maintDispatchError handles an error of a dispatch that has no Job yet: it
+// is returned to River, and on the last attempt the admin is told.
+func maintDispatchError(ctx context.Context, db *bun.DB, rj *rivertype.JobRow, action string, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if lastAttempt(rj) {
+		slog.ErrorContext(ctx, action+": giving up", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		notify.Emit(ctx, db, maintFailedNotice(rj.ID, action, err.Error()))
+	}
+	return err
 }
 
 // ─── Item worker ──────────────────────────────────────────────────────────────
@@ -219,6 +251,7 @@ func (MetadataRefreshItemArgs) InsertOpts() river.InsertOpts {
 type MetadataRefreshItemWorker struct {
 	river.WorkerDefaults[MetadataRefreshItemArgs]
 	DB          *bun.DB
+	LC          *joblifecycle.Module
 	IGDBClient  *igdbsvc.Client
 	StoragePath string
 }
@@ -227,51 +260,88 @@ type metadataRefreshSourceMeta struct {
 	GameID int32 `json:"game_id"`
 }
 
-func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[MetadataRefreshItemArgs]) error {
-	jobItemID := job.Args.JobItemID
+// errGameGone means the game row no longer exists (the daily cleanup of
+// unreferenced games can delete it while a refresh runs).
+var errGameGone = errors.New("game no longer exists")
 
-	var item models.JobItem
-	if err := w.DB.NewSelect().Model(&item).Where("id = ?", jobItemID).Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "metadata_refresh_item: load job_item", "id", jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return nil
+func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[MetadataRefreshItemArgs]) error {
+	item, done, err := loadOwnedItem(ctx, w.DB, w.LC, job.Args.JobItemID, job.ID)
+	if done || err != nil {
+		return err
 	}
 	// Correlate every line below (and the IGDB calls it makes) to the parent job.
 	ctx = logging.WithJobID(ctx, item.JobID)
+	fail := func(msg string) error { return failItem(ctx, w.LC, item.ID, job.ID, msg) }
 
 	var sourceMeta metadataRefreshSourceMeta
 	if err := json.Unmarshal(item.SourceMetadata, &sourceMeta); err != nil {
-		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err), "metadata_refresh: markItemFailed")
-		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
-		return nil
+		return fail(fmt.Sprintf("parse source_metadata: %v", err))
 	}
-
-	// Defensive IGDB guard; preserves the per-item failure message.
 	if !w.IGDBClient.Configured() {
-		markItemFailed(ctx, w.DB, &item, "igdb_not_configured", "metadata_refresh: markItemFailed")
-		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
-		return nil
+		return fail("igdb_not_configured")
 	}
 
-	if err := fetchAndStoreMetadata(ctx, w.DB, w.IGDBClient, w.StoragePath, sourceMeta.GameID); err != nil {
-		markItemFailed(ctx, w.DB, &item, err.Error(), "metadata_refresh: markItemFailed")
-		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
-		return nil
+	md, err := fetchMetadata(ctx, w.DB, w.IGDBClient, w.StoragePath, sourceMeta.GameID)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// A game IGDB does not know, a game that is gone, or credentials
+		// IGDB rejected will not go away by trying again; anything else
+		// (IGDB unreachable, the database) is retried, and fails the item on
+		// the last attempt with its real message.
+		if permanentMetadataError(err) || lastAttempt(job.JobRow) {
+			return fail(err.Error())
+		}
+		return err
 	}
 
-	markItemCompleted(ctx, w.DB, &item, "metadata_refresh: markItemCompleted")
-	metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
+	err = w.LC.FinishItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{
+		Status: models.JobItemStatusCompleted,
+		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
+			n, err := writeGameMetadata(ctx, tx, sourceMeta.GameID, md)
+			if err != nil {
+				return nil, err
+			}
+			if n == 0 {
+				return nil, joblifecycle.Abort(errGameGone)
+			}
+			return nil, nil
+		},
+	})
+	if errors.Is(err, errGameGone) {
+		return fail(errGameGone.Error())
+	}
+	return exitOrRetry(ctx, err)
+}
 
-	return nil
+func permanentMetadataError(err error) bool {
+	return errors.Is(err, errGameGone) || errors.Is(err, igdbsvc.ErrGameNotFound) ||
+		errors.Is(err, igdbsvc.ErrIGDBNotConfigured) || errors.Is(err, igdbsvc.ErrTwitchCredentialsRejected)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // fetchAndStoreMetadata fetches fresh IGDB metadata for a single game and writes
-// it to the games row, including cover art (cover-art failure is non-fatal). It
-// is the shared core used by both MetadataRefreshItemWorker (which layers
-// job_items tracking on top) and the fire-and-forget MetadataFetchWorker. The
+// it to the games row, including cover art (cover-art failure is non-fatal).
+// It is the fire-and-forget MetadataFetchWorker's path; the refresh item worker
+// calls fetchMetadata and writes the row inside its item's transition. The
 // caller must verify IGDB is configured before calling.
 func fetchAndStoreMetadata(ctx context.Context, db *bun.DB, igdbClient *igdbsvc.Client, storagePath string, gameID int32) error {
+	md, err := fetchMetadata(ctx, db, igdbClient, storagePath, gameID)
+	if err != nil {
+		return err
+	}
+	if _, err := writeGameMetadata(ctx, db, gameID, md); err != nil {
+		return err
+	}
+	return nil
+}
+
+// fetchMetadata loads the game, fetches its metadata from IGDB and saves its
+// cover art (a progress write: safe to repeat, it does not record an
+// outcome). A game row that does not exist is errGameGone.
+func fetchMetadata(ctx context.Context, db *bun.DB, igdbClient *igdbsvc.Client, storagePath string, gameID int32) (*igdbsvc.GameMetadata, error) {
 	// Load the current games row; cover_art_url drives the cover re-download decision.
 	var game struct {
 		ID          int32   `bun:"id"`
@@ -281,14 +351,40 @@ func fetchAndStoreMetadata(ctx context.Context, db *bun.DB, igdbClient *igdbsvc.
 	if err := db.NewRaw(
 		`SELECT id, title, cover_art_url FROM games WHERE id = ?`, gameID,
 	).Scan(ctx, &game); err != nil {
-		return fmt.Errorf("load game: %w", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errGameGone
+		}
+		return nil, fmt.Errorf("load game: %w", err)
 	}
 
 	md, err := igdbClient.FetchFullMetadata(ctx, int(gameID))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	// Cover art (non-fatal).
+	if md.CoverImageID != "" {
+		expectedURLPath := "/static/cover_art/" + md.CoverImageID + ".jpg"
+		if game.CoverArtUrl == nil || *game.CoverArtUrl != expectedURLPath {
+			coverURLPath, err := igdbClient.DownloadCoverArt(ctx, md.CoverImageID, storagePath)
+			if err != nil {
+				slog.WarnContext(ctx, "metadata fetch: cover art download failed",
+					"game_id", game.ID, "image_id", md.CoverImageID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+			} else if coverURLPath != "" {
+				if _, err := db.NewRaw(
+					`UPDATE games SET cover_art_url = ? WHERE id = ?`, coverURLPath, game.ID,
+				).Exec(ctx); err != nil {
+					slog.WarnContext(ctx, "metadata fetch: update cover_art_url failed", logging.KeyErr, err, "game_id", game.ID, logging.Cat(logging.CategoryDB))
+				}
+			}
+		}
+	}
+	return md, nil
+}
+
+// writeGameMetadata writes md to the games row and returns how many rows it
+// changed (0 when the game is gone).
+func writeGameMetadata(ctx context.Context, db bun.IDB, gameID int32, md *igdbsvc.GameMetadata) (int64, error) {
 	var releaseDate *time.Time
 	if md.ReleaseDate != nil {
 		if t, err := time.Parse("2006-01-02", *md.ReleaseDate); err == nil {
@@ -315,7 +411,7 @@ func fetchAndStoreMetadata(ctx context.Context, db *bun.DB, igdbClient *igdbsvc.
 		igdbPlatformNames = &s
 	}
 
-	if _, err := db.NewRaw(
+	res, err := db.NewRaw(
 		`UPDATE games SET
 			title = ?,
 			description = ?,
@@ -354,35 +450,13 @@ func fetchAndStoreMetadata(ctx context.Context, db *bun.DB, igdbClient *igdbsvc.
 		md.Themes,
 		md.PlayerPerspectives,
 		gameID,
-	).Exec(ctx); err != nil {
-		return fmt.Errorf("update games: %w", err)
+	).Exec(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("update games: %w", err)
 	}
-
-	// Cover art (non-fatal).
-	if md.CoverImageID != "" {
-		expectedURLPath := "/static/cover_art/" + md.CoverImageID + ".jpg"
-		if game.CoverArtUrl == nil || *game.CoverArtUrl != expectedURLPath {
-			coverURLPath, err := igdbClient.DownloadCoverArt(ctx, md.CoverImageID, storagePath)
-			if err != nil {
-				slog.WarnContext(ctx, "metadata fetch: cover art download failed",
-					"game_id", game.ID, "image_id", md.CoverImageID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-			} else if coverURLPath != "" {
-				if _, err := db.NewRaw(
-					`UPDATE games SET cover_art_url = ? WHERE id = ?`, coverURLPath, game.ID,
-				).Exec(ctx); err != nil {
-					slog.WarnContext(ctx, "metadata fetch: update cover_art_url failed", logging.KeyErr, err, "game_id", game.ID, logging.Cat(logging.CategoryDB))
-				}
-			}
-		}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("update games: %w", err)
 	}
-
-	return nil
-}
-
-func metaRefreshCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
-	remaining, ok := countJobItems(ctx, db, jobID, "status NOT IN ('completed', 'failed', 'skipped')", "metadata_refresh: check job completion")
-	if !ok || remaining > 0 {
-		return
-	}
-	finalizeJobCompleted(ctx, db, jobID, "metadata_refresh: update job completed", false)
+	return n, nil
 }

@@ -19,6 +19,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -27,11 +28,30 @@ import (
 type JobsHandler struct {
 	db          *bun.DB
 	riverClient *river.Client[pgx.Tx]
+	lc          *joblifecycle.Module
 }
 
 // NewJobsHandler returns a new JobsHandler.
-func NewJobsHandler(db *bun.DB, riverClient *river.Client[pgx.Tx]) *JobsHandler {
-	return &JobsHandler{db: db, riverClient: riverClient}
+func NewJobsHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], lc *joblifecycle.Module) *JobsHandler {
+	return &JobsHandler{db: db, riverClient: riverClient, lc: lc}
+}
+
+// lifecycleHTTPError maps an error of a Job lifecycle operation to an HTTP
+// error: the Job or item is gone (404), the operation does not apply to it in
+// its current state (409), or anything else (500).
+func lifecycleHTTPError(ctx context.Context, err error, what string) error {
+	switch {
+	case errors.Is(err, joblifecycle.ErrGone):
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	case errors.Is(err, joblifecycle.ErrJobNotActive):
+		return echo.NewHTTPError(http.StatusConflict, "job is already terminal")
+	case errors.Is(err, joblifecycle.ErrNotRetryable):
+		return echo.NewHTTPError(http.StatusConflict, "only failed items of an active or completed job can be retried")
+	case errors.Is(err, joblifecycle.ErrDuplicateActive):
+		return echo.NewHTTPError(http.StatusConflict, "an equivalent job is already running")
+	}
+	slog.ErrorContext(ctx, "jobs: "+what+" failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	return echo.NewHTTPError(http.StatusInternalServerError, "failed to "+what)
 }
 
 // jobItemCounts fetches aggregated item status counts for a job and returns a
@@ -54,7 +74,7 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[stri
 
 	m := map[string]int{
 		"pending": 0, "processing": 0, "completed": 0,
-		"pending_review": 0, "skipped": 0, "failed": 0,
+		"pending_review": 0, "skipped": 0, "failed": 0, "cancelled": 0,
 	}
 	for _, sc := range counts {
 		m[sc.Status] = sc.Count
@@ -71,7 +91,7 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[stri
 	return map[string]any{
 		"pending": m["pending"], "processing": m["processing"],
 		"completed": m["completed"], "pending_review": m["pending_review"],
-		"skipped": m["skipped"], "failed": m["failed"],
+		"skipped": m["skipped"], "failed": m["failed"], "cancelled": m["cancelled"],
 		"done": done, "total": total, "percent": percent,
 	}, nil
 }
@@ -410,7 +430,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			slog.ErrorContext(reqCtx, "HandleRecentJobs: failed to count job items", logging.KeyJobID, j.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			progress = map[string]any{
 				"pending": 0, "processing": 0, "completed": 0, "pending_review": 0,
-				"skipped": 0, "failed": 0, "done": 0, "total": 0, "percent": 0,
+				"skipped": 0, "failed": 0, "cancelled": 0, "done": 0, "total": 0, "percent": 0,
 			}
 		}
 
@@ -612,6 +632,13 @@ func (h *JobsHandler) HandleCancelJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusConflict, "job is already terminal")
 	}
 
+	if h.lc.Handles(job.JobType, job.Source) {
+		if err := h.lc.Cancel(c.Request().Context(), jobID); err != nil {
+			return lifecycleHTTPError(c.Request().Context(), err, "cancel job")
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "cancelled"})
+	}
+
 	now := time.Now().UTC()
 	_, err = h.db.NewRaw(`
 		UPDATE jobs SET status = ?, completed_at = ?
@@ -686,6 +713,18 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job")
+	}
+
+	if h.lc.Handles(job.JobType, job.Source) {
+		n, err := h.lc.Retry(c.Request().Context(), jobID, nil)
+		if err != nil {
+			return lifecycleHTTPError(c.Request().Context(), err, "retry failed items")
+		}
+		msg := fmt.Sprintf("Retrying %d failed item(s)", n)
+		if n == 0 {
+			msg = "No failed items to retry"
+		}
+		return c.JSON(http.StatusOK, map[string]any{"success": true, "message": msg, "retried_count": n})
 	}
 
 	// Get failed items.

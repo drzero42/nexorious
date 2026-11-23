@@ -117,9 +117,10 @@ type Config struct {
 	// yesterday is reliably eligible today despite scheduler jitter.
 	MetadataRefreshMinAge string `env:"METADATA_REFRESH_MIN_AGE" envDefault:"23h"`
 
-	// StaleJobThreshold is the minimum job age before CleanupStaleJobsTask marks
-	// a pending/processing metadata_refresh job as failed when it has no
-	// unfinished items. Default 4h matches the Phase 5 spec.
+	// StaleJobThreshold is the minimum job age before CleanupStaleJobs marks an
+	// active sync job whose dispatch never finished as failed when it has no
+	// unfinished items. The kinds on internal/joblifecycle are recovered
+	// without a threshold.
 	StaleJobThreshold string `env:"STALE_JOB_THRESHOLD" envDefault:"4h"`
 
 	// SyncHistoryRetentionDays is the number of days changes rows are kept.

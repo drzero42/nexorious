@@ -52,20 +52,23 @@ const (
 type Job struct {
 	bun.BaseModel `bun:"table:jobs"`
 
-	ID               string     `bun:"id,pk"                    json:"id"`
-	UserID           string     `bun:"user_id,notnull"          json:"user_id"`
-	JobType          string     `bun:"job_type,notnull"         json:"job_type"`
-	Source           string     `bun:"source,notnull"           json:"source"`
-	Status           string     `bun:"status,notnull"           json:"status"`
-	Priority         string     `bun:"priority,notnull"         json:"priority"`
-	FilePath         *string    `bun:"file_path"                json:"file_path"`
-	TotalItems       int        `bun:"total_items,notnull"      json:"total_items"`
-	ErrorMessage     *string    `bun:"error_message"            json:"error_message"`
-	AutoRetryDone    bool       `bun:"auto_retry_done,notnull"   json:"auto_retry_done"`
-	DispatchComplete bool       `bun:"dispatch_complete,notnull" json:"-"`
-	CreatedAt        time.Time  `bun:"created_at,nullzero,notnull"        json:"created_at"`
-	StartedAt        *time.Time `bun:"started_at"               json:"started_at"`
-	CompletedAt      *time.Time `bun:"completed_at"             json:"completed_at"`
+	ID               string  `bun:"id,pk"                    json:"id"`
+	UserID           string  `bun:"user_id,notnull"          json:"user_id"`
+	JobType          string  `bun:"job_type,notnull"         json:"job_type"`
+	Source           string  `bun:"source,notnull"           json:"source"`
+	Status           string  `bun:"status,notnull"           json:"status"`
+	Priority         string  `bun:"priority,notnull"         json:"priority"`
+	FilePath         *string `bun:"file_path"                json:"file_path"`
+	TotalItems       int     `bun:"total_items,notnull"      json:"total_items"`
+	ErrorMessage     *string `bun:"error_message"            json:"error_message"`
+	AutoRetryDone    bool    `bun:"auto_retry_done,notnull"   json:"auto_retry_done"`
+	DispatchComplete bool    `bun:"dispatch_complete,notnull" json:"-"`
+	// RiverJobID is the River job that owns the Job's dispatch while it is not
+	// done (internal/joblifecycle); NULL otherwise.
+	RiverJobID  *int64     `bun:"river_job_id" json:"-"`
+	CreatedAt   time.Time  `bun:"created_at,nullzero,notnull"        json:"created_at"`
+	StartedAt   *time.Time `bun:"started_at"               json:"started_at"`
+	CompletedAt *time.Time `bun:"completed_at"             json:"completed_at"`
 }
 
 // IsActive returns true if the job is pending or processing.
@@ -126,4 +129,7 @@ type JobItem struct {
 	CreatedAt       time.Time       `bun:"created_at,nullzero,notnull"       json:"created_at"`
 	ProcessedAt     *time.Time      `bun:"processed_at"             json:"processed_at"`
 	ResolvedAt      *time.Time      `bun:"resolved_at"              json:"resolved_at"`
+	// RiverJobID is the River job that owns a pending item
+	// (internal/joblifecycle); NULL once the item leaves pending.
+	RiverJobID *int64 `bun:"river_job_id" json:"-"`
 }

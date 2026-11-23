@@ -46,14 +46,6 @@ func markItemFailed(ctx context.Context, db *bun.DB, item *models.JobItem, msg, 
 	execItemUpdate(ctx, db, item, logPrefix, "status", "error_message", "processed_at")
 }
 
-// markItemCompleted sets a job_item to completed with processed_at=now.
-func markItemCompleted(ctx context.Context, db *bun.DB, item *models.JobItem, logPrefix string) {
-	now := time.Now().UTC()
-	item.Status = models.JobItemStatusCompleted
-	item.ProcessedAt = &now
-	execItemUpdate(ctx, db, item, logPrefix, "status", "processed_at")
-}
-
 // markItemCompletedWithResult sets a job_item to completed, persisting the
 // marshalled result alongside processed_at=now. Used by the import worker, which
 // records a per-item result payload.

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/riverqueue/river"
+	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 )
 
 func TestEmitInsertsEventRow(t *testing.T) {
@@ -82,51 +84,63 @@ func insertEmitUser(t *testing.T, username string) string {
 	return id
 }
 
-// EmitTx writes through the caller's transaction: rolled back, no event
-// remains; committed, it does and deliver can be called.
+// EmitTx writes the event and its delivery River job through the caller's
+// transaction: rolled back, neither remains; committed, both do. A retry after
+// a failure between the two writes can then never find the event without its
+// delivery job.
 func TestEmitTxFollowsTheTransaction(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	SetRiverClient(nil)
+	rc, err := river.NewClient(riverdatabasesql.New(testDB.DB), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetTxRiverClient(rc)
+	t.Cleanup(func() { SetTxRiverClient(nil) })
 	uid := insertEmitUser(t, "emit-tx-user")
 	params := func(key string) EmitParams {
 		return EmitParams{Type: TypeSyncFailed, Scope: ScopeUser, ActorUserID: uid, DedupKey: key}
 	}
-	count := func(key string) int {
-		var n int
-		if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, key).Scan(ctx, &n); err != nil {
+	count := func(key string) (events, deliveries int) {
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, key).Scan(ctx, &events); err != nil {
 			t.Fatal(err)
 		}
-		return n
+		if err := testDB.NewRaw(
+			`SELECT COUNT(*) FROM river_job WHERE kind = 'notify' AND args->>'event_id' IN (SELECT id FROM events WHERE dedup_key = ?)`, key,
+		).Scan(ctx, &deliveries); err != nil {
+			t.Fatal(err)
+		}
+		return events, deliveries
 	}
 
 	tx, err := testDB.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := EmitTx(ctx, tx, params("rolled-back")); err != nil {
+	if err := EmitTx(ctx, tx, params("rolled-back")); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Rollback(); err != nil {
 		t.Fatal(err)
 	}
-	if n := count("rolled-back"); n != 0 {
-		t.Errorf("rolled-back transaction left %d events", n)
+	if e, d := count("rolled-back"); e != 0 || d != 0 {
+		t.Errorf("rolled-back transaction left %d events, %d deliveries", e, d)
 	}
 
-	tx, err = testDB.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
+	for range 2 { // the second is deduplicated: no second event, no second delivery
+		tx, err = testDB.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := EmitTx(ctx, tx, params("committed")); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
 	}
-	deliver, err := EmitTx(ctx, tx, params("committed"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	deliver()
-	if n := count("committed"); n != 1 {
-		t.Errorf("committed transaction left %d events, want 1", n)
+	if e, d := count("committed"); e != 1 || d != 1 {
+		t.Errorf("committed transaction left %d events, %d deliveries; want 1, 1", e, d)
 	}
 }

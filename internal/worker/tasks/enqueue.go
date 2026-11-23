@@ -68,7 +68,8 @@ func UsesGenericImportPipeline(source string) bool {
 }
 
 // ArgsForJobType returns the appropriate River JobArgs for the given job_type,
-// source, and job_item_id. Used by callers (the HTTP retry handlers, the orphan
+// source, and job_item_id, for the kinds not yet on internal/joblifecycle (a
+// kind on the module supplies its own). Used by callers (the HTTP retry handlers, the orphan
 // rescuer) that switch on job_type at runtime. The source disambiguates imports
 // that share the "import" job_type but need a different task chain (registry
 // sources use the match→finalize chain).
@@ -83,8 +84,6 @@ func ArgsForJobType(jobType, source, jobItemID string) (river.JobArgs, error) {
 		return IGDBMatchArgs{JobItemID: jobItemID}, nil
 	case models.JobTypeImport:
 		return ImportItemArgs{JobItemID: jobItemID}, nil
-	case models.JobTypeMetadataRefresh:
-		return MetadataRefreshItemArgs{JobItemID: jobItemID}, nil
 	default:
 		return nil, fmt.Errorf("unknown job_type %q", jobType)
 	}

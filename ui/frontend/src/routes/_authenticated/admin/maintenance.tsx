@@ -56,7 +56,7 @@ function MaintenancePageSkeleton() {
   );
 }
 
-function MaintenancePage() {
+export function MaintenancePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
@@ -217,7 +217,7 @@ function MaintenancePage() {
             <JobItemsDetails
               jobId={activeJob.id}
               progress={activeJob.progress}
-              isTerminal={activeJob.isTerminal}
+              jobStatus={activeJob.status}
             />
           )}
 

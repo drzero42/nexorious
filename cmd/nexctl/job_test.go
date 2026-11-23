@@ -102,7 +102,7 @@ func TestJobShowProgress(t *testing.T) {
 			"priority": "normal", "total_items": 10, "created_at": "2026-06-18T00:00:00Z",
 			"progress": map[string]any{
 				"pending": 3, "processing": 1, "completed": 4, "pending_review": 2,
-				"skipped": 0, "failed": 0, "total": 10, "percent": 40,
+				"skipped": 0, "failed": 0, "cancelled": 3, "total": 10, "percent": 40,
 			},
 		})
 	})
@@ -119,7 +119,7 @@ func TestJobShowProgress(t *testing.T) {
 		t.Fatalf("job show: %v\n%s", err, out.String())
 	}
 	s := out.String()
-	if !strings.Contains(s, "pending_review: 2") || !strings.Contains(s, "percent:        40") {
+	if !strings.Contains(s, "pending_review: 2") || !strings.Contains(s, "cancelled:      3") || !strings.Contains(s, "percent:        40") {
 		t.Fatalf("progress not rendered: %s", s)
 	}
 }

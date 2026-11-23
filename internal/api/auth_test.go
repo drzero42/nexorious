@@ -80,7 +80,7 @@ func newTestEchoPool(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	rc := newTestRiverClient(t)
-	return api.New(testEncrypter, cfg, m, db, "", nil, nil, "dev", "unknown", nil, rc)
+	return api.New(testEncrypter, cfg, m, db, "", nil, nil, "dev", "unknown", nil, api.WithRiverClient(rc))
 }
 
 // newTestRiverClient builds a non-started River client against the shared

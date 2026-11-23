@@ -19,7 +19,9 @@ vi.mock('@/hooks', () => ({
 }));
 // JobItemsDetails fetches on mount; stub it to a marker for the fallback case.
 vi.mock('./job-items-details', () => ({
-  JobItemsDetails: () => <div data-testid="job-items-details" />,
+  JobItemsDetails: ({ jobStatus }: { jobStatus: string }) => (
+    <div data-testid="job-items-details" data-job-status={jobStatus} />
+  ),
 }));
 
 import { useRecentJobs } from '@/hooks';
@@ -43,6 +45,7 @@ const baseJob = (over: Partial<RecentJobDetail>): RecentJobDetail => ({
     pendingReview: 0,
     skipped: 0,
     failed: 0,
+    cancelled: 0,
     done: 1,
     total: 1,
     percent: 100,
@@ -122,6 +125,22 @@ describe('RecentActivity', () => {
     // Expanding the row reveals the per-item details fallback (not the breakdown).
     fireEvent.click(screen.getByRole('button', { name: /completed/i }));
     expect(screen.getByTestId('job-items-details')).toBeInTheDocument();
+  });
+
+  // Recent activity lists finished jobs; the item details get the job's real
+  // status, so a failed job's items are not offered a retry (only a completed
+  // job can be reopened).
+  it("passes the job's status to the per-item details", () => {
+    vi.mocked(useRecentJobs).mockReturnValue({
+      data: {
+        jobs: [baseJob({ jobType: JobType.METADATA_REFRESH, status: 'failed' })],
+      },
+      isLoading: false,
+    } as ReturnType<typeof useRecentJobs>);
+
+    render(<RecentActivity jobTypes={[JobType.METADATA_REFRESH]} />);
+    fireEvent.click(screen.getByRole('button', { name: /failed/i }));
+    expect(screen.getByTestId('job-items-details')).toHaveAttribute('data-job-status', 'failed');
   });
 
   it('shows a games count (not "completed") in the header for a completed export', () => {

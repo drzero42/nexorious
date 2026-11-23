@@ -11,14 +11,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	pgx "github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/riverqueue/river"
-	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -83,24 +81,6 @@ func newTestIGDBClient(t *testing.T, srv *httptest.Server) *igdbsvc.Client {
 	return client
 }
 
-// newTestMetadataRiverClient creates a non-started River client backed by the
-// shared test container, suitable for tests that call Insert without a running
-// worker loop.
-func newTestMetadataRiverClient(t *testing.T) *river.Client[pgx.Tx] {
-	t.Helper()
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testConnStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
-	if err != nil {
-		t.Fatalf("river.NewClient: %v", err)
-	}
-	return rc
-}
-
 // ─── Dispatch tests ───────────────────────────────────────────────────────────
 
 // TestMetadataRefreshDispatch_PreconditionMissing consolidates the dispatch
@@ -143,8 +123,8 @@ func TestMetadataRefreshDispatch_PreconditionMissing(t *testing.T) {
 			truncateAllTables(t)
 			igdbClient := tc.setup(t)
 
-			w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
-			if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
+			w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdbClient}
+			if err := w.Work(context.Background(), riverJob(1, 1, tasks.MetadataRefreshDispatchArgs{})); err != nil {
 				t.Fatalf("expected nil, got %v", err)
 			}
 
@@ -173,8 +153,8 @@ func TestMetadataRefreshDispatch_AlreadyRunning(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdbClient}
+	if err := w.Work(ctx, riverJob(1, 1, tasks.MetadataRefreshDispatchArgs{})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -197,9 +177,8 @@ func TestMetadataRefreshDispatch_CreatesJobAndItems(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	rc := newTestMetadataRiverClient(t)
-	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
-	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdbClient}
+	if err := w.Work(context.Background(), riverJob(1, 1, tasks.MetadataRefreshDispatchArgs{})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -229,6 +208,14 @@ func TestMetadataRefreshDispatch_CreatesJobAndItems(t *testing.T) {
 	if riverJobCount != 3 {
 		t.Errorf("river_job (metadata_refresh_item): want 3, got %d", riverJobCount)
 	}
+	var owned int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items ji JOIN river_job rj ON rj.id = ji.river_job_id WHERE ji.job_id = ?`, job.ID).Scan(ctx, &owned)
+	if owned != 3 {
+		t.Errorf("items owned by their river job: want 3, got %d", owned)
+	}
+	if n := countEvents(t, notify.TypeAdminMaintCompleted); n != 1 {
+		t.Errorf("maint_completed events: want 1, got %d", n)
+	}
 }
 
 func TestMetadataRefreshDispatch_ConcurrentSelfCreateCreatesOneJob(t *testing.T) {
@@ -241,8 +228,7 @@ func TestMetadataRefreshDispatch_ConcurrentSelfCreateCreatesOneJob(t *testing.T)
 	srv := igdbTestServer(t, `[]`)
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
-	rc := newTestMetadataRiverClient(t)
-	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdbClient}
 
 	const n = 12
 	var wg sync.WaitGroup
@@ -252,7 +238,7 @@ func TestMetadataRefreshDispatch_ConcurrentSelfCreateCreatesOneJob(t *testing.T)
 		go func() {
 			defer wg.Done()
 			<-start // release together to maximise the self-create TOCTOU window
-			if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
+			if err := w.Work(context.Background(), riverJob(1, 1, tasks.MetadataRefreshDispatchArgs{})); err != nil {
 				t.Errorf("Work: %v", err)
 			}
 		}()
@@ -273,44 +259,40 @@ func TestMetadataRefreshDispatch_ConcurrentSelfCreateCreatesOneJob(t *testing.T)
 
 // ─── Item tests ───────────────────────────────────────────────────────────────
 
-func setupItemTest(t *testing.T, adminID string, gameID int32, title string) string {
+// setupItemTest creates a metadata refresh Job with one item for gameID
+// through the lifecycle module and returns the item id and its owning River
+// job id.
+func setupItemTest(t *testing.T, lc *joblifecycle.Module, adminID string, gameID int32, title string) (string, int64) {
 	t.Helper()
-	ctx := context.Background()
+	meta, _ := json.Marshal(map[string]any{"game_id": gameID})
+	return setupItemWithMeta(t, lc, adminID, strconv.Itoa(int(gameID)), title, meta)
+}
 
-	jobID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at, started_at)
-		 VALUES (?, ?, 'metadata_refresh', 'system', 'processing', 'low', 1, now(), now())`,
-		jobID, adminID,
-	).Exec(ctx)
-
+func setupItemWithMeta(t *testing.T, lc *joblifecycle.Module, adminID, key, title string, meta json.RawMessage) (string, int64) {
+	t.Helper()
 	itemID := uuid.NewString()
-	sourceMetaBytes, _ := json.Marshal(map[string]any{"game_id": gameID})
-	sourceMeta := json.RawMessage(sourceMetaBytes)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-		itemID, jobID, adminID, strconv.Itoa(int(gameID)), title, sourceMeta,
-	).Exec(ctx)
-
-	return itemID
+	if _, err := lc.CreateWithItems(context.Background(), joblifecycle.NewJob{
+		UserID: adminID, JobType: models.JobTypeMetadataRefresh, Source: models.JobSourceSystem, Priority: models.JobPriorityLow, TotalItems: 1,
+	}, []joblifecycle.NewItem{{ID: itemID, UserID: adminID, ItemKey: key, SourceTitle: title, SourceMetadata: meta}}, nil); err != nil {
+		t.Fatalf("create metadata refresh job: %v", err)
+	}
+	return itemID, itemOwner(t, itemID)
 }
 
 func TestMetadataRefreshItem_Success(t *testing.T) {
 	truncateAllTables(t)
 	adminID := insertMetaRefreshAdminUser(t)
 	insertTestGame(t, 2001, "Old Title", time.Now().Add(-24*time.Hour))
-	itemID := setupItemTest(t, adminID, 2001, "Old Title")
+	lc := newTestLC(t)
+	itemID, rid := setupItemTest(t, lc, adminID, 2001, "Old Title")
 
 	gamesJSON := `[{"id":2001,"name":"New Title","slug":"new-title","cover":{"image_id":"co9999"}}]`
 	srv := igdbTestServer(t, gamesJSON)
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
-	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
-	}); err != nil {
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: lc, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), riverJob(rid, 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -346,62 +328,50 @@ func TestMetadataRefreshItem_Failures(t *testing.T) {
 	tests := []struct {
 		name string
 		// setup configures fixtures and returns (itemID, IGDB client).
-		setup func(t *testing.T, adminID string) (string, *igdbsvc.Client)
+		setup func(t *testing.T, lc *joblifecycle.Module, adminID string) (string, int64, *igdbsvc.Client)
 		// checkJobCompleted asserts the owning job finalized to completed.
 		checkJobCompleted bool
 	}{
 		{
 			// IGDB returns [] → no match for the looked-up game.
 			name: "igdb_no_match",
-			setup: func(t *testing.T, adminID string) (string, *igdbsvc.Client) {
+			setup: func(t *testing.T, lc *joblifecycle.Module, adminID string) (string, int64, *igdbsvc.Client) {
 				insertTestGame(t, 2002, "Some Game", time.Now().Add(-24*time.Hour))
-				itemID := setupItemTest(t, adminID, 2002, "Some Game")
+				itemID, rid := setupItemTest(t, lc, adminID, 2002, "Some Game")
 				srv := igdbTestServer(t, `[]`)
 				t.Cleanup(srv.Close)
-				return itemID, newTestIGDBClient(t, srv)
+				return itemID, rid, newTestIGDBClient(t, srv)
 			},
 			checkJobCompleted: true,
 		},
 		{
 			// Per-item "igdb_not_configured" defensive guard.
 			name: "igdb_not_configured_at_item_level",
-			setup: func(t *testing.T, adminID string) (string, *igdbsvc.Client) {
+			setup: func(t *testing.T, lc *joblifecycle.Module, adminID string) (string, int64, *igdbsvc.Client) {
 				insertTestGame(t, 2010, "IGDB Guard Game", time.Now().Add(-24*time.Hour))
-				itemID := setupItemTest(t, adminID, 2010, "IGDB Guard Game")
+				itemID, rid := setupItemTest(t, lc, adminID, 2010, "IGDB Guard Game")
 				unconfigured := igdbsvc.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
-				return itemID, unconfigured
+				return itemID, rid, unconfigured
 			},
 		},
 		{
 			// source_metadata is not an object with game_id → parse failure.
 			name: "bad_source_metadata",
-			setup: func(t *testing.T, adminID string) (string, *igdbsvc.Client) {
-				ctx := context.Background()
-				jobID := uuid.NewString()
-				_, _ = testDB.NewRaw(
-					`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at, started_at)
-					 VALUES (?, ?, 'metadata_refresh', 'system', 'processing', 'low', 1, now(), now())`,
-					jobID, adminID,
-				).Exec(ctx)
-				itemID := uuid.NewString()
-				_, _ = testDB.NewRaw(
-					`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-					 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-					itemID, jobID, adminID, "bad-key", "Bad Meta", json.RawMessage(`"not-an-object"`),
-				).Exec(ctx)
+			setup: func(t *testing.T, lc *joblifecycle.Module, adminID string) (string, int64, *igdbsvc.Client) {
+				itemID, rid := setupItemWithMeta(t, lc, adminID, "bad-key", "Bad Meta", json.RawMessage(`"not-an-object"`))
 				srv := igdbTestServer(t, `[]`)
 				t.Cleanup(srv.Close)
-				return itemID, newTestIGDBClient(t, srv)
+				return itemID, rid, newTestIGDBClient(t, srv)
 			},
 		},
 		{
 			// Backing game row not inserted → "load game" no-rows failure.
 			name: "game_not_found",
-			setup: func(t *testing.T, adminID string) (string, *igdbsvc.Client) {
-				itemID := setupItemTest(t, adminID, 9999, "Ghost Game")
+			setup: func(t *testing.T, lc *joblifecycle.Module, adminID string) (string, int64, *igdbsvc.Client) {
+				itemID, rid := setupItemTest(t, lc, adminID, 9999, "Ghost Game")
 				srv := igdbTestServer(t, `[]`)
 				t.Cleanup(srv.Close)
-				return itemID, newTestIGDBClient(t, srv)
+				return itemID, rid, newTestIGDBClient(t, srv)
 			},
 		},
 	}
@@ -410,12 +380,12 @@ func TestMetadataRefreshItem_Failures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			truncateAllTables(t)
 			adminID := insertMetaRefreshAdminUser(t)
-			itemID, igdbClient := tc.setup(t, adminID)
+			lc := newTestLC(t)
+			itemID, rid, igdbClient := tc.setup(t, lc, adminID)
 
-			w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
-			if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
-				Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
-			}); err != nil {
+			// A first attempt: these failures do not go away by retrying.
+			w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: lc, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+			if err := w.Work(context.Background(), riverJob(rid, 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID})); err != nil {
 				t.Fatalf("expected nil, got %v", err)
 			}
 
@@ -444,17 +414,16 @@ func TestMetadataRefreshItem_CoverArtFailureNonFatal(t *testing.T) {
 	truncateAllTables(t)
 	adminID := insertMetaRefreshAdminUser(t)
 	insertTestGame(t, 2003, "Cover Game", time.Now().Add(-24*time.Hour))
-	itemID := setupItemTest(t, adminID, 2003, "Cover Game")
+	lc := newTestLC(t)
+	itemID, rid := setupItemTest(t, lc, adminID, 2003, "Cover Game")
 
 	gamesJSON := `[{"id":2003,"name":"Cover Game","slug":"cover-game","cover":{"image_id":"co_fail"}}]`
 	srv := igdbTestServer(t, gamesJSON)
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: "/dev/null"}
-	_ = w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
-	})
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: lc, IGDBClient: igdbClient, StoragePath: "/dev/null"}
+	_ = w.Work(context.Background(), riverJob(rid, 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID}))
 
 	ctx := context.Background()
 	var item models.JobItem
@@ -473,17 +442,16 @@ func TestMetadataRefreshItem_CoverArtUnchanged(t *testing.T) {
 		`INSERT INTO games (id, title, cover_art_url, last_updated, created_at)
 		 VALUES (2004, 'Cover Unchanged', '/static/cover_art/co_same.jpg', now() - interval '1 day', now())`,
 	).Exec(ctx)
-	itemID := setupItemTest(t, adminID, 2004, "Cover Unchanged")
+	lc := newTestLC(t)
+	itemID, rid := setupItemTest(t, lc, adminID, 2004, "Cover Unchanged")
 
 	gamesJSON := `[{"id":2004,"name":"Cover Unchanged","slug":"cover-unchanged","cover":{"image_id":"co_same"}}]`
 	srv := igdbTestServer(t, gamesJSON)
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
-	_ = w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
-	})
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: lc, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	_ = w.Work(context.Background(), riverJob(rid, 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID}))
 
 	var item models.JobItem
 	_ = testDB.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
@@ -499,10 +467,8 @@ func TestMetadataRefreshItem_JobItemNotFound(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
-	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: "non-existent-item"},
-	}); err != nil {
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), riverJob(1, 1, tasks.MetadataRefreshItemArgs{JobItemID: "non-existent-item"})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
@@ -515,26 +481,32 @@ func TestMetadataRefreshDispatch_HandlerOwned_PopulatesExistingRow(t *testing.T)
 	insertTestGame(t, 1002, "Game Two", now.Add(-24*time.Hour))
 
 	ctx := context.Background()
-	// Simulate the handler having created a pending row up front.
-	jobID := uuid.NewString()
-	if _, err := testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-		 VALUES (?, ?, 'metadata_refresh', 'system', 'pending', 'low', 0, now())`,
-		jobID, adminID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert pending job: %v", err)
+	lc := newTestLC(t)
+	// The admin handler creates the Job with its dispatch.
+	c, err := lc.CreateWithDispatch(ctx, joblifecycle.NewJob{
+		UserID: adminID, JobType: models.JobTypeMetadataRefresh, Source: models.JobSourceSystem, Priority: models.JobPriorityLow,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	jobID := c.JobID
 
 	srv := igdbTestServer(t, `[]`)
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
-	rc := newTestMetadataRiverClient(t)
 
-	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
-	if err := w.Work(ctx, &river.Job[tasks.MetadataRefreshDispatchArgs]{
-		Args: tasks.MetadataRefreshDispatchArgs{JobID: jobID},
-	}); err != nil {
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, LC: lc, IGDBClient: igdbClient}
+	rj := riverJob(dispatchOwner(t, jobID), 1, tasks.MetadataRefreshDispatchArgs{JobID: jobID})
+	if err := w.Work(ctx, rj); err != nil {
 		t.Fatalf("expected nil, got %v", err)
+	}
+	// The dispatch run again (River retry after a crash past its commit) is
+	// refused at Start dispatch and sends nothing more.
+	if err := w.Work(ctx, rj); err != nil {
+		t.Fatalf("re-run: expected nil, got %v", err)
+	}
+	if n := countEvents(t, notify.TypeAdminMaintCompleted); n != 1 {
+		t.Errorf("maint_completed events: want 1 across a re-run dispatch, got %d", n)
 	}
 
 	// Exactly one job row (no duplicate), flipped to processing with total_items set.
@@ -565,7 +537,8 @@ func TestMetadataRefreshItem_CoverArtUpdated(t *testing.T) {
 	truncateAllTables(t)
 	adminID := insertMetaRefreshAdminUser(t)
 	insertTestGame(t, 2020, "Cover Update Game", time.Now().Add(-24*time.Hour))
-	itemID := setupItemTest(t, adminID, 2020, "Cover Update Game")
+	lc := newTestLC(t)
+	itemID, rid := setupItemTest(t, lc, adminID, 2020, "Cover Update Game")
 
 	// Serve a cover image that will be downloadable.
 	imgData := []byte{0xFF, 0xD8, 0xFF} // minimal JPEG header bytes
@@ -595,10 +568,8 @@ func TestMetadataRefreshItem_CoverArtUpdated(t *testing.T) {
 	igdbClient := igdbsvc.NewClientWithTokenURL(cfg, srv.URL+"/oauth2/token", ratelimit.NewLocal(100, 100))
 	igdbClient.SetAPIURLForTest(srv.URL)
 
-	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
-	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
-	}); err != nil {
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: lc, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), riverJob(rid, 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -616,26 +587,26 @@ func TestMetadataRefreshDispatch_HandlerOwned_EmptyFinalizesCompleted(t *testing
 	// No games inserted.
 
 	ctx := context.Background()
-	jobID := uuid.NewString()
-	if _, err := testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-		 VALUES (?, ?, 'metadata_refresh', 'system', 'pending', 'low', 0, now())`,
-		jobID, adminID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert pending job: %v", err)
+	lc := newTestLC(t)
+	c, err := lc.CreateWithDispatch(ctx, joblifecycle.NewJob{
+		UserID: adminID, JobType: models.JobTypeMetadataRefresh, Source: models.JobSourceSystem, Priority: models.JobPriorityLow,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	jobID := c.JobID
 
 	srv := igdbTestServer(t, `[]`)
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.MetadataRefreshDispatchArgs]{
-		Args: tasks.MetadataRefreshDispatchArgs{JobID: jobID},
-	}); err != nil {
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, LC: lc, IGDBClient: igdbClient}
+	if err := w.Work(ctx, riverJob(dispatchOwner(t, jobID), 1, tasks.MetadataRefreshDispatchArgs{JobID: jobID})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
-
+	if n := countEvents(t, notify.TypeAdminMaintCompleted); n != 0 {
+		t.Errorf("an empty refresh sent %d maint_completed events", n)
+	}
 	var status string
 	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
 	if status != "completed" {
@@ -651,27 +622,19 @@ func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
 
 	ctx := context.Background()
 
-	jobID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at, started_at)
-		 VALUES (?, ?, 'metadata_refresh', 'system', 'processing', 'low', 2, now(), now())`,
-		jobID, adminID,
-	).Exec(ctx)
-
-	makeItem := func(gameID int32, title string) string {
-		itemID := uuid.NewString()
-		sourceMetaBytes, _ := json.Marshal(map[string]any{"game_id": gameID})
-		sourceMeta := json.RawMessage(sourceMetaBytes)
-		_, _ = testDB.NewRaw(
-			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-			itemID, jobID, adminID, strconv.Itoa(int(gameID)), title, sourceMeta,
-		).Exec(ctx)
-		return itemID
+	lc := newTestLC(t)
+	itemID1, itemID2 := uuid.NewString(), uuid.NewString()
+	meta := func(id int32) json.RawMessage { b, _ := json.Marshal(map[string]any{"game_id": id}); return b }
+	c, err := lc.CreateWithItems(ctx, joblifecycle.NewJob{
+		UserID: adminID, JobType: models.JobTypeMetadataRefresh, Source: models.JobSourceSystem, Priority: models.JobPriorityLow, TotalItems: 2,
+	}, []joblifecycle.NewItem{
+		{ID: itemID1, UserID: adminID, ItemKey: "3001", SourceTitle: "Game A", SourceMetadata: meta(3001)},
+		{ID: itemID2, UserID: adminID, ItemKey: "3002", SourceTitle: "Game B", SourceMetadata: meta(3002)},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	itemID1 := makeItem(3001, "Game A")
-	itemID2 := makeItem(3002, "Game B")
+	jobID := c.JobID
 
 	gamesResponse := func(id int, name string) string {
 		return `[{"id":` + strconv.Itoa(id) + `,"name":"` + name + `","slug":"slug"}]`
@@ -681,7 +644,7 @@ func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: lc, IGDBClient: igdbClient, StoragePath: t.TempDir()}
 
 	// Process first item — job should still be processing.
 	srv.Config.Handler = http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
@@ -695,9 +658,7 @@ func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
 			_, _ = rw.Write([]byte(`[]`))
 		}
 	})
-	_ = w.Work(ctx, &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID1},
-	})
+	_ = w.Work(ctx, riverJob(itemOwner(t, itemID1), 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID1}))
 
 	var jobStatus string
 	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
@@ -717,9 +678,7 @@ func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
 			_, _ = rw.Write([]byte(`[]`))
 		}
 	})
-	_ = w.Work(ctx, &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID2},
-	})
+	_ = w.Work(ctx, riverJob(itemOwner(t, itemID2), 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID2}))
 
 	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
 	if jobStatus != models.JobStatusCompleted {
@@ -742,10 +701,9 @@ func TestMetadataRefreshDispatch_StalenessFilter(t *testing.T) {
 	srv := igdbTestServer(t, `[]`)
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
-	rc := newTestMetadataRiverClient(t)
-	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc, MinAge: 23 * time.Hour}
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdbClient, MinAge: 23 * time.Hour}
 
-	if err := w.Work(ctx, &river.Job[tasks.MetadataRefreshDispatchArgs]{Args: tasks.MetadataRefreshDispatchArgs{}}); err != nil {
+	if err := w.Work(ctx, riverJob(1, 1, tasks.MetadataRefreshDispatchArgs{})); err != nil {
 		t.Fatalf("Work: %v", err)
 	}
 
@@ -775,5 +733,157 @@ func TestMetadataRefreshItemArgs_InsertOptsQueue(t *testing.T) {
 	}
 	if opts.Priority != 3 {
 		t.Errorf("Priority = %d; want 3 (unchanged)", opts.Priority)
+	}
+}
+
+// igdbServerWith serves the token endpoint and runs onGames for /games.
+func igdbServerWith(t *testing.T, tokenStatus int, onGames func(w http.ResponseWriter)) *igdbsvc.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth2/token":
+			if tokenStatus != http.StatusOK {
+				w.WriteHeader(tokenStatus)
+				return
+			}
+			_, _ = w.Write([]byte(`{"access_token":"t","expires_in":3600,"token_type":"bearer"}`))
+		case "/games":
+			onGames(w)
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return newTestIGDBClient(t, srv)
+}
+
+// A refresh an admin started while IGDB is not configured fails its Job at
+// once, tells the admin once, and is not run again.
+func TestMetadataRefreshDispatch_IGDBNotConfiguredFailsJob(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	adminID := insertMetaRefreshAdminUser(t)
+	insertTestGame(t, 4001, "G", time.Now().Add(-48*time.Hour))
+	lc := newTestLC(t)
+	c, err := lc.CreateWithDispatch(ctx, joblifecycle.NewJob{
+		UserID: adminID, JobType: models.JobTypeMetadataRefresh, Source: models.JobSourceSystem, Priority: models.JobPriorityLow,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, LC: lc, IGDBClient: igdbsvc.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))}
+	rj := riverJob(dispatchOwner(t, c.JobID), 1, tasks.MetadataRefreshDispatchArgs{JobID: c.JobID})
+	for range 2 {
+		if err := w.Work(ctx, rj); err != nil {
+			t.Fatalf("Work: %v", err)
+		}
+	}
+	if s := jobStatus(t, c.JobID); s != models.JobStatusFailed {
+		t.Fatalf("job = %s, want failed", s)
+	}
+	if n := countEvents(t, notify.TypeAdminMaintFailed); n != 1 {
+		t.Errorf("maint_failed events = %d, want 1", n)
+	}
+	var items int
+	_ = testDB.NewRaw(`SELECT count(*) FROM job_items WHERE job_id = ?`, c.JobID).Scan(ctx, &items)
+	if items != 0 {
+		t.Errorf("a failed dispatch created %d items", items)
+	}
+}
+
+// IGDB being unreachable is retried; the last attempt fails the item with
+// IGDB's message.
+func TestMetadataRefreshItem_IGDBUnreachableRetriesThenFails(t *testing.T) {
+	truncateAllTables(t)
+	adminID := insertMetaRefreshAdminUser(t)
+	insertTestGame(t, 4002, "Flaky", time.Now().Add(-48*time.Hour))
+	lc := newTestLC(t)
+	itemID, rid := setupItemTest(t, lc, adminID, 4002, "Flaky")
+	client := igdbServerWith(t, http.StatusOK, func(w http.ResponseWriter) { w.WriteHeader(http.StatusServiceUnavailable) })
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: lc, IGDBClient: client, StoragePath: t.TempDir()}
+
+	if err := w.Work(context.Background(), riverJob(rid, 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID})); err == nil {
+		t.Fatal("first attempt returned nil: River would not retry")
+	}
+	if s, _ := itemStatus(t, itemID); s != models.JobItemStatusPending {
+		t.Fatalf("after a retryable error the item is %s, want pending", s)
+	}
+	if err := w.Work(context.Background(), riverJob(rid, 5, tasks.MetadataRefreshItemArgs{JobItemID: itemID})); err != nil {
+		t.Fatalf("last attempt: %v", err)
+	}
+	s, msg := itemStatus(t, itemID)
+	if s != models.JobItemStatusFailed || msg == nil || *msg == "" {
+		t.Fatalf("after the last attempt: %s %v", s, msg)
+	}
+}
+
+// Credentials IGDB rejects fail the item at once.
+func TestMetadataRefreshItem_RejectedCredentialsFailAtOnce(t *testing.T) {
+	truncateAllTables(t)
+	adminID := insertMetaRefreshAdminUser(t)
+	insertTestGame(t, 4003, "Locked", time.Now().Add(-48*time.Hour))
+	lc := newTestLC(t)
+	itemID, rid := setupItemTest(t, lc, adminID, 4003, "Locked")
+	client := igdbServerWith(t, http.StatusUnauthorized, func(w http.ResponseWriter) { _, _ = w.Write([]byte(`[]`)) })
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: lc, IGDBClient: client, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), riverJob(rid, 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID})); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	if s, _ := itemStatus(t, itemID); s != models.JobItemStatusFailed {
+		t.Fatalf("item = %s, want failed", s)
+	}
+}
+
+// A game deleted while its metadata was being fetched (the daily cleanup of
+// unreferenced games) ends the item failed, not completed.
+func TestMetadataRefreshItem_GameDeletedMeanwhileFails(t *testing.T) {
+	truncateAllTables(t)
+	adminID := insertMetaRefreshAdminUser(t)
+	insertTestGame(t, 4004, "Doomed", time.Now().Add(-48*time.Hour))
+	lc := newTestLC(t)
+	itemID, rid := setupItemTest(t, lc, adminID, 4004, "Doomed")
+	client := igdbServerWith(t, http.StatusOK, func(w http.ResponseWriter) {
+		if _, err := testDB.ExecContext(context.Background(), `DELETE FROM games WHERE id = 4004`); err != nil {
+			t.Errorf("delete game: %v", err)
+		}
+		_, _ = w.Write([]byte(`[{"id":4004,"name":"Doomed","slug":"doomed"}]`))
+	})
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: lc, IGDBClient: client, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), riverJob(rid, 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID})); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	if s, _ := itemStatus(t, itemID); s != models.JobItemStatusFailed {
+		t.Fatalf("item = %s, want failed", s)
+	}
+}
+
+// A refresh cancelled while an item's metadata is being fetched updates no
+// game afterwards.
+func TestMetadataRefreshItem_CancelledRefreshUpdatesNoGame(t *testing.T) {
+	truncateAllTables(t)
+	adminID := insertMetaRefreshAdminUser(t)
+	insertTestGame(t, 4005, "Original", time.Now().Add(-48*time.Hour))
+	lc := newTestLC(t)
+	itemID, rid := setupItemTest(t, lc, adminID, 4005, "Original")
+	var jobID string
+	_ = testDB.NewRaw(`SELECT job_id FROM job_items WHERE id = ?`, itemID).Scan(context.Background(), &jobID)
+	client := igdbServerWith(t, http.StatusOK, func(w http.ResponseWriter) {
+		if err := lc.Cancel(context.Background(), jobID); err != nil {
+			t.Errorf("cancel: %v", err)
+		}
+		_, _ = w.Write([]byte(`[{"id":4005,"name":"Renamed","slug":"renamed"}]`))
+	})
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, LC: lc, IGDBClient: client, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), riverJob(rid, 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID})); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	var title string
+	_ = testDB.NewRaw(`SELECT title FROM games WHERE id = 4005`).Scan(context.Background(), &title)
+	if title != "Original" {
+		t.Errorf("a cancelled refresh updated the game: title %q", title)
+	}
+	if s, _ := itemStatus(t, itemID); s != models.JobItemStatusCancelled {
+		t.Errorf("item = %s, want cancelled", s)
 	}
 }

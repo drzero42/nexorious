@@ -24,7 +24,7 @@ import {
   useSkipJobItem,
 } from '@/hooks';
 import { IGDBMatchDialog } from '@/components/sync/igdb-match-dialog';
-import { JobItemStatus, getJobItemStatusLabel, getJobItemStatusVariant } from '@/types';
+import { JobItemStatus, JobStatus, getJobItemStatusLabel, getJobItemStatusVariant } from '@/types';
 
 interface JobItemsDetailsProps {
   jobId: string;
@@ -35,8 +35,10 @@ interface JobItemsDetailsProps {
     pendingReview: number;
     skipped: number;
     failed: number;
+    cancelled: number;
   };
-  isTerminal: boolean;
+  /** The Job's status. Failed items can be retried only in a completed Job. */
+  jobStatus: string;
 }
 
 interface StatusSectionProps {
@@ -44,7 +46,7 @@ interface StatusSectionProps {
   status: JobItemStatus;
   count: number;
   defaultOpen?: boolean;
-  isTerminal: boolean;
+  canRetry: boolean;
 }
 
 function StatusSection({
@@ -52,7 +54,7 @@ function StatusSection({
   status,
   count,
   defaultOpen = false,
-  isTerminal,
+  canRetry,
 }: StatusSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [page, setPage] = useState(1);
@@ -82,7 +84,7 @@ function StatusSection({
   // Determine section behavior
   const isFailedSection = status === JobItemStatus.FAILED;
   const isReviewSection = status === JobItemStatus.PENDING_REVIEW;
-  const canRetryAll = isFailedSection && isTerminal;
+  const canRetryAll = isFailedSection && canRetry;
   const canRetryItem = canRetryAll;
 
   const handleSkip = async (itemId: string) => {
@@ -142,6 +144,7 @@ function StatusSection({
     ),
     [JobItemStatus.SKIPPED]: <Clock className="h-4 w-4 text-muted-foreground" />,
     [JobItemStatus.FAILED]: <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />,
+    [JobItemStatus.CANCELLED]: <Ban className="h-4 w-4 text-muted-foreground" />,
   };
 
   return (
@@ -293,7 +296,10 @@ function StatusSection({
   );
 }
 
-export function JobItemsDetails({ jobId, progress, isTerminal }: JobItemsDetailsProps) {
+export function JobItemsDetails({ jobId, progress, jobStatus }: JobItemsDetailsProps) {
+  // Retry reopens a completed Job; a failed or cancelled Job is never reopened
+  // (the server answers 409), and an active one is still being worked.
+  const canRetry = jobStatus === JobStatus.COMPLETED;
   // Order sections: needs review first (action required), then failed, then others
   const sections = [
     {
@@ -306,6 +312,7 @@ export function JobItemsDetails({ jobId, progress, isTerminal }: JobItemsDetails
     { status: JobItemStatus.PENDING, count: progress.pending, defaultOpen: false },
     { status: JobItemStatus.COMPLETED, count: progress.completed, defaultOpen: false },
     { status: JobItemStatus.SKIPPED, count: progress.skipped, defaultOpen: false },
+    { status: JobItemStatus.CANCELLED, count: progress.cancelled, defaultOpen: false },
   ];
 
   const hasItems = sections.some((s) => s.count > 0);
@@ -327,7 +334,7 @@ export function JobItemsDetails({ jobId, progress, isTerminal }: JobItemsDetails
             status={status}
             count={count}
             defaultOpen={defaultOpen}
-            isTerminal={isTerminal}
+            canRetry={canRetry}
           />
         ))}
       </div>

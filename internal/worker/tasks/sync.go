@@ -571,7 +571,6 @@ func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, 
 	// Which notice to send is read before the transaction opens: a failed read
 	// inside it would abort the transaction and take the flag with it.
 	notice := credentialsNotice(ctx, db, p)
-	var deliver func()
 	var flagErr error
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		flagged, err := flagCredentialsError(ctx, tx, p, bound)
@@ -580,8 +579,7 @@ func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, 
 			return err
 		}
 		if flagged && !priorErr {
-			deliver, err = notify.EmitTx(ctx, tx, notice)
-			if err != nil {
+			if err := notify.EmitTx(ctx, tx, notice); err != nil {
 				return err
 			}
 		}
@@ -597,7 +595,6 @@ func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, 
 		return
 	}
 	if err != nil {
-		deliver = nil
 		slog.WarnContext(ctx, "dispatch_sync: flag credentials_error failed", logging.KeyErr, err, logging.KeyUserID, p.UserID, logging.KeySource, p.Storefront, logging.Cat(logging.CategoryDB))
 		if !markSyncJobFailed(ctx, db, p.JobID, credentialsErrorMessage) {
 			return
@@ -609,10 +606,7 @@ func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, 
 		observability.RecordSyncOutcome(ctx, p.Storefront, "failed")
 	}
 
-	switch {
-	case deliver != nil:
-		deliver()
-	case flagErr != nil && !isBound && !priorErr:
+	if flagErr != nil && !isBound && !priorErr {
 		// An unbound failure whose flag could not be written still tells the
 		// user, as before; a bound one sends nothing, since which sign-in is
 		// stored was never established. A notice that failed to save is not

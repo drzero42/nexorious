@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -54,11 +56,12 @@ func (CleanupExportsArgs) Kind() string { return "cleanup_exports" }
 
 type CleanupExportsWorker struct {
 	river.WorkerDefaults[CleanupExportsArgs]
-	DB *bun.DB
+	DB          *bun.DB
+	StoragePath string
 }
 
 func (w *CleanupExportsWorker) Work(ctx context.Context, _ *river.Job[CleanupExportsArgs]) error {
-	CleanupExports(ctx, w.DB)
+	CleanupExports(ctx, w.DB, w.StoragePath)
 	return nil
 }
 
@@ -291,6 +294,7 @@ func MaintenanceJobKinds() []string {
 		CleanupStaleJobsArgs{}.Kind(),
 		CheckPendingSyncsArgs{}.Kind(),
 		CleanupSyncChangesArgs{}.Kind(),
+		joblifecycle.RecoveryArgs{}.Kind(),
 	}
 }
 
@@ -340,6 +344,13 @@ func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*rive
 		river.NewPeriodicJob(
 			mustCron("*/30 * * * *"),
 			func() (river.JobArgs, *river.InsertOpts) { return RescueOrphanedPendingItemsArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		// The Job lifecycle's recovery rule, for the kinds on the module
+		// (startup runs it once more before River starts).
+		river.NewPeriodicJob(
+			mustCron("*/5 * * * *"),
+			func() (river.JobArgs, *river.InsertOpts) { return joblifecycle.RecoveryArgs{}, nil },
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 		river.NewPeriodicJob(
@@ -401,8 +412,23 @@ func CleanupOldJobs(ctx context.Context, db *bun.DB) {
 	}
 }
 
-// CleanupExports deletes expired export files (>24h) and clears their file_path.
-func CleanupExports(ctx context.Context, db *bun.DB) {
+// exportOrphanAge is how old a file in the exports directory that no Job
+// refers to must be before the sweep removes it: older than any export can run.
+const exportOrphanAge = 24 * time.Hour
+
+// CleanupExports deletes expired export files (>24h) and clears their
+// file_path, then removes files in the exports directory that no Job refers
+// to and that are older than a day: a partial file left by a kill, or the file
+// of a run whose transition was refused after its writer could no longer tell
+// whether it had committed.
+func CleanupExports(ctx context.Context, db *bun.DB, storagePath string) {
+	cleanupExpiredExports(ctx, db)
+	if storagePath != "" {
+		sweepExportsDir(ctx, db, filepath.Join(storagePath, "exports"))
+	}
+}
+
+func cleanupExpiredExports(ctx context.Context, db *bun.DB) {
 	var jobs []struct {
 		ID       string  `bun:"id"`
 		FilePath *string `bun:"file_path"`
@@ -439,6 +465,47 @@ func CleanupExports(ctx context.Context, db *bun.DB) {
 		slog.ErrorContext(ctx, "cleanup: clear expired export file_paths failed", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 	}
 	slog.InfoContext(ctx, "cleanup: cleaned expired exports", "count", len(jobs))
+}
+
+func sweepExportsDir(ctx context.Context, db *bun.DB, dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			slog.WarnContext(ctx, "cleanup: read exports directory", "path", dir, logging.KeyErr, err)
+		}
+		return
+	}
+	var referenced []string
+	if err := db.NewRaw(`SELECT file_path FROM jobs WHERE job_type = 'export' AND file_path IS NOT NULL`).Scan(ctx, &referenced); err != nil {
+		slog.ErrorContext(ctx, "cleanup: query export file paths", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
+		return
+	}
+	keep := make(map[string]bool, len(referenced))
+	for _, p := range referenced {
+		keep[filepath.Clean(p)] = true
+	}
+	removed := 0
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		if keep[path] {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || time.Since(info.ModTime()) < exportOrphanAge {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			slog.WarnContext(ctx, "cleanup: remove unreferenced export file", "path", path, logging.KeyErr, err)
+			continue
+		}
+		removed++
+	}
+	if removed > 0 {
+		slog.InfoContext(ctx, "cleanup: removed unreferenced export files", "count", removed)
+	}
 }
 
 // CleanupUnreferencedGames deletes games with no user_games rows.
