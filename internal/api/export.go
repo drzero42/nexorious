@@ -5,38 +5,37 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
-	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
-	"github.com/drzero42/nexorious/internal/worker/tasks"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // ExportHandler handles export-related endpoints.
 type ExportHandler struct {
-	db          *bun.DB
-	riverClient *river.Client[pgx.Tx]
-	cfg         *config.Config
+	db  *bun.DB
+	lc  *joblifecycle.Module
+	cfg *config.Config
 }
 
 // NewExportHandler returns a new ExportHandler.
-func NewExportHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], cfg *config.Config) *ExportHandler {
-	return &ExportHandler{db: db, riverClient: riverClient, cfg: cfg}
+func NewExportHandler(db *bun.DB, lc *joblifecycle.Module, cfg *config.Config) *ExportHandler {
+	return &ExportHandler{db: db, lc: lc, cfg: cfg}
 }
 
 // handleExport is the shared logic for JSON and CSV export initiation.
-func (h *ExportHandler) handleExport(c *echo.Context, source string, taskType string) error {
+func (h *ExportHandler) handleExport(c *echo.Context, source string) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
@@ -55,36 +54,20 @@ func (h *ExportHandler) handleExport(c *echo.Context, source string, taskType st
 		return echo.NewHTTPError(http.StatusBadRequest, "no games to export")
 	}
 
-	job := &models.Job{
-		ID:               uuid.NewString(),
-		UserID:           userID,
-		JobType:          models.JobTypeExport,
-		Source:           source,
-		Status:           models.JobStatusPending,
-		Priority:         models.JobPriorityNormal,
-		TotalItems:       int(count),
-		DispatchComplete: true, // not a streaming sync; the completion gate is N/A
-		CreatedAt:        time.Now().UTC(),
-	}
-	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
+	// The export River job is the Job's dispatch: created with it, in one
+	// transaction. Exports have no duplicate key.
+	created, err := h.lc.CreateWithDispatch(ctx, joblifecycle.NewJob{
+		UserID: userID, JobType: models.JobTypeExport, Source: source,
+		Priority: models.JobPriorityNormal, TotalItems: int(count),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "export: create job", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create export job")
 	}
 
-	if h.riverClient != nil {
-		var err error
-		if taskType == "export_json" {
-			_, err = h.riverClient.Insert(ctx, tasks.ExportJSONArgs{JobID: job.ID}, nil)
-		} else {
-			_, err = h.riverClient.Insert(ctx, tasks.ExportCSVArgs{JobID: job.ID}, nil)
-		}
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to submit export task")
-		}
-	}
-
 	return c.JSON(http.StatusOK, map[string]any{
-		"job_id":          job.ID,
-		"status":          job.Status,
+		"job_id":          created.JobID,
+		"status":          models.JobStatusPending,
 		"message":         fmt.Sprintf("Export job created. Exporting %d games.", count),
 		"estimated_items": count,
 	})
@@ -92,12 +75,12 @@ func (h *ExportHandler) handleExport(c *echo.Context, source string, taskType st
 
 // HandleExportJSON handles POST /api/export/json.
 func (h *ExportHandler) HandleExportJSON(c *echo.Context) error {
-	return h.handleExport(c, models.JobSourceNexorious, "export_json")
+	return h.handleExport(c, models.JobSourceNexorious)
 }
 
 // HandleExportCSV handles POST /api/export/csv.
 func (h *ExportHandler) HandleExportCSV(c *echo.Context) error {
-	return h.handleExport(c, models.JobSourceCSV, "export_csv")
+	return h.handleExport(c, models.JobSourceCSV)
 }
 
 // HandleDownload handles GET /api/export/:id/download.

@@ -80,23 +80,23 @@ groups:
 
       - alert: NexoriousStuckJobs
         expr: |
-          sum(count_over_time({app="nexorious"} | json | msg=~".*marked stale.*" [15m])) > 0
+          sum(count_over_time({app="nexorious"} | json | msg=~".*(marked stale|job recovery: failed interrupted work).*" [15m])) > 0
         for: 0s
         labels:
           severity: warning
         annotations:
-          summary: "Nexorious reaped stuck jobs"
-          description: "{{ $value }} stale-job reaping event(s) in 15m — jobs were stuck and force-marked failed."
+          summary: "Nexorious failed stuck or interrupted jobs"
+          description: "{{ $value }} stale-job reaping or job-recovery failure(s) in 15m — work was stuck or gave up and was marked failed."
 
       - alert: NexoriousJobDispatchFailures
         expr: |
-          sum(count_over_time({app="nexorious"} | json | category="db" | level="ERROR" | msg=~".*enqueue.*" [10m])) > 0
+          sum(count_over_time({app="nexorious"} | json | category="db" | level="ERROR" | msg=~".*(enqueue|job lifecycle: transition failed|job lifecycle: finishing effects failed).*" [10m])) > 0
         for: 0s
         labels:
           severity: warning
         annotations:
           summary: "Nexorious job enqueue/dispatch failures"
-          description: "{{ $value }} job enqueue/dispatch failure(s) in 10m — River jobs may not have been scheduled."
+          description: "{{ $value }} job enqueue/dispatch, job-transition or finishing-effect failure(s) in 10m — River jobs may not have been scheduled, or a notification was not sent."
 
   - name: nexorious-generic
     interval: 1m

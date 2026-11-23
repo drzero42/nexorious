@@ -112,8 +112,13 @@ func (am *AuthManager) fetchToken(ctx context.Context) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		// HTTP error from Twitch — this IS an auth error
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden:
+		// The credentials were rejected: trying again will not help.
+		return fmt.Errorf("%w: %w: Twitch returned status %d", ErrTwitchAuth, ErrTwitchCredentialsRejected, resp.StatusCode)
+	default:
+		// 5xx, 429, …: Twitch is unavailable for now.
 		return fmt.Errorf("%w: Twitch returned status %d", ErrTwitchAuth, resp.StatusCode)
 	}
 

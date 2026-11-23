@@ -153,3 +153,29 @@ func TestRescueOrphanedPendingItems_TerminalJobItemLeftAlone(t *testing.T) {
 		t.Fatalf("expected no river_job for item under completed job, got %d", n)
 	}
 }
+
+// The kinds on internal/joblifecycle are its recovery rule's: the orphan
+// rescue (and the startup recovery, which calls it) leaves their items alone.
+func TestRescueOrphanedPendingItems_SkipsLifecycleKinds(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	rc := newTestRiverClient(t)
+
+	userID := insertUser(t, ctx, nil)
+	for _, jt := range []string{"metadata_refresh", "store_link_refresh"} {
+		jobID := uuid.NewString()
+		if _, err := testDB.NewRaw(
+			`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, ?, 'system', 'processing', 'low')`,
+			jobID, userID, jt,
+		).Exec(ctx); err != nil {
+			t.Fatal(err)
+		}
+		itemID := insertPendingItem(t, ctx, jobID, userID, 2*time.Hour)
+
+		scheduler.RescueOrphanedPendingItems(ctx, testDB, rc, time.Hour)
+
+		if n := countRiverJobsForItem(t, ctx, itemID); n != 0 {
+			t.Errorf("%s: orphan rescue queued %d river jobs for a lifecycle item", jt, n)
+		}
+	}
+}

@@ -2,61 +2,37 @@ package tasks_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/storelink"
+	"github.com/drzero42/nexorious/internal/usergame"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
-// itemStatus returns the current status of a job_item.
-func itemStatus(t *testing.T, itemID string) string {
+// seedStoreLinkJobItem creates a store_link_refresh Job for the user's
+// storefront with one item, through the lifecycle module, and returns the Job,
+// the item and the item's owning River job.
+func seedStoreLinkJobItem(t *testing.T, lc *joblifecycle.Module, userID, storefront string) (jobID, itemID string, rid int64) {
 	t.Helper()
-	var s string
-	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(context.Background(), &s); err != nil {
-		t.Fatal(err)
-	}
-	return s
-}
-
-// jobStatus returns the current status of a job.
-func jobStatus(t *testing.T, jobID string) string {
-	t.Helper()
-	var s string
-	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(context.Background(), &s); err != nil {
-		t.Fatal(err)
-	}
-	return s
-}
-
-// seedStoreLinkJobItem inserts a store_link_refresh job + one pending item for
-// the given storefront, with the item created `ageSeconds` in the past.
-func seedStoreLinkJobItem(t *testing.T, userID, storefront string, ageSeconds int) (jobID, itemID string) {
-	t.Helper()
-	ctx := context.Background()
-	jobID = uuid.NewString()
-	if _, err := testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-		 VALUES (?, ?, ?, ?, 'processing', 'low', 1, now())`,
-		jobID, userID, models.JobTypeStoreLinkRefresh, storefront,
-	).Exec(ctx); err != nil {
-		t.Fatal(err)
-	}
 	itemID = uuid.NewString()
-	meta := `{"storefront":"` + storefront + `","force":false}`
-	if _, err := testDB.NewRaw(
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now() - (?::text || ' seconds')::interval)`,
-		itemID, jobID, userID, storefront, storefront, meta, ageSeconds,
-	).Exec(ctx); err != nil {
+	c, err := lc.CreateWithItems(context.Background(), joblifecycle.NewJob{
+		UserID: userID, JobType: models.JobTypeStoreLinkRefresh, Source: storefront, Priority: models.JobPriorityLow, TotalItems: 1,
+	}, []joblifecycle.NewItem{{
+		ID: itemID, UserID: userID, ItemKey: storefront, SourceTitle: storefront,
+		SourceMetadata: json.RawMessage(`{"storefront":"` + storefront + `","force":false}`),
+	}}, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return jobID, itemID
+	return c.JobID, itemID, itemOwner(t, itemID)
 }
 
 // cancelOnceResolver cancels the supplied context on its first Resolve call,
@@ -156,33 +132,21 @@ func TestStoreLinkRefreshItem_ResolvesGroupRows(t *testing.T) {
 	seedExternalGameSL(t, userID, "steam", "10", nil)
 	seedExternalGameSL(t, userID, "steam", "20", nil)
 
-	jobID := uuid.NewString()
-	_, err := testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-		 VALUES (?, ?, ?, 'steam', 'processing', 'low', 2, now())`,
-		jobID, userID, models.JobTypeStoreLinkRefresh,
-	).Exec(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	itemID := uuid.NewString()
-	_, err = testDB.NewRaw(
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, 'steam', 'steam', '{"storefront":"steam","force":false}', 'pending', '{}', '[]', now())`,
-		itemID, jobID, userID,
-	).Exec(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lc := newTestLC(t)
+	jobID, itemID, rid := seedStoreLinkJobItem(t, lc, userID, "steam")
 
 	w := &tasks.StoreLinkRefreshItemWorker{
 		DB: testDB,
+		LC: lc,
 		ResolverFor: func(_ context.Context, _, _ string) (storelink.Resolver, error) {
 			return fakeResolver{links: map[string]string{"10": "10", "20": "20"}}, nil
 		},
 	}
-	if err := w.ProcessItem(ctx, itemID); err != nil {
+	if err := w.Work(ctx, riverJob(rid, 1, tasks.StoreLinkRefreshItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatal(err)
+	}
+	if s := jobStatus(t, jobID); s != models.JobStatusCompleted {
+		t.Errorf("job = %s, want completed", s)
 	}
 	var n int
 	if err := testDB.NewRaw(
@@ -201,23 +165,27 @@ func TestStoreLinkRefreshItem_ResolverErrorMarksFailed(t *testing.T) {
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
 	seedExternalGameSL(t, userID, "steam", "10", nil)
-	_, itemID := seedStoreLinkJobItem(t, userID, "steam", 0)
+	lc := newTestLC(t)
+	_, itemID, rid := seedStoreLinkJobItem(t, lc, userID, "steam")
 
 	w := &tasks.StoreLinkRefreshItemWorker{
 		DB: testDB,
+		LC: lc,
 		ResolverFor: func(_ context.Context, _, _ string) (storelink.Resolver, error) {
 			return nil, errors.New("creds boom")
 		},
 	}
-	if err := w.ProcessItem(ctx, itemID); err != nil {
-		t.Fatalf("ProcessItem returned error: %v", err)
+	if err := w.Work(ctx, riverJob(rid, 1, tasks.StoreLinkRefreshItemArgs{JobItemID: itemID})); err != nil {
+		t.Fatalf("Work returned error: %v", err)
 	}
-	if got := itemStatus(t, itemID); got != "failed" {
+	if got, _ := itemStatus(t, itemID); got != "failed" {
 		t.Fatalf("item status = %q, want failed", got)
 	}
 }
 
-func TestStoreLinkRefreshItem_CancelledMidLoopMarksFailed(t *testing.T) {
+// An item interrupted by a cancelled context (a shutdown) records nothing: it
+// returns the context's error, so River puts it back, and stays pending.
+func TestStoreLinkRefreshItem_InterruptedIsNotFailed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	truncateAllTables(t)
@@ -226,45 +194,89 @@ func TestStoreLinkRefreshItem_CancelledMidLoopMarksFailed(t *testing.T) {
 	// Two rows so the loop runs a second iteration after the context is cancelled.
 	seedExternalGameSL(t, userID, "steam", "10", nil)
 	seedExternalGameSL(t, userID, "steam", "20", nil)
-	_, itemID := seedStoreLinkJobItem(t, userID, "steam", 0)
+	lc := newTestLC(t)
+	_, itemID, rid := seedStoreLinkJobItem(t, lc, userID, "steam")
 
 	w := &tasks.StoreLinkRefreshItemWorker{
 		DB: testDB,
+		LC: lc,
 		ResolverFor: func(_ context.Context, _, _ string) (storelink.Resolver, error) {
 			return &cancelOnceResolver{cancel: cancel}, nil
 		},
 	}
-	// Returns nil (finalize-as-failed, not River retry); the item must end failed,
-	// never left orphaned in pending.
-	if err := w.ProcessItem(ctx, itemID); err != nil {
-		t.Fatalf("ProcessItem returned error: %v", err)
+	if err := w.Work(ctx, riverJob(rid, 1, tasks.StoreLinkRefreshItemArgs{JobItemID: itemID})); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Work = %v, want context.Canceled", err)
 	}
-	if got := itemStatus(t, itemID); got != "failed" {
-		t.Fatalf("item status = %q, want failed", got)
+	if got, _ := itemStatus(t, itemID); got != models.JobItemStatusPending {
+		t.Fatalf("item status = %q, want pending", got)
+	}
+	if got := itemOwner(t, itemID); got != rid {
+		t.Fatalf("item owner changed: %d", got)
 	}
 }
 
-func TestStoreLinkRefreshDispatch_ReapsOrphanedItem(t *testing.T) {
+// A store-link item whose River job is gone (the case the old reaper failed)
+// is given a new River job by recovery, not failed.
+func TestStoreLinkRefreshItem_RecoveryRequeuesLostItem(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
-	// No external_games rows → SelectGroups is empty, so Work only performs the
-	// reap and then returns without creating a new job. The orphaned item is old
-	// enough to be eligible and has no River job backing it.
-	jobID, itemID := seedStoreLinkJobItem(t, userID, "playstation-store", 600)
+	lc := newTestLC(t)
+	_, itemID, rid := seedStoreLinkJobItem(t, lc, userID, "playstation-store")
+	if _, err := testDB.ExecContext(ctx, `DELETE FROM river_job WHERE id = ?`, rid); err != nil {
+		t.Fatal(err)
+	}
+	res, err := lc.Recover(ctx)
+	if err != nil || res.Requeued != 1 {
+		t.Fatalf("recover = %+v %v", res, err)
+	}
+	if got, _ := itemStatus(t, itemID); got != models.JobItemStatusPending {
+		t.Fatalf("item = %s, want pending", got)
+	}
+	if got := itemOwner(t, itemID); got == rid {
+		t.Fatal("item not given a new river job")
+	}
+}
 
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB}
-	if err := w.Work(ctx, &river.Job[tasks.StoreLinkRefreshDispatchArgs]{
-		Args: tasks.StoreLinkRefreshDispatchArgs{Force: true},
-	}); err != nil {
-		t.Fatalf("dispatch Work returned error: %v", err)
+// The refresh after a sync runs before any Job exists: it creates its Job with
+// all items, and nothing when there is nothing to resolve.
+func TestStoreLinkRefreshDispatch_AfterSync(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	lc := newTestLC(t)
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc}
+	args := tasks.StoreLinkRefreshDispatchArgs{UserID: userID, Storefront: "steam"}
+
+	if err := w.Work(ctx, riverJob(1, 1, args)); err != nil {
+		t.Fatal(err)
 	}
-	if got := itemStatus(t, itemID); got != "failed" {
-		t.Fatalf("orphaned item status = %q, want failed", got)
+	var jobs int
+	_ = testDB.NewRaw(`SELECT count(*) FROM jobs`).Scan(ctx, &jobs)
+	if jobs != 0 {
+		t.Fatalf("nothing to resolve created %d jobs", jobs)
 	}
-	if got := jobStatus(t, jobID); got != "completed" {
-		t.Fatalf("wedged job status = %q, want completed", got)
+
+	seedExternalGameSL(t, userID, "steam", "10", nil)
+	if err := w.Work(ctx, riverJob(2, 1, args)); err != nil {
+		t.Fatal(err)
+	}
+	var job models.Job
+	if err := testDB.NewSelect().Model(&job).Where("job_type = ?", models.JobTypeStoreLinkRefresh).Scan(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if job.Source != "steam" || job.UserID != userID || job.Status != models.JobStatusProcessing || job.TotalItems != 1 {
+		t.Fatalf("job = %+v", job)
+	}
+	// An equivalent Job is active: a second dispatch creates nothing.
+	if err := w.Work(ctx, riverJob(3, 1, args)); err != nil {
+		t.Fatal(err)
+	}
+	_ = testDB.NewRaw(`SELECT count(*) FROM jobs`).Scan(ctx, &jobs)
+	if jobs != 1 {
+		t.Fatalf("jobs = %d, want 1", jobs)
 	}
 }
 
@@ -275,5 +287,76 @@ func TestStoreLinkRefreshItem_TimeoutIsGenerous(t *testing.T) {
 	w := &tasks.StoreLinkRefreshItemWorker{}
 	if got := w.Timeout(nil); got < 10*time.Minute {
 		t.Fatalf("item Timeout = %v, want >= 10m (must exceed River's 1m default)", got)
+	}
+}
+
+// Clearing a user's library cancels the queued River jobs of that user's
+// items. In an admin-triggered refresh the Job is the admin's and survives, so
+// its item is left pending with a cancelled owner: recovery queues it again.
+func TestStoreLinkRefreshItem_CancelledByClearLibraryIsRequeued(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	adminID := insertMetaRefreshAdminUser(t)
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	lc := newTestLC(t)
+	itemID := uuid.NewString()
+	if _, err := lc.CreateWithItems(ctx, joblifecycle.NewJob{
+		UserID: adminID, JobType: models.JobTypeStoreLinkRefresh, Source: models.JobSourceSystem, Priority: models.JobPriorityLow, TotalItems: 1,
+	}, []joblifecycle.NewItem{{ID: itemID, UserID: userID, ItemKey: "steam", SourceTitle: "steam",
+		SourceMetadata: json.RawMessage(`{"storefront":"steam","force":true}`)}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	owner := itemOwner(t, itemID)
+
+	if _, err := usergame.ClearLibrary(ctx, testDB, userID); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	_ = testDB.NewRaw(`SELECT state FROM river_job WHERE id = ?`, owner).Scan(ctx, &state)
+	if state != "cancelled" {
+		t.Fatalf("ClearLibrary left the item's river job %s", state)
+	}
+
+	res, err := lc.Recover(ctx)
+	if err != nil || res.Requeued != 1 {
+		t.Fatalf("recover = %+v %v", res, err)
+	}
+	if got := itemOwner(t, itemID); got == owner {
+		t.Fatal("item not given a new river job")
+	}
+}
+
+// A dispatch that runs before any Job exists returns its errors to River and
+// tells the admin once, on its last attempt only.
+func TestStoreLinkRefreshDispatch_MaintFailedOnLastAttemptOnly(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: newTestLC(t)}
+	args := tasks.StoreLinkRefreshDispatchArgs{UserID: userID, Storefront: "steam"}
+
+	// Make the dispatch's query fail.
+	if _, err := testDB.ExecContext(ctx, `ALTER TABLE external_games RENAME TO external_games_away`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := testDB.ExecContext(context.Background(), `ALTER TABLE external_games_away RENAME TO external_games`); err != nil {
+			t.Errorf("restore table: %v", err)
+		}
+	})
+
+	for attempt := 1; attempt <= 5; attempt++ {
+		if err := w.Work(ctx, riverJob(77, attempt, args)); err == nil {
+			t.Fatalf("attempt %d returned nil: River would not retry", attempt)
+		}
+		want := 0
+		if attempt == 5 {
+			want = 1
+		}
+		if n := countEvents(t, notify.TypeAdminMaintFailed); n != want {
+			t.Fatalf("after attempt %d: maint_failed events = %d, want %d", attempt, n, want)
+		}
 	}
 }

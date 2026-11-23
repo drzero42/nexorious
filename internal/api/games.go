@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -11,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
 	"github.com/riverqueue/river"
@@ -21,10 +19,10 @@ import (
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/dbutil"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
-	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // GamesHandler handles /api/games endpoints.
@@ -33,11 +31,12 @@ type GamesHandler struct {
 	igdb        *igdb.Client
 	cfg         *config.Config
 	riverClient *river.Client[pgx.Tx]
+	lc          *joblifecycle.Module
 }
 
 // NewGamesHandler creates a GamesHandler.
-func NewGamesHandler(db *bun.DB, igdbClient *igdb.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) *GamesHandler {
-	return &GamesHandler{db: db, igdb: igdbClient, cfg: cfg, riverClient: riverClient}
+func NewGamesHandler(db *bun.DB, igdbClient *igdb.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx], lc *joblifecycle.Module) *GamesHandler {
+	return &GamesHandler{db: db, igdb: igdbClient, cfg: cfg, riverClient: riverClient, lc: lc}
 }
 
 // GameListResponse is the paginated response for game listings.
@@ -450,48 +449,19 @@ func (h *GamesHandler) HandleImportFromIGDB(c *echo.Context) error {
 	return c.JSON(http.StatusOK, game)
 }
 
-// startMaintenanceRefresh runs the "already active?" guard for a maintenance
-// refresh and, when none is active, synchronously inserts a minimal pending jobs
-// row owned by userID so the caller can return a real job_id immediately. It
-// returns the job id to report to the client and created=true only when this
-// call inserted the row; created=false means an equivalent job (same job_type +
-// source) was already active — its id is returned and the caller must NOT enqueue
-// a dispatch. Everything runs in one transaction, fronted by a transaction-scoped
-// advisory lock on the (job_type, source) dedup key, so the guard and insert are
-// atomic with respect to any concurrent start — without the lock the bare
-// SELECT+INSERT races under READ COMMITTED (two POSTs both pass the guard and
-// both insert). The handler always uses source=system, so the empty user_id
-// discriminant matches the guard, which is not user-scoped.
-func (h *GamesHandler) startMaintenanceRefresh(ctx context.Context, userID, jobType, source string) (jobID string, created bool, err error) {
-	err = h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if e := tasks.AcquireJobDedupLock(ctx, tx, jobType, source, ""); e != nil {
-			return e
-		}
-		var existing string
-		e := tx.NewRaw(
-			`SELECT id FROM jobs WHERE job_type = ? AND source = ? AND status IN ('pending','processing') LIMIT 1`,
-			jobType, source,
-		).Scan(ctx, &existing)
-		if e == nil {
-			jobID, created = existing, false
-			return nil
-		}
-		if !errors.Is(e, sql.ErrNoRows) {
-			return e
-		}
-		jobID, created = uuid.NewString(), true
-		_, e = tx.NewRaw(
-			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-			 VALUES (?, ?, ?, ?, 'pending', 'low', 0, now())`,
-			jobID, userID, jobType, source,
-		).Exec(ctx)
-		return e
+// startMaintenanceRefresh creates a refresh Job owned by userID with its
+// dispatch, through the Job lifecycle module, and returns its id. When an
+// equivalent Job (the same job_type, source system) is already active it
+// returns that Job's id and creates nothing.
+func (h *GamesHandler) startMaintenanceRefresh(ctx context.Context, userID, jobType string) (string, error) {
+	c, err := h.lc.CreateWithDispatch(ctx, joblifecycle.NewJob{
+		UserID: userID, JobType: jobType, Source: models.JobSourceSystem, Priority: models.JobPriorityLow,
 	})
-	return jobID, created, err
+	return c.JobID, err
 }
 
 // HandleStartMetadataRefreshJob handles POST /api/games/metadata/refresh-job.
-// Admin-only: creates a pending jobs row then enqueues a MetadataRefreshDispatch River job.
+// Admin-only: creates the refresh Job with its dispatch.
 func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -502,25 +472,11 @@ func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "admin access required")
 	}
 
-	if h.riverClient == nil {
-		return echo.NewHTTPError(http.StatusServiceUnavailable, "worker not available")
-	}
-
 	ctx := c.Request().Context()
-	jobID, created, err := h.startMaintenanceRefresh(ctx, userID, models.JobTypeMetadataRefresh, models.JobSourceSystem)
+	jobID, err := h.startMaintenanceRefresh(ctx, userID, models.JobTypeMetadataRefresh)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to start metadata refresh", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
-	}
-
-	if created {
-		if _, err := h.riverClient.Insert(ctx, tasks.MetadataRefreshDispatchArgs{JobID: jobID}, nil); err != nil {
-			slog.ErrorContext(ctx, "failed to enqueue metadata refresh dispatch", logging.KeyErr, err, logging.KeyJobID, jobID)
-			if _, derr := h.db.NewRaw(`DELETE FROM jobs WHERE id = ?`, jobID).Exec(ctx); derr != nil {
-				slog.ErrorContext(ctx, "failed to roll back metadata refresh job row", logging.KeyErr, derr, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
-			}
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
-		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
@@ -531,7 +487,7 @@ func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 }
 
 // HandleStartStoreLinkRefreshJob handles POST /api/games/store-links/refresh-job.
-// Admin-only: creates a pending jobs row then enqueues a global, forced store-link re-resolution.
+// Admin-only: creates a global, forced store-link re-resolution Job with its dispatch.
 func (h *GamesHandler) HandleStartStoreLinkRefreshJob(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -540,25 +496,12 @@ func (h *GamesHandler) HandleStartStoreLinkRefreshJob(c *echo.Context) error {
 	if !auth.IsAdminFromContext(c) {
 		return echo.NewHTTPError(http.StatusForbidden, "admin access required")
 	}
-	if h.riverClient == nil {
-		return echo.NewHTTPError(http.StatusServiceUnavailable, "worker not available")
-	}
 
 	ctx := c.Request().Context()
-	jobID, created, err := h.startMaintenanceRefresh(ctx, userID, models.JobTypeStoreLinkRefresh, models.JobSourceSystem)
+	jobID, err := h.startMaintenanceRefresh(ctx, userID, models.JobTypeStoreLinkRefresh)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to start store-link refresh", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue store link refresh")
-	}
-
-	if created {
-		if _, err := h.riverClient.Insert(ctx, tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID}, nil); err != nil {
-			slog.ErrorContext(ctx, "failed to enqueue store-link refresh dispatch", logging.KeyErr, err, logging.KeyJobID, jobID)
-			if _, derr := h.db.NewRaw(`DELETE FROM jobs WHERE id = ?`, jobID).Exec(ctx); derr != nil {
-				slog.ErrorContext(ctx, "failed to roll back store-link refresh job row", logging.KeyErr, derr, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
-			}
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue store link refresh")
-		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{

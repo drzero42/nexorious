@@ -3,6 +3,7 @@ package scheduler_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -164,7 +165,7 @@ func TestCleanupExports_RemovesExpiredFilesAndClearsPath(t *testing.T) {
 		t.Fatalf("insert fresh export: %v", err)
 	}
 
-	scheduler.CleanupExports(ctx, testDB)
+	scheduler.CleanupExports(ctx, testDB, "")
 
 	// Temp file should have been removed.
 	if _, statErr := os.Stat(tmpPath); !os.IsNotExist(statErr) {
@@ -186,6 +187,52 @@ func TestCleanupExports_RemovesExpiredFilesAndClearsPath(t *testing.T) {
 	}
 	if filePath == nil {
 		t.Error("expected fresh export file_path to remain intact")
+	}
+}
+
+// Files in the exports directory that no Job refers to and that are older than
+// a day are removed (a partial file left by a kill, or a run whose transition
+// was refused); a referenced file and a recent one are kept.
+func TestCleanupExports_SweepsUnreferencedFiles(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := insertUser(t, ctx, nil)
+	storage := t.TempDir()
+	dir := filepath.Join(storage, "exports")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	mk := func(name string, mtime time.Time) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	orphan := mk("orphan_1.json", old)
+	recent := mk("recent_1.json", time.Now())
+	referenced := mk("kept_1.json", old)
+	if _, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, file_path, completed_at)
+		 VALUES ('job-kept', ?, 'export', 'nexorious', 'completed', 'normal', ?, now())`,
+		userID, referenced,
+	).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	scheduler.CleanupExports(ctx, testDB, storage)
+
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Errorf("unreferenced old file kept")
+	}
+	for _, p := range []string{recent, referenced} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s removed: %v", filepath.Base(p), err)
+		}
 	}
 }
 

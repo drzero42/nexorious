@@ -13,6 +13,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/riverqueue/river"
+	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
 	"github.com/riverqueue/rivercontrib/otelriver"
@@ -26,6 +27,7 @@ import (
 	"github.com/drzero42/nexorious/internal/crypto"
 	nexdb "github.com/drzero42/nexorious/internal/db"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	"github.com/drzero42/nexorious/internal/migrate"
@@ -242,6 +244,18 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		staleThreshold = 4 * time.Hour
 	}
 
+	// Job lifecycle module (#1265): the one owner of Job and item status for
+	// the kinds registered with it. It inserts River jobs in its own
+	// transactions through an insert-only client on Bun's *sql.DB (ADR 0001),
+	// built with the same logger and OpenTelemetry plugin as the working one.
+	txRiverClient, err := river.NewClient(riverdatabasesql.New(db.DB), newInsertOnlyRiverConfig(obs))
+	if err != nil {
+		return fmt.Errorf("river.NewClient (insert-only): %w", err)
+	}
+	notify.SetTxRiverClient(txRiverClient)
+	lifecycle := joblifecycle.New(db, txRiverClient)
+	tasks.RegisterLifecycleKinds(lifecycle)
+
 	epicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
 		DB:      db,
@@ -249,6 +263,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
+		LC:         lifecycle,
 		IGDBClient: igdbClient,
 		MinAge:     cfg.MetadataRefreshMinAgeDuration(),
 	}
@@ -257,16 +272,18 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, IGDBClient: igdbClient}
 	userGameWorker := &tasks.UserGameWorker{DB: db, IGDBClient: igdbClient}
 	importMatchWorker := &tasks.ImportMatchWorker{DB: db, IGDBClient: igdbClient}
-	storeLinkDispatchWorker := &tasks.StoreLinkRefreshDispatchWorker{DB: db}
-	storeLinkItemWorker := &tasks.StoreLinkRefreshItemWorker{DB: db, ResolverFor: buildStoreLinkResolverFactory(db, encrypter)}
+	storeLinkDispatchWorker := &tasks.StoreLinkRefreshDispatchWorker{DB: db, LC: lifecycle}
+	storeLinkItemWorker := &tasks.StoreLinkRefreshItemWorker{DB: db, LC: lifecycle, ResolverFor: buildStoreLinkResolverFactory(db, encrypter)}
 
 	updateState := updatecheck.NewState()
 	updateClient := updatecheck.NewClient()
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
-	river.AddWorker(workers, &tasks.ExportJSONWorker{DB: db, StoragePath: cfg.StoragePath})
-	river.AddWorker(workers, &tasks.ExportCSVWorker{DB: db, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, &tasks.ExportJSONWorker{DB: db, LC: lifecycle, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, &tasks.ExportCSVWorker{DB: db, LC: lifecycle, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, &joblifecycle.EffectsWorker{Module: lifecycle})
+	river.AddWorker(workers, &joblifecycle.RecoveryWorker{Module: lifecycle})
 	river.AddWorker(workers, dispatchSyncWorker)
 	river.AddWorker(workers, igdbMatchWorker)
 	river.AddWorker(workers, userGameWorker)
@@ -275,10 +292,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, metaDispatchWorker)
 	river.AddWorker(workers, storeLinkDispatchWorker)
 	river.AddWorker(workers, storeLinkItemWorker)
-	river.AddWorker(workers, &tasks.MetadataRefreshItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, &tasks.MetadataRefreshItemWorker{DB: db, LC: lifecycle, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.MetadataFetchWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &scheduler.CleanupOldJobsWorker{DB: db})
-	river.AddWorker(workers, &scheduler.CleanupExportsWorker{DB: db})
+	river.AddWorker(workers, &scheduler.CleanupExportsWorker{DB: db, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &scheduler.CleanupUnreferencedGamesWorker{DB: db})
 	river.AddWorker(workers, &scheduler.CleanupExpiredSessionsWorker{DB: db})
 	river.AddWorker(workers, &scheduler.CleanupStaleJobsWorker{DB: db})
@@ -312,8 +329,6 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	// Wire River client into workers that submit sub-jobs.
 	dispatchSyncWorker.RiverClient = riverClient
-	metaDispatchWorker.RiverClient = riverClient
-	storeLinkDispatchWorker.RiverClient = riverClient
 	checkPendingSyncsWorker.RiverClient = riverClient
 	rescueOrphanedWorker.RiverClient = riverClient
 	igdbMatchWorker.RiverClient = riverClient
@@ -343,7 +358,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// instance in the refuse state, so it is rejected before any DB mutation.
 	backupSvc.SetMigrationWindow(migrate.LatestMigration(), migrate.MinRestorableMigration)
 
-	e := api.New(encrypter, cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, version, commit, updateState, riverClient)
+	e := api.New(encrypter, cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, version, commit, updateState,
+		api.WithRiverClient(riverClient), api.WithLifecycle(lifecycle))
 
 	// StartDBProbe — polls every 5s, calls initAppState on recovery.
 	stopProbe := migrator.StartDBProbe(shutdownCtx, db, initAppState)
@@ -355,6 +371,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	gate := riverStartGate{
 		ready: func() bool { return migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() },
 		runRecovery: func() {
+			recoverLifecycleAtStartup(context.Background(), lifecycle)
 			scheduler.RecoverInterruptedSyncs(context.Background(), db, riverClient)
 		},
 		start:      func() error { return riverClient.Start(riverCtx) },
@@ -498,6 +515,52 @@ func newRiverConfig(cfg *config.Config, obs *observability.Providers, workers *r
 			logging.NewWorkerMiddleware(quietJobKinds...),
 		},
 		ErrorHandler: &logging.WorkerErrorHandler{},
+		// Above the longest timeout of any Job lifecycle River kind (an
+		// export or a store-link item, 30 minutes), so River's rescuer never
+		// acts at the same moment as a timeout (docs/job-lifecycle.md).
+		RescueStuckJobsAfter: riverRescueStuckJobsAfter,
+	}
+}
+
+// riverRescueStuckJobsAfter is how long a River job may run before River's
+// rescuer retries or discards it.
+const riverRescueStuckJobsAfter = time.Hour
+
+// newInsertOnlyRiverConfig is the config of the insert-only River client the
+// Job lifecycle module inserts through: no queues and no workers, but the same
+// logger and OpenTelemetry plugin as the working client, so its log lines and
+// trace links match.
+func newInsertOnlyRiverConfig(obs *observability.Providers) *river.Config {
+	return &river.Config{
+		Logger: logging.RiverLogger(),
+		Plugins: []rivertype.Plugin{
+			otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
+				MeterProvider:  obs.MeterProvider,
+				TracerProvider: obs.TracerProvider,
+				DurationUnit:   "s",
+			}),
+		},
+	}
+}
+
+// recoverLifecycleAtStartup runs before River starts: it settles the River
+// jobs a dead process left running, then applies the recovery rule. A failing
+// step is logged and River is started anyway. Both steps tolerate being run
+// again before a start succeeds. A restart never notifies, so no maintenance
+// event is emitted here.
+func recoverLifecycleAtStartup(ctx context.Context, lc *joblifecycle.Module) {
+	n, err := lc.Settle(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "startup: settle running river jobs failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	} else if n > 0 {
+		slog.InfoContext(ctx, "startup: settled river jobs left running", "count", n)
+	}
+	res, err := lc.Recover(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "startup: job recovery failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	}
+	if res.Failed+res.Requeued > 0 {
+		slog.InfoContext(ctx, "startup: job recovery", "failed", res.Failed, "requeued", res.Requeued)
 	}
 }
 

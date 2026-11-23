@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -28,6 +29,7 @@ type EmitParams struct {
 var (
 	rcMu        sync.RWMutex
 	riverClient *river.Client[pgx.Tx]
+	txClient    *river.Client[*sql.Tx]
 )
 
 // SetRiverClient registers (or replaces) the River client used to enqueue
@@ -36,6 +38,15 @@ func SetRiverClient(rc *river.Client[pgx.Tx]) {
 	rcMu.Lock()
 	defer rcMu.Unlock()
 	riverClient = rc
+}
+
+// SetTxRiverClient registers the insert-only River client (on Bun's *sql.DB)
+// EmitTx inserts delivery jobs through, inside the caller's transaction.
+// Called once at startup.
+func SetTxRiverClient(rc *river.Client[*sql.Tx]) {
+	rcMu.Lock()
+	defer rcMu.Unlock()
+	txClient = rc
 }
 
 // Emit writes an event row (idempotent on DedupKey) via db, then best-effort
@@ -52,20 +63,30 @@ func Emit(ctx context.Context, db *bun.DB, p EmitParams) {
 	}
 }
 
-// EmitTx writes the event row through tx, so it commits or rolls back with
-// the caller's other writes, and returns deliver, which enqueues its
-// delivery. Call deliver only after tx has committed. Unlike Emit it returns
-// the insert's error, so the caller can roll its transaction back with it.
-func EmitTx(ctx context.Context, tx bun.IDB, p EmitParams) (deliver func(), err error) {
+// EmitTx writes the event row and the River job that delivers it through
+// tx, so both commit or roll back with the caller's other writes: a
+// notification is never recorded without its delivery. Unlike Emit it returns
+// errors (including a cancelled context's), so the caller can roll back and
+// retry. An event whose DedupKey already exists inserts nothing.
+func EmitTx(ctx context.Context, tx bun.Tx, p EmitParams) error {
 	id, err := insertEvent(ctx, tx, p)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return func() {
-		if id != "" {
-			enqueueNotify(ctx, id)
-		}
-	}, nil
+	if id == "" {
+		return nil
+	}
+	rcMu.RLock()
+	rc := txClient
+	rcMu.RUnlock()
+	if rc == nil {
+		slog.DebugContext(ctx, "notify: tx river client unset; event persisted but not enqueued", "event_id", id)
+		return nil
+	}
+	if _, err := rc.InsertTx(ctx, tx.Tx, NotifyArgs{EventID: id}, nil); err != nil {
+		return fmt.Errorf("enqueue notify: %w", err)
+	}
+	return nil
 }
 
 // insertEvent writes the event row and returns its id, or "" when an event

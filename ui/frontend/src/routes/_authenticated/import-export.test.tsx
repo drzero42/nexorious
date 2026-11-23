@@ -170,6 +170,17 @@ describe('ImportExportPage auto-dismiss on clean completion', () => {
     expect(screen.getByText('Retry Failed')).toBeInTheDocument();
   });
 
+  // A failed or cancelled Job is never reopened: the server refuses a retry
+  // with 409, so the page does not offer one.
+  it.each([JobStatus.FAILED, JobStatus.CANCELLED])(
+    'offers no Retry Failed for a %s job with failed items',
+    (status) => {
+      h.job = makeTerminalJob({ status, failed: 2 });
+      render(<ImportExportPage />);
+      expect(screen.queryByText('Retry Failed')).not.toBeInTheDocument();
+    },
+  );
+
   it('keeps the progress box when a job is cancelled', () => {
     h.job = makeTerminalJob({ status: JobStatus.CANCELLED, failed: 0 });
     render(<ImportExportPage />);

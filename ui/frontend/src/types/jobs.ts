@@ -46,6 +46,7 @@ export enum JobItemStatus {
   PENDING_REVIEW = 'pending_review',
   SKIPPED = 'skipped',
   FAILED = 'failed',
+  CANCELLED = 'cancelled',
 }
 
 export type JobPriority = 'low' | 'normal' | 'high';
@@ -64,6 +65,7 @@ export interface JobProgress {
   pendingReview: number;
   skipped: number;
   failed: number;
+  cancelled: number;
   done: number;
   total: number;
   percent: number;
@@ -354,6 +356,7 @@ export function getJobItemStatusLabel(status: JobItemStatus): string {
     [JobItemStatus.PENDING_REVIEW]: 'Needs Review',
     [JobItemStatus.SKIPPED]: 'Skipped',
     [JobItemStatus.FAILED]: 'Failed',
+    [JobItemStatus.CANCELLED]: 'Cancelled',
   };
   return labels[status];
 }

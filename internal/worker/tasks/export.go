@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,14 +14,19 @@ import (
 	"time"
 
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
-	"github.com/drzero42/nexorious/internal/notify"
 )
 
 // ── JSON export ───────────────────────────────────────────────────────────────
+
+// An export has no items: its worker is its dispatch (internal/joblifecycle).
+// It starts the dispatch, writes the file, then marks the dispatch done with
+// the file's path, which completes the Job.
 
 type ExportJSONArgs struct {
 	JobID string `json:"job_id"`
@@ -28,39 +34,34 @@ type ExportJSONArgs struct {
 
 func (ExportJSONArgs) Kind() string { return "export_json" }
 
+// InsertOpts: re-running an export is safe, so a hard kill does not fail it.
 func (ExportJSONArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 1, Priority: 3}
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3}
 }
 
 type ExportJSONWorker struct {
 	river.WorkerDefaults[ExportJSONArgs]
 	DB          *bun.DB
+	LC          *joblifecycle.Module
 	StoragePath string
 }
 
+// Timeout leaves room for a large library; River's default is a minute.
+func (w *ExportJSONWorker) Timeout(*river.Job[ExportJSONArgs]) time.Duration { return exportTimeout }
+
 func (w *ExportJSONWorker) Work(ctx context.Context, job *river.Job[ExportJSONArgs]) error {
-	j, err := loadAndStartJob(ctx, w.DB, job.Args.JobID)
-	if err != nil {
-		slog.ErrorContext(ctx, "export_json: load job", logging.KeyJobID, job.Args.JobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return nil
-	}
-	userGames, err := loadUserGamesWithRelations(ctx, w.DB, j.UserID)
-	if err != nil {
-		markJobFailed(ctx, w.DB, j, fmt.Sprintf("load user games: %v", err))
-		return nil
-	}
-	pools, err := loadPoolsForExport(ctx, w.DB, j.UserID)
-	if err != nil {
-		markJobFailed(ctx, w.DB, j, fmt.Sprintf("load pools: %v", err))
-		return nil
-	}
-	outPath, err := writeJSONExport(w.StoragePath, j.UserID, userGames, pools)
-	if err != nil {
-		markJobFailed(ctx, w.DB, j, fmt.Sprintf("write JSON: %v", err))
-		return nil
-	}
-	markJobCompleted(ctx, w.DB, j, outPath)
-	return nil
+	return runExport(ctx, w.DB, w.LC, w.StoragePath, job.Args.JobID, job.JobRow, "json",
+		func(ctx context.Context, userID string) (func(path string) error, error) {
+			userGames, err := loadUserGamesWithRelations(ctx, w.DB, userID)
+			if err != nil {
+				return nil, fmt.Errorf("load user games: %w", err)
+			}
+			pools, err := loadPoolsForExport(ctx, w.DB, userID)
+			if err != nil {
+				return nil, fmt.Errorf("load pools: %w", err)
+			}
+			return func(path string) error { return writeJSONExport(path, userGames, pools) }, nil
+		})
 }
 
 // ── CSV export ────────────────────────────────────────────────────────────────
@@ -72,54 +73,102 @@ type ExportCSVArgs struct {
 func (ExportCSVArgs) Kind() string { return "export_csv" }
 
 func (ExportCSVArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 1, Priority: 3}
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3}
 }
 
 type ExportCSVWorker struct {
 	river.WorkerDefaults[ExportCSVArgs]
 	DB          *bun.DB
+	LC          *joblifecycle.Module
 	StoragePath string
 }
 
+func (w *ExportCSVWorker) Timeout(*river.Job[ExportCSVArgs]) time.Duration { return exportTimeout }
+
 func (w *ExportCSVWorker) Work(ctx context.Context, job *river.Job[ExportCSVArgs]) error {
-	j, err := loadAndStartJob(ctx, w.DB, job.Args.JobID)
-	if err != nil {
-		slog.ErrorContext(ctx, "export_csv: load job", logging.KeyJobID, job.Args.JobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return nil
-	}
-	userGames, err := loadUserGamesWithRelations(ctx, w.DB, j.UserID)
-	if err != nil {
-		markJobFailed(ctx, w.DB, j, fmt.Sprintf("load user games: %v", err))
-		return nil
-	}
-	outPath, err := writeCSVExport(w.StoragePath, j.UserID, userGames)
-	if err != nil {
-		markJobFailed(ctx, w.DB, j, fmt.Sprintf("write CSV: %v", err))
-		return nil
-	}
-	markJobCompleted(ctx, w.DB, j, outPath)
-	return nil
+	return runExport(ctx, w.DB, w.LC, w.StoragePath, job.Args.JobID, job.JobRow, "csv",
+		func(ctx context.Context, userID string) (func(path string) error, error) {
+			userGames, err := loadUserGamesWithRelations(ctx, w.DB, userID)
+			if err != nil {
+				return nil, fmt.Errorf("load user games: %w", err)
+			}
+			return func(path string) error { return writeCSVExport(path, userGames) }, nil
+		})
 }
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
-// loadAndStartJob loads the Job row and marks it processing with started_at set.
-func loadAndStartJob(ctx context.Context, db *bun.DB, jobID string) (*models.Job, error) {
-	var job models.Job
-	if err := db.NewSelect().Model(&job).Where("id = ?", jobID).Scan(ctx); err != nil {
-		return nil, fmt.Errorf("select job: %w", err)
-	}
+const exportTimeout = 30 * time.Minute
 
-	now := time.Now().UTC()
-	job.Status = models.JobStatusProcessing
-	job.StartedAt = &now
-	if _, err := db.NewUpdate().Model(&job).
-		Column("status", "started_at").
-		Where("id = ?", job.ID).
-		Exec(ctx); err != nil {
-		return nil, fmt.Errorf("update job to processing: %w", err)
+// runExport runs one export. load reads the library (a database error is
+// returned to River, so it is retried) and returns the function that writes
+// the file. The file is named by Job and River attempt, written before the
+// transition, and removed only when this run knows the Job will not refer to
+// it: it was interrupted before the transition, the module refused the
+// transition, or this run failed the Job. After an untyped error from the
+// transition the commit may have happened, so the file stays; the daily sweep
+// removes files no Job refers to.
+func runExport(ctx context.Context, db *bun.DB, lc *joblifecycle.Module, storagePath, jobID string, rj *rivertype.JobRow, ext string,
+	load func(ctx context.Context, userID string) (func(path string) error, error),
+) error {
+	ctx = logging.WithJobID(ctx, jobID)
+	j, err := lc.StartDispatch(ctx, jobID, rj.ID)
+	if err != nil {
+		return exitOrRetry(ctx, err)
 	}
-	return &job, nil
+	fail := func(msg string) error {
+		return exitOrRetry(ctx, lc.Fail(ctx, jobID, joblifecycle.Failure{Message: msg, CallerRiverJobID: rj.ID}))
+	}
+	write, err := load(ctx, j.UserID)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if lastAttempt(rj) {
+			return fail(err.Error())
+		}
+		return err
+	}
+	dir, err := exportsDir(storagePath)
+	if err != nil {
+		return fail(err.Error())
+	}
+	path := filepath.Join(dir, exportFileName(jobID, rj.Attempt, ext))
+	remove := func() {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.WarnContext(ctx, "export: remove file", logging.KeyErr, err)
+		}
+	}
+	if err := write(path); err != nil {
+		remove()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fail(fmt.Sprintf("write %s: %v", strings.ToUpper(ext), err))
+	}
+	if ctx.Err() != nil {
+		remove()
+		return ctx.Err()
+	}
+	err = lc.MarkDispatched(ctx, jobID, rj.ID, joblifecycle.Dispatched{FilePath: &path})
+	switch {
+	case err == nil:
+		return nil
+	case ctx.Err() != nil:
+		return ctx.Err()
+	case joblifecycle.IsRefusal(err):
+		remove()
+		return nil
+	default:
+		return err
+	}
+}
+
+// exportFileName names an export's file by its Job and River attempt, so two
+// exports never share a path. A run repeated after a clean shutdown keeps its
+// attempt number and overwrites its own earlier file.
+func exportFileName(jobID string, attempt int, ext string) string {
+	return fmt.Sprintf("%s_%d.%s", jobID, attempt, ext)
 }
 
 // loadUserGamesWithRelations queries all UserGames for a user with their
@@ -137,46 +186,6 @@ func loadUserGamesWithRelations(ctx context.Context, db *bun.DB, userID string) 
 		return nil, err
 	}
 	return ugs, nil
-}
-
-// markJobFailed sets the job status to failed with an error message. errMsg is
-// scrubbed of URL query strings before persisting (#937).
-func markJobFailed(ctx context.Context, db *bun.DB, job *models.Job, errMsg string) {
-	errMsg = logging.ScrubURLQueries(errMsg)
-	now := time.Now().UTC()
-	job.Status = models.JobStatusFailed
-	job.ErrorMessage = &errMsg
-	job.CompletedAt = &now
-	if _, err := db.NewUpdate().Model(job).
-		Column("status", "error_message", "completed_at").
-		Where("id = ?", job.ID).
-		Exec(ctx); err != nil {
-		slog.ErrorContext(ctx, "export: markJobFailed", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-	notify.Emit(ctx, db, notify.EmitParams{
-		Type: notify.TypeExportFailed, Scope: notify.ScopeUser, ActorUserID: job.UserID,
-		Payload:  notify.ExportFailedPayload{JobID: job.ID, Error: errMsg},
-		DedupKey: job.ID + ":" + notify.TypeExportFailed,
-	})
-}
-
-// markJobCompleted sets the job status to completed, recording the output file path.
-func markJobCompleted(ctx context.Context, db *bun.DB, job *models.Job, filePath string) {
-	now := time.Now().UTC()
-	job.Status = models.JobStatusCompleted
-	job.FilePath = &filePath
-	job.CompletedAt = &now
-	if _, err := db.NewUpdate().Model(job).
-		Column("status", "file_path", "completed_at").
-		Where("id = ?", job.ID).
-		Exec(ctx); err != nil {
-		slog.ErrorContext(ctx, "export: markJobCompleted", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-	notify.Emit(ctx, db, notify.EmitParams{
-		Type: notify.TypeExportCompleted, Scope: notify.ScopeUser, ActorUserID: job.UserID,
-		Payload:  notify.ExportCompletedPayload{JobID: job.ID, FilePath: filePath},
-		DedupKey: job.ID + ":" + notify.TypeExportCompleted,
-	})
 }
 
 // exportsDir returns (and creates) the exports subdirectory under storagePath.
@@ -284,21 +293,12 @@ func loadPoolsForExport(ctx context.Context, db *bun.DB, userID string) ([]expor
 	return out, nil
 }
 
-func writeJSONExport(storagePath, userID string, ugs []models.UserGame, pools []exportPoolJSON) (string, error) {
-	dir, err := exportsDir(storagePath)
-	if err != nil {
-		return "", err
-	}
-
-	ts := time.Now().UTC().Format("20060102_150405")
-	filename := fmt.Sprintf("%s_%s.json", userID, ts)
-	outPath := filepath.Join(dir, filename)
-
+func writeJSONExport(outPath string, ugs []models.UserGame, pools []exportPoolJSON) (err error) {
 	doc := buildJSONDoc(ugs, pools)
 
 	f, err := os.Create(outPath) //nolint:gosec // outPath is an internally-derived export path under storagePath, not user input
 	if err != nil {
-		return "", fmt.Errorf("create export file: %w", err)
+		return fmt.Errorf("create export file: %w", err)
 	}
 	defer func() {
 		if cerr := f.Close(); cerr != nil && err == nil {
@@ -309,9 +309,9 @@ func writeJSONExport(storagePath, userID string, ugs []models.UserGame, pools []
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(doc); err != nil {
-		return "", fmt.Errorf("encode JSON: %w", err)
+		return fmt.Errorf("encode JSON: %w", err)
 	}
-	return outPath, nil
+	return nil
 }
 
 func buildJSONDoc(ugs []models.UserGame, pools []exportPoolJSON) exportDocJSON {
@@ -378,19 +378,10 @@ var csvHeaders = []string{
 	"created_at", "updated_at",
 }
 
-func writeCSVExport(storagePath, userID string, ugs []models.UserGame) (string, error) {
-	dir, err := exportsDir(storagePath)
-	if err != nil {
-		return "", err
-	}
-
-	ts := time.Now().UTC().Format("20060102_150405")
-	filename := fmt.Sprintf("%s_%s.csv", userID, ts)
-	outPath := filepath.Join(dir, filename)
-
+func writeCSVExport(outPath string, ugs []models.UserGame) (err error) {
 	f, err := os.Create(outPath) //nolint:gosec // outPath is an internally-derived export path under storagePath, not user input
 	if err != nil {
-		return "", fmt.Errorf("create CSV file: %w", err)
+		return fmt.Errorf("create CSV file: %w", err)
 	}
 	defer func() {
 		if cerr := f.Close(); cerr != nil && err == nil {
@@ -400,20 +391,20 @@ func writeCSVExport(storagePath, userID string, ugs []models.UserGame) (string, 
 
 	w := csv.NewWriter(f)
 	if err := w.Write(csvHeaders); err != nil {
-		return "", fmt.Errorf("write CSV header: %w", err)
+		return fmt.Errorf("write CSV header: %w", err)
 	}
 
 	for _, ug := range ugs {
 		row := buildCSVRow(ug)
 		if err := w.Write(row); err != nil {
-			return "", fmt.Errorf("write CSV row: %w", err)
+			return fmt.Errorf("write CSV row: %w", err)
 		}
 	}
 	w.Flush()
 	if err := w.Error(); err != nil {
-		return "", fmt.Errorf("flush CSV: %w", err)
+		return fmt.Errorf("flush CSV: %w", err)
 	}
-	return outPath, nil
+	return nil
 }
 
 func buildCSVRow(ug models.UserGame) []string {

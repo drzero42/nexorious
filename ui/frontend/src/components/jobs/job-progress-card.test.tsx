@@ -22,6 +22,7 @@ const processingJob: Job = {
     pendingReview: 3,
     skipped: 2,
     failed: 5,
+    cancelled: 0,
     done: 52,
     total: 100,
     percent: 52,

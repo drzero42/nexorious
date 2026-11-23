@@ -6,9 +6,9 @@ How a **Job** and its **Job items** move from creation to a finished state, who 
 >
 > | Job kind | Follows this document |
 > |---|---|
-> | Metadata refresh | no |
-> | Store-link refresh | no |
-> | Export | no |
+> | Metadata refresh | yes |
+> | Store-link refresh | yes |
+> | Export | yes |
 > | Generic import (registry sources, CSV) | no |
 > | Nexorious import | no |
 > | Sync | no |

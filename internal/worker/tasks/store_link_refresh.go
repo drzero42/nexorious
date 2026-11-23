@@ -9,14 +9,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
-	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/storelink"
 )
 
@@ -37,21 +35,27 @@ type StoreLinkRefreshDispatchArgs struct {
 	UserID     string `json:"user_id,omitempty"`
 	Storefront string `json:"storefront,omitempty"`
 	Force      bool   `json:"force,omitempty"`
-	// JobID, when set, names a pre-created (handler-owned) jobs row to populate
-	// instead of inserting one; empty means self-create (the sync-completion path).
+	// JobID, when set, names the Job an admin created (internal/joblifecycle,
+	// with this River job as its dispatch owner); empty means the dispatch
+	// runs before any Job exists (after a sync) and creates its Job with all
+	// items.
 	JobID string `json:"job_id,omitempty"`
 }
 
 func (StoreLinkRefreshDispatchArgs) Kind() string { return "store_link_refresh_dispatch" }
 
 func (StoreLinkRefreshDispatchArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 1, Priority: 3}
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3}
 }
 
 type StoreLinkRefreshDispatchWorker struct {
 	river.WorkerDefaults[StoreLinkRefreshDispatchArgs]
-	DB          *bun.DB
-	RiverClient *river.Client[pgx.Tx]
+	DB *bun.DB
+	LC *joblifecycle.Module
+}
+
+func (w *StoreLinkRefreshDispatchWorker) Timeout(*river.Job[StoreLinkRefreshDispatchArgs]) time.Duration {
+	return dispatchTimeout
 }
 
 type storeLinkGroup struct {
@@ -98,115 +102,88 @@ func (w *StoreLinkRefreshDispatchWorker) SelectGroups(ctx context.Context, args 
 	return groups, total, nil
 }
 
+func storeLinkItems(groups []storeLinkGroup, force bool) []joblifecycle.NewItem {
+	items := make([]joblifecycle.NewItem, len(groups))
+	for i, g := range groups {
+		meta, _ := json.Marshal(storeLinkItemMeta{Storefront: g.Storefront, Force: force}) //nolint:errcheck // fixed struct
+		items[i] = joblifecycle.NewItem{UserID: g.UserID, ItemKey: g.Storefront, SourceTitle: g.Storefront, SourceMetadata: meta}
+	}
+	return items
+}
+
 func (w *StoreLinkRefreshDispatchWorker) Work(ctx context.Context, job *river.Job[StoreLinkRefreshDispatchArgs]) error {
-	args := job.Args
+	if job.Args.JobID != "" {
+		return w.dispatchJob(ctx, job)
+	}
+	return w.dispatchWithoutJob(ctx, job)
+}
 
-	// Self-heal any predecessor wedged by an orphaned item before evaluating the
-	// active-job guard, so a stuck job can never block refreshes permanently.
-	reapStuckStoreLinkJobs(ctx, w.DB)
+// dispatchJob fills a Job an admin created. Its args come from the Job row
+// (DispatchArgs of the kind), so a re-run dispatch is the same dispatch.
+func (w *StoreLinkRefreshDispatchWorker) dispatchJob(ctx context.Context, rj *river.Job[StoreLinkRefreshDispatchArgs]) error {
+	jobID := rj.Args.JobID
+	ctx = logging.WithJobID(ctx, jobID)
+	if _, err := w.LC.StartDispatch(ctx, jobID, rj.ID); err != nil {
+		return exitOrRetry(ctx, err)
+	}
+	groups, total, err := w.SelectGroups(ctx, rj.Args)
+	if err != nil {
+		if ctx.Err() == nil && lastAttempt(rj.JobRow) {
+			return failMaintDispatch(ctx, w.LC, jobID, rj.JobRow, "store_link_refresh_dispatch", err.Error())
+		}
+		return exitOrRetry(ctx, err)
+	}
+	n := len(groups)
+	err = w.LC.MarkDispatched(ctx, jobID, rj.ID, joblifecycle.Dispatched{Items: storeLinkItems(groups, rj.Args.Force), TotalItems: &n})
+	if err != nil {
+		if ctx.Err() == nil && !joblifecycle.IsRefusal(err) && lastAttempt(rj.JobRow) {
+			return failMaintDispatch(ctx, w.LC, jobID, rj.JobRow, "store_link_refresh_dispatch", err.Error())
+		}
+		return exitOrRetry(ctx, err)
+	}
+	slog.InfoContext(ctx, "store_link_refresh_dispatch: dispatched", "groups", n, "rows", total)
+	return nil
+}
 
+// dispatchWithoutJob runs before any Job exists (the refresh after a sync):
+// it creates the Job with all its items, or nothing when there is nothing to
+// do or an equivalent Job is active.
+func (w *StoreLinkRefreshDispatchWorker) dispatchWithoutJob(ctx context.Context, rj *river.Job[StoreLinkRefreshDispatchArgs]) error {
+	args := rj.Args
 	source := models.JobSourceSystem
 	if args.Storefront != "" {
 		source = args.Storefront
 	}
-
-	jobID := args.JobID
-	handlerOwned := jobID != ""
-
-	// Only the self-created path runs the active-job guard; for handler-owned jobs
-	// the handler owns dedup (and its own pending row would match this guard).
-	if !handlerOwned {
-		var existing string
-		guard := `SELECT id FROM jobs WHERE job_type = ? AND status IN ('pending','processing') AND source = ?`
-		guardArgs := []any{models.JobTypeStoreLinkRefresh, source}
-		if args.UserID != "" {
-			guard += ` AND user_id = ?`
-			guardArgs = append(guardArgs, args.UserID)
-		}
-		guard += ` LIMIT 1`
-		err := w.DB.NewRaw(guard, guardArgs...).Scan(ctx, &existing)
-		if err == nil {
-			slog.InfoContext(ctx, "store_link_refresh_dispatch: equivalent job active, skipping", "existing", existing)
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			slog.WarnContext(ctx, "store_link_refresh_dispatch: guard query", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			return nil
-		}
-	}
-
 	groups, total, err := w.SelectGroups(ctx, args)
 	if err != nil {
-		slog.ErrorContext(ctx, "store_link_refresh_dispatch: select groups", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return nil
+		return maintDispatchError(ctx, w.DB, rj.JobRow, "store_link_refresh_dispatch", err)
 	}
 	if len(groups) == 0 {
-		// A handler-owned row is already pending; finalize it so it never sticks.
-		if handlerOwned {
-			finalizeJobCompleted(ctx, w.DB, jobID, "store_link_refresh_dispatch: finalize empty", false)
-		}
 		return nil
 	}
-
-	// jobUserID owns the jobs row on the self-created path. Handler-owned rows
-	// already have an owner, so skip the lookup there.
-	jobUserID := args.UserID
-	if !handlerOwned && jobUserID == "" {
-		if e := w.DB.NewRaw(`SELECT id FROM users WHERE is_admin = true LIMIT 1`).Scan(ctx, &jobUserID); e != nil {
-			slog.ErrorContext(ctx, "store_link_refresh_dispatch: no admin user", logging.KeyErr, e, logging.Cat(logging.CategoryDB))
+	ownerID := args.UserID
+	if ownerID == "" {
+		err := w.DB.NewRaw(`SELECT id FROM users WHERE is_admin = true ORDER BY created_at LIMIT 1`).Scan(ctx, &ownerID)
+		if errors.Is(err, sql.ErrNoRows) {
+			slog.WarnContext(ctx, "store_link_refresh_dispatch: no admin user, skipping")
 			return nil
 		}
-	}
-
-	if !handlerOwned {
-		jobID = uuid.NewString()
-	}
-	// itemIDs is populated by the insertItems closure (run once inside the tx) and
-	// read only after writeMaintenanceJobInTx returns; River jobs are enqueued then,
-	// once the tx has committed and the job_items rows are visible.
-	itemIDs := make([]string, 0, len(groups))
-	skipped, err := writeMaintenanceJobInTx(ctx, w.DB, maintenanceJobParams{
-		HandlerOwned: handlerOwned,
-		JobID:        jobID,
-		OwnerID:      jobUserID,
-		JobType:      models.JobTypeStoreLinkRefresh,
-		Source:       source,
-		GuardUserID:  args.UserID,
-		TotalItems:   len(groups),
-	}, func(ctx context.Context, tx bun.Tx) error {
-		for _, g := range groups {
-			itemID := uuid.NewString()
-			itemIDs = append(itemIDs, itemID)
-			meta, _ := json.Marshal(map[string]any{"storefront": g.Storefront, "force": args.Force}) //nolint:errcheck // fixed map
-			if _, e := tx.NewRaw(
-				`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-				itemID, jobID, g.UserID, g.Storefront, g.Storefront, json.RawMessage(meta),
-			).Exec(ctx); e != nil {
-				return fmt.Errorf("insert job_item: %w", e)
-			}
+		if err != nil {
+			return maintDispatchError(ctx, w.DB, rj.JobRow, "store_link_refresh_dispatch", fmt.Errorf("query admin user: %w", err))
 		}
-		return nil
-	})
+	}
+	c, err := w.LC.CreateWithItems(ctx, joblifecycle.NewJob{
+		UserID: ownerID, JobType: models.JobTypeStoreLinkRefresh, Source: source,
+		Priority: models.JobPriorityLow, TotalItems: len(groups),
+	}, storeLinkItems(groups, args.Force), nil)
 	if err != nil {
-		slog.ErrorContext(ctx, "store_link_refresh_dispatch: tx failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		notify.Emit(ctx, w.DB, notify.EmitParams{
-			Type: notify.TypeAdminMaintFailed, Scope: notify.ScopeAdmin,
-			Payload: notify.MaintPayload{Action: "store_link_refresh_dispatch", Error: err.Error()},
-		})
+		return maintDispatchError(ctx, w.DB, rj.JobRow, "store_link_refresh_dispatch", err)
+	}
+	if !c.Created {
+		slog.InfoContext(ctx, "store_link_refresh_dispatch: equivalent job active, skipping", "existing", c.JobID)
 		return nil
 	}
-	if skipped {
-		slog.InfoContext(ctx, "store_link_refresh_dispatch: equivalent job active (in-tx guard), skipping", logging.KeyJobID, jobID, logging.KeySource, source)
-		return nil
-	}
-
-	for _, itemID := range itemIDs {
-		if e := EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, StoreLinkRefreshItemArgs{JobItemID: itemID}); e != nil {
-			slog.WarnContext(ctx, "store_link_refresh_dispatch: enqueue item", logging.KeyErr, e, logging.KeyJobItemID, itemID, logging.Cat(logging.CategoryDB))
-		}
-	}
-	slog.InfoContext(ctx, "store_link_refresh_dispatch: job created", logging.KeyJobID, jobID, "groups", len(groups), "rows", total)
+	slog.InfoContext(ctx, "store_link_refresh_dispatch: job created", logging.KeyJobID, c.JobID, "groups", len(groups), "rows", total)
 	return nil
 }
 
@@ -219,12 +196,13 @@ type StoreLinkRefreshItemArgs struct {
 func (StoreLinkRefreshItemArgs) Kind() string { return "store_link_refresh_item" }
 
 func (StoreLinkRefreshItemArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 3, Priority: 3}
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3}
 }
 
 type StoreLinkRefreshItemWorker struct {
 	river.WorkerDefaults[StoreLinkRefreshItemArgs]
 	DB          *bun.DB
+	LC          *joblifecycle.Module
 	ResolverFor resolverFactory
 }
 
@@ -232,21 +210,10 @@ type StoreLinkRefreshItemWorker struct {
 // (user, storefront) group, which for a large rate-limited storefront (PSN
 // makes one ~200ms-throttled call per title) easily exceeds a minute. The bound
 // is generous rather than disabled (-1) so a hung upstream still hits the
-// deadline; the work loop then sees the cancelled context, the item is finalized
-// failed, and the next incremental refresh re-resolves its still-null rows.
+// deadline; the attempt then counts as failed and River retries it, and after
+// the last one recovery fails the item.
 func (w *StoreLinkRefreshItemWorker) Timeout(*river.Job[StoreLinkRefreshItemArgs]) time.Duration {
 	return 30 * time.Minute
-}
-
-func (w *StoreLinkRefreshItemWorker) Work(ctx context.Context, job *river.Job[StoreLinkRefreshItemArgs]) error {
-	if err := w.ProcessItem(ctx, job.Args.JobItemID); err != nil {
-		// Only the pre-load failure path returns an error; surface it so River
-		// retries (the item was never loaded, so nothing could be marked). Every
-		// other path finalizes the item itself.
-		slog.ErrorContext(ctx, "store_link_refresh_item: process", logging.KeyErr, err, logging.KeyJobItemID, job.Args.JobItemID, logging.Cat(logging.CategoryDB))
-		return err
-	}
-	return nil
 }
 
 type storeLinkItemMeta struct {
@@ -254,42 +221,30 @@ type storeLinkItemMeta struct {
 	Force      bool   `json:"force"`
 }
 
-// ProcessItem resolves store_link for one (user, storefront) group. It guarantees
-// the job_item always reaches a terminal state: a deferred finalizer marks it
-// failed if no explicit terminal mark was made (e.g. shutdown cut the work loop
-// short), so an item can never be orphaned in 'pending' (which would wedge the
-// parent job and the dispatch guard). All bookkeeping writes use a
-// cancellation-free context so a cancelled job context cannot orphan the item.
-// Returns a non-nil error only when the job_item itself could not be loaded.
-func (w *StoreLinkRefreshItemWorker) ProcessItem(ctx context.Context, jobItemID string) error {
-	var item models.JobItem
-	if err := w.DB.NewSelect().Model(&item).Where("id = ?", jobItemID).Scan(ctx); err != nil {
-		return fmt.Errorf("load job_item: %w", err)
+// Work resolves store_link for one (user, storefront) group. Each link is
+// saved as it is resolved (a progress write, outside the transition), so a
+// second attempt only has the rows still without one left to do; only the end
+// of the group is the item's transition. An interrupted item records nothing
+// and is run again.
+func (w *StoreLinkRefreshItemWorker) Work(ctx context.Context, job *river.Job[StoreLinkRefreshItemArgs]) error {
+	item, done, err := loadOwnedItem(ctx, w.DB, w.LC, job.Args.JobItemID, job.ID)
+	if done || err != nil {
+		return err
 	}
-	// Correlate every line below to the parent job (bookCtx inherits this value).
 	ctx = logging.WithJobID(ctx, item.JobID)
-
-	bookCtx := context.WithoutCancel(ctx)
-	finalized := false
-	defer func() {
-		if !finalized {
-			markItemFailed(bookCtx, w.DB, &item, "interrupted before completion", "store_link_refresh: markItemFailed")
-		}
-		storeLinkCheckJobCompletion(bookCtx, w.DB, item.JobID)
-	}()
+	fail := func(msg string) error { return failItem(ctx, w.LC, item.ID, job.ID, msg) }
 
 	var meta storeLinkItemMeta
 	if err := json.Unmarshal(item.SourceMetadata, &meta); err != nil {
-		markItemFailed(bookCtx, w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err), "store_link_refresh: markItemFailed")
-		finalized = true
-		return nil
+		return fail(fmt.Sprintf("parse source_metadata: %v", err))
 	}
 
 	resolver, err := w.ResolverFor(ctx, meta.Storefront, item.UserID)
 	if err != nil {
-		markItemFailed(bookCtx, w.DB, &item, fmt.Sprintf("resolver: %v", err), "store_link_refresh: markItemFailed")
-		finalized = true
-		return nil
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fail(fmt.Sprintf("resolver: %v", err))
 	}
 
 	var rows []struct {
@@ -303,18 +258,17 @@ func (w *StoreLinkRefreshItemWorker) ProcessItem(ctx context.Context, jobItemID 
 		q += ` AND store_link IS NULL`
 	}
 	if err := w.DB.NewRaw(q, item.UserID, meta.Storefront).Scan(ctx, &rows); err != nil {
-		markItemFailed(bookCtx, w.DB, &item, fmt.Sprintf("select target rows: %v", err), "store_link_refresh: markItemFailed")
-		finalized = true
-		return nil
+		if ctx.Err() == nil && lastAttempt(job.JobRow) {
+			return fail(fmt.Sprintf("select target rows: %v", err))
+		}
+		return exitOrRetry(ctx, fmt.Errorf("select target rows: %w", err))
 	}
 
 	for _, r := range rows {
 		if ctx.Err() != nil {
-			// Shutdown mid-loop: stop now. The deferred finalizer marks the item
-			// failed; the next incremental refresh re-resolves the rows still null.
-			slog.InfoContext(ctx, "store_link_refresh: interrupted mid-group, remaining rows resolve on next refresh",
-				logging.KeySource, meta.Storefront, logging.KeyJobItemID, jobItemID)
-			return nil
+			slog.InfoContext(ctx, "store_link_refresh: interrupted mid-group, it runs again",
+				logging.KeySource, meta.Storefront, logging.KeyJobItemID, item.ID)
+			return ctx.Err()
 		}
 		var sm map[string]string
 		if len(r.SourceMetadata) > 0 {
@@ -330,73 +284,13 @@ func (w *StoreLinkRefreshItemWorker) ProcessItem(ctx context.Context, jobItemID 
 		}
 		if _, e := w.DB.NewRaw(
 			`UPDATE external_games SET store_link = ?, updated_at = now() WHERE id = ?`, link, r.ID,
-		).Exec(bookCtx); e != nil {
+		).Exec(ctx); e != nil {
 			slog.WarnContext(ctx, "store_link_refresh: update store_link", logging.KeyErr, e, "id", r.ID, logging.Cat(logging.CategoryDB))
 		}
 	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
-	markItemCompleted(bookCtx, w.DB, &item, "store_link_refresh: markItemCompleted")
-	finalized = true
-	return nil
-}
-
-func storeLinkCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
-	remaining, ok := countJobItems(ctx, db, jobID, "status NOT IN ('completed','failed','skipped')", "store_link_refresh: check job completion")
-	if !ok || remaining > 0 {
-		return
-	}
-	finalizeJobCompleted(ctx, db, jobID, "store_link_refresh: finalize", false)
-}
-
-// storeLinkReapMinAge keeps the reaper from failing a just-dispatched item in
-// the brief window between its job_items insert and its River enqueue.
-const storeLinkReapMinAge = 2 * time.Minute
-
-// reapStuckStoreLinkJobs finalizes store_link_refresh jobs wedged by an orphaned
-// item — one left in pending/processing with no non-terminal River job backing
-// it (e.g. a worker killed mid-run before the finalize fix landed). It marks such
-// items failed and runs the completion check so the parent job finalizes and
-// stops blocking the dispatch guard. Self-healing on every dispatch (sync
-// completion or admin trigger), so no manual intervention is needed on any
-// instance. The next incremental refresh re-resolves the failed items' null rows.
-func reapStuckStoreLinkJobs(ctx context.Context, db *bun.DB) {
-	var stuck []struct {
-		ItemID string `bun:"id"`
-		JobID  string `bun:"job_id"`
-	}
-	if err := db.NewRaw(`
-		SELECT ji.id, ji.job_id
-		FROM job_items ji
-		JOIN jobs j ON j.id = ji.job_id
-		WHERE j.job_type = ?
-		  AND j.status IN ('pending','processing')
-		  AND ji.status IN ('pending','processing')
-		  AND ji.created_at < now() - (?::text || ' seconds')::interval
-		  AND NOT EXISTS (
-		    SELECT 1 FROM river_job rj
-		    WHERE rj.args->>'job_item_id' = ji.id
-		      AND rj.state NOT IN ('completed','discarded','cancelled')
-		  )`,
-		models.JobTypeStoreLinkRefresh, int64(storeLinkReapMinAge.Seconds()),
-	).Scan(ctx, &stuck); err != nil {
-		slog.ErrorContext(ctx, "store_link_refresh_dispatch: reap query", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return
-	}
-	if len(stuck) == 0 {
-		return
-	}
-	jobIDs := make(map[string]struct{})
-	for _, s := range stuck {
-		var item models.JobItem
-		if err := db.NewSelect().Model(&item).Where("id = ?", s.ItemID).Scan(ctx); err != nil {
-			slog.WarnContext(ctx, "store_link_refresh_dispatch: reap load item", logging.KeyErr, err, logging.KeyJobItemID, s.ItemID, logging.Cat(logging.CategoryDB))
-			continue
-		}
-		markItemFailed(ctx, db, &item, "orphaned: no active worker (reaped)", "store_link_refresh: reap")
-		jobIDs[s.JobID] = struct{}{}
-	}
-	for jobID := range jobIDs {
-		storeLinkCheckJobCompletion(ctx, db, jobID)
-	}
-	slog.InfoContext(ctx, "store_link_refresh_dispatch: reaped orphaned items", "items", len(stuck), "jobs", len(jobIDs))
+	return exitOrRetry(ctx, w.LC.FinishItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{Status: models.JobItemStatusCompleted}))
 }

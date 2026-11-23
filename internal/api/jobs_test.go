@@ -796,10 +796,13 @@ func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
 		jobID   string
 		jobType string
 		source  string
+		status  string
 	}{
 		{name: "import", suffix: "jobs-retry-withfail", jobID: "job-retry-wf", jobType: "import", source: "steam"},
 		{name: "sync", suffix: "jobs-retry-sync", jobID: "job-retry-sync", jobType: "sync", source: "steam"},
-		{name: "metadata_refresh", suffix: "jobs-retry-meta", jobID: "job-retry-meta", jobType: "metadata_refresh", source: "system"},
+		// A kind on the lifecycle module is retried only while active or
+		// completed (TestRetryFailed_LifecycleKindFinishedJobIs409).
+		{name: "metadata_refresh", suffix: "jobs-retry-meta", jobID: "job-retry-meta", jobType: "metadata_refresh", source: "system", status: "completed"},
 	}
 
 	for _, tt := range tests {
@@ -808,7 +811,11 @@ func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
 			e := newTestEchoWithPool(t, testDB)
 			userID, token := setupTagUser(t, testDB, e, tt.suffix)
 
-			insertJob(t, testDB, tt.jobID, userID, tt.jobType, tt.source, "failed")
+			status := tt.status
+			if status == "" {
+				status = "failed"
+			}
+			insertJob(t, testDB, tt.jobID, userID, tt.jobType, tt.source, status)
 			failed1 := tt.jobID + "-f1"
 			failed2 := tt.jobID + "-f2"
 			insertJobItem(t, testDB, failed1, tt.jobID, userID, "key-rf1", "Failed Game 1", "failed")

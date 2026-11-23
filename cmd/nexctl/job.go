@@ -208,6 +208,7 @@ func newJobShowCmd() *cobra.Command {
 			fmt.Fprintf(out, "  pending_review: %d\n", pr.PendingReview)
 			fmt.Fprintf(out, "  skipped:        %d\n", pr.Skipped)
 			fmt.Fprintf(out, "  failed:         %d\n", pr.Failed)
+			fmt.Fprintf(out, "  cancelled:      %d\n", pr.Cancelled)
 			fmt.Fprintf(out, "  total:          %d\n", pr.Total)
 			fmt.Fprintf(out, "  percent:        %d\n", pr.Percent)
 			return nil
