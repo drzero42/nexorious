@@ -211,6 +211,54 @@ func (m *Module) AddItems(ctx context.Context, jobID string, riverJobID int64, i
 	})
 }
 
+// AddNewItems is AddItems for a dispatch that adds in batches and can be run
+// again: an item whose item_key the Job already has, or that comes twice in
+// items, is left out, so no existing item gets a second River job. It returns
+// how many items it created. The Job row lock serialises it with every other
+// insert into the Job.
+func (m *Module) AddNewItems(ctx context.Context, jobID string, riverJobID int64, items []NewItem) (int, error) {
+	var n int
+	err := m.run(ctx, "add_new_items", func(ctx context.Context, tx bun.Tx, _ *txState) error {
+		n = 0
+		job, k, err := m.lockDispatch(ctx, tx, jobID, riverJobID)
+		if err != nil {
+			return err
+		}
+		if job.Status != models.JobStatusProcessing {
+			return ErrJobNotActive
+		}
+		if len(items) == 0 {
+			return nil
+		}
+		keys := make([]string, len(items))
+		for i, it := range items {
+			keys[i] = it.ItemKey
+		}
+		var existing []string
+		if err := tx.NewRaw(`SELECT item_key FROM job_items WHERE job_id = ? AND item_key IN (?)`, job.ID, bun.List(keys)).Scan(ctx, &existing); err != nil {
+			return fmt.Errorf("load existing items: %w", err)
+		}
+		seen := make(map[string]bool, len(existing)+len(items))
+		for _, key := range existing {
+			seen[key] = true
+		}
+		fresh := make([]NewItem, 0, len(items))
+		for _, it := range items {
+			if seen[it.ItemKey] {
+				continue
+			}
+			seen[it.ItemKey] = true
+			fresh = append(fresh, it)
+		}
+		if err := m.insertItems(ctx, tx, k, job, fresh); err != nil {
+			return err
+		}
+		n = len(fresh)
+		return nil
+	})
+	return n, err
+}
+
 // Dispatched is what the dispatch owner records when it marks the dispatch
 // done.
 type Dispatched struct {
@@ -253,6 +301,11 @@ func (m *Module) MarkDispatched(ctx context.Context, jobID string, riverJobID in
 			if err := d.Own(ctx, tx); err != nil {
 				return err
 			}
+		}
+		// Items that waited on an item the dispatch never added, and items
+		// the kind no longer names as waiting, are queued now.
+		if err := m.queueUnwaitable(ctx, tx, k, job); err != nil {
+			return err
 		}
 		return m.evaluate(ctx, tx, st, k, job, false)
 	})
@@ -378,7 +431,7 @@ func (m *Module) finishItem(ctx context.Context, tx bun.Tx, st *txState, k *Kind
 		jobCopy := *job
 		st.onCommit(func(ctx context.Context) { k.Observer.ItemFinished(ctx, jobCopy, status) })
 	}
-	return nil
+	return m.releaseWaiters(ctx, tx, k, job, []string{item.ID})
 }
 
 // Failure is how a Job is failed.
@@ -515,6 +568,12 @@ func (m *Module) Retry(ctx context.Context, jobID string, itemIDs []string) (int
 			}
 			return nil
 		}
+		// Retrying an item retries the failed items that wait on it too.
+		if len(itemIDs) > 0 && k.WaitsOn != nil {
+			if items, err = m.withFailedWaiters(ctx, tx, k, job, items); err != nil {
+				return err
+			}
+		}
 		if job.Status == models.JobStatusCompleted {
 			if key, ok := k.DuplicateKey(job); ok {
 				if err := acquireDupLock(ctx, tx, job.JobType, key); err != nil {
@@ -553,4 +612,37 @@ func (m *Module) Retry(ctx context.Context, jobID string, itemIDs []string) (int
 		return nil
 	})
 	return n, err
+}
+
+// withFailedWaiters adds to items the failed items of the Job that, by the
+// kind's rule, wait on one of them.
+func (m *Module) withFailedWaiters(ctx context.Context, tx bun.Tx, k *Kind, job *models.Job, items []models.JobItem) ([]models.JobItem, error) {
+	in := make(map[string]bool, len(items))
+	ids := make([]string, len(items))
+	for i, it := range items {
+		in[it.ID] = true
+		ids[i] = it.ID
+	}
+	edges, err := k.WaitsOn(ctx, tx, WaitQuery{JobID: job.ID, Awaited: ids})
+	if err != nil {
+		return nil, fmt.Errorf("waits on: %w", err)
+	}
+	var more []string
+	for _, e := range edges {
+		if !in[e.ItemID] {
+			in[e.ItemID] = true
+			more = append(more, e.ItemID)
+		}
+	}
+	if len(more) == 0 {
+		return items, nil
+	}
+	var waiters []models.JobItem
+	if err := tx.NewSelect().Model(&waiters).
+		Where("job_id = ? AND id IN (?) AND status = 'failed'", job.ID, bun.List(more)).
+		Order("created_at", "id").
+		Scan(ctx); err != nil {
+		return nil, fmt.Errorf("load failed waiters: %w", err)
+	}
+	return append(items, waiters...), nil
 }

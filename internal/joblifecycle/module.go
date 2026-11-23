@@ -142,6 +142,10 @@ type Kind struct {
 	HasEffects func(o Outcome) bool
 	// Observer is optional.
 	Observer Observer
+	// WaitsOn says which items wait on which other item (docs/job-lifecycle.md,
+	// "Items that wait on another item"). It is read-only and runs in the
+	// module's transaction. Nil means the kind's items never wait.
+	WaitsOn func(ctx context.Context, tx bun.Tx, q WaitQuery) ([]WaitEdge, error)
 }
 
 func (k *Kind) hasEffects(o Outcome) bool {

@@ -67,6 +67,10 @@ func (m *Module) NextStage(ctx context.Context, itemID string, riverJobID int64,
 type Review struct {
 	Candidates      json.RawMessage // nil keeps what the item has
 	MatchConfidence *float64
+	// Divert, when set, runs first in the transaction. When it returns args,
+	// the item is handed to that next stage instead of Pending review (the
+	// work was done meanwhile, for instance a sync game matched by a rematch).
+	Divert func(ctx context.Context, tx bun.Tx) (river.JobArgs, error)
 }
 
 // AwaitReview sends an item its caller owns to Pending review (pending →
@@ -77,6 +81,24 @@ func (m *Module) AwaitReview(ctx context.Context, itemID string, riverJobID int6
 		job, k, item, err := m.lockItem(ctx, tx, itemID, riverJobID)
 		if err != nil {
 			return err
+		}
+		if r.Divert != nil {
+			args, err := r.Divert(ctx, tx)
+			if err != nil {
+				return err
+			}
+			if args != nil {
+				rid, err := m.insertOne(ctx, tx, args)
+				if err != nil {
+					return err
+				}
+				if _, err := tx.NewRaw(
+					`UPDATE job_items SET river_job_id = ? WHERE id = ? AND status = 'pending'`, rid, item.ID,
+				).Exec(ctx); err != nil {
+					return fmt.Errorf("next stage: %w", err)
+				}
+				return nil
+			}
 		}
 		q := tx.NewUpdate().Table("job_items").
 			Set("status = 'pending_review'").
@@ -166,6 +188,9 @@ func (m *Module) Skip(ctx context.Context, itemID string) error {
 		if k.Observer != nil {
 			jobCopy := *job
 			st.onCommit(func(ctx context.Context) { k.Observer.ItemFinished(ctx, jobCopy, models.JobItemStatusSkipped) })
+		}
+		if err := m.releaseWaiters(ctx, tx, k, job, []string{item.ID}); err != nil {
+			return err
 		}
 		return m.evaluate(ctx, tx, st, k, job, true)
 	})
