@@ -452,7 +452,8 @@ func syncRetryDelay(failures int, interval time.Duration) time.Duration {
 
 // syncBackoff reports whether a store whose syncs have been failing should
 // wait before its next scheduled sync, and for how long. The failures counted
-// are the store's failed syncs since its last successful one, manual or
+// are the store's failed syncs since its last successful fetch
+// (last_fetched_at, which Reset sync data leaves alone: #1405), manual or
 // scheduled, credential failures included. A failed lookup never holds a sync
 // back.
 func syncBackoff(ctx context.Context, db *bun.DB, cfg models.UserSyncConfig, interval time.Duration, now time.Time) (time.Duration, bool) {
@@ -465,7 +466,7 @@ func syncBackoff(ctx context.Context, db *bun.DB, cfg models.UserSyncConfig, int
 		 WHERE user_id = ? AND source = ? AND job_type = 'sync' AND status = 'failed'
 		   AND completed_at IS NOT NULL
 		   AND (?::timestamptz IS NULL OR completed_at > ?::timestamptz)`,
-		cfg.UserID, cfg.Storefront, cfg.LastSyncedAt, cfg.LastSyncedAt,
+		cfg.UserID, cfg.Storefront, cfg.LastFetchedAt, cfg.LastFetchedAt,
 	).Scan(ctx, &row); err != nil {
 		slog.WarnContext(ctx, "CheckPendingSyncs: count failed syncs", logging.Cat(logging.CategoryDB), logging.KeyErr, err, logging.KeyUserID, cfg.UserID, logging.KeySource, cfg.Storefront)
 		return 0, false

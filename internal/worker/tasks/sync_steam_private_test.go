@@ -131,17 +131,25 @@ func TestDispatchSync_FailureNotifiesOncePerOutage(t *testing.T) {
 		reply       string
 		status      int
 		credentials bool // the adapter reports a credentials failure
+		reset       bool // Reset sync data runs first
 		events      int  // -1: not checked
 	}{
-		{"first incomplete reply", `{"response":{}}`, http.StatusOK, false, 1},
-		{"different failure, same outage", `{}`, http.StatusBadGateway, false, 0},
-		{"repeat incomplete reply", `{"response":{"games":[]}}`, http.StatusOK, false, 0},
-		{"successful empty library", `{"response":{"game_count":0}}`, http.StatusOK, false, 0},
-		{"credentials failure", "", 0, true, -1},
-		{"first failure after the credentials failure", `{}`, http.StatusBadGateway, false, 1},
-		{"repeat failure", `{"response":{}}`, http.StatusOK, false, 0},
+		{"first incomplete reply", `{"response":{}}`, http.StatusOK, false, false, 1},
+		{"different failure, same outage", `{}`, http.StatusBadGateway, false, false, 0},
+		{"repeat incomplete reply", `{"response":{"games":[]}}`, http.StatusOK, false, false, 0},
+		{"successful empty library", `{"response":{"game_count":0}}`, http.StatusOK, false, false, 0},
+		{"credentials failure", "", 0, true, false, -1},
+		{"first failure after the credentials failure", `{}`, http.StatusBadGateway, false, false, 1},
+		{"repeat failure", `{"response":{}}`, http.StatusOK, false, false, 0},
+		{"successful sync ends the outage", `{"response":{"game_count":0}}`, http.StatusOK, false, false, 0},
+		// Reset sync data clears last_synced_at but not the store's earlier
+		// failures, which belong to outages that are over (#1405).
+		{"first failure after a reset", `{}`, http.StatusBadGateway, false, true, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.reset {
+				resetSyncData(t, userID)
+			}
 			jobID := uuid.NewString()
 			if _, err := testDB.ExecContext(ctx,
 				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
@@ -205,19 +213,26 @@ func TestDispatchSync_RecoveryNotifiesOncePerOutage(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		outcome   string
-		recovered int // sync.recovered events for this Job
+		reset     bool // Reset sync data runs first
+		recovered int  // sync.recovered events for this Job
 	}{
-		{"first sync succeeds", success, 0},
-		{"store starts failing", failure, 0},
-		{"store still failing", failure, 0},
-		{"store works again", success, 1},
-		{"store keeps working", success, 0},
-		{"credentials failure", credentials, 0},
-		{"works after the credentials failure", success, 0},
-		{"store fails again", failure, 0},
-		{"works again after the second outage", success, 1},
+		{"first sync succeeds", success, false, 0},
+		{"store starts failing", failure, false, 0},
+		{"store still failing", failure, false, 0},
+		{"store works again", success, false, 1},
+		{"store keeps working", success, false, 0},
+		{"credentials failure", credentials, false, 0},
+		{"works after the credentials failure", success, false, 0},
+		{"store fails again", failure, false, 0},
+		{"works again after the second outage", success, false, 1},
+		// Reset sync data clears last_synced_at but not the store's earlier
+		// failures, which belong to outages that are over (#1405).
+		{"works after a reset", success, true, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.reset {
+				resetSyncData(t, userID)
+			}
 			jobID := uuid.NewString()
 			if _, err := testDB.ExecContext(ctx,
 				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
@@ -258,5 +273,16 @@ func TestDispatchSync_RecoveryNotifiesOncePerOutage(t *testing.T) {
 				t.Errorf("sync.recovered events = %d, want %d", got, tc.recovered)
 			}
 		})
+	}
+}
+
+// resetSyncData does what Reset sync data does to the store's config: it
+// clears last_synced_at.
+func resetSyncData(t *testing.T, userID string) {
+	t.Helper()
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE user_sync_configs SET last_synced_at = NULL WHERE user_id = ? AND storefront = 'steam'`, userID,
+	); err != nil {
+		t.Fatalf("reset sync data: %v", err)
 	}
 }

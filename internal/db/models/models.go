@@ -215,7 +215,9 @@ type ExternalGamePlatform struct {
 	CreatedAt            time.Time `bun:"created_at,nullzero,notnull"        json:"created_at"`
 }
 
-// UserSyncConfig mirrors the user_sync_configs table.
+// UserSyncConfig mirrors the user_sync_configs table. LastFetchedAt is when
+// the library was last fetched successfully: Reset sync data clears
+// LastSyncedAt but not LastFetchedAt, which bounds the sync outage rule (#1405).
 type UserSyncConfig struct {
 	bun.BaseModel `bun:"table:user_sync_configs"`
 
@@ -225,6 +227,7 @@ type UserSyncConfig struct {
 	Frequency             string     `bun:"frequency,notnull"       json:"frequency"`
 	StorefrontCredentials *string    `bun:"storefront_credentials"  json:"-"`
 	LastSyncedAt          *time.Time `bun:"last_synced_at"          json:"last_synced_at"`
+	LastFetchedAt         *time.Time `bun:"last_fetched_at"         json:"-"`
 	CredentialsError      bool       `bun:"credentials_error"       json:"-"`
 	CreatedAt             time.Time  `bun:"created_at,nullzero,notnull"      json:"created_at"`
 	UpdatedAt             time.Time  `bun:"updated_at,nullzero,notnull"      json:"updated_at"`

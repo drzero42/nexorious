@@ -394,11 +394,11 @@ Storefront associations created outside sync (e.g. CSV import onto non-sync stor
 
 A periodic worker checks `user_sync_configs` for all users where the sync frequency is not `manual` and the last sync was more than the configured interval ago (hourly / daily / weekly). For each, it creates a Job and enqueues a Stage 1 run — provided no active job already exists for that user and storefront. All six storefronts support scheduled sync.
 
-After a failed sync the next scheduled one waits: 15 minutes after the newest failure, doubled for each further failure since the last successful sync (manual and credential failures count too), and never longer than the sync interval. A failed lookup of that history never holds a sync back.
+After a failed sync the next scheduled one waits: 15 minutes after the newest failure, doubled for each further failure since the last successful fetch (manual and credential failures count too), and never longer than the sync interval. A failed lookup of that history never holds a sync back.
 
-Only the first failure since the last successful sync sends `sync.failed`; later ones are logged and stay quiet, whatever their message, so one outage sends one notice. Credential failures are not counted for this, since they send their own notice (see [Credential errors](#credential-errors)) only on the change into the error state.
+Only the first failure since the last successful fetch sends `sync.failed`; later ones are logged and stay quiet, whatever their message, so one outage sends one notice. Credential failures are not counted for this, since they send their own notice (see [Credential errors](#credential-errors)) only on the change into the error state.
 
-The first successful fetch after such an outage sends `sync.recovered`, before `last_synced_at` moves past it, so the user learns the outage is over. A store that failed only for its credentials sent no `sync.failed`, and the user's reconnect ended it, so its recovery sends nothing.
+The first successful fetch after such an outage sends `sync.recovered`, so the user learns the outage is over. Both rules measure the outage from the store's last successful fetch, which Reset sync data leaves alone: a reset neither hides a new outage nor reports the end of one that was never notified. A store that failed only for its credentials sent no `sync.failed`, and the user's reconnect ended it, so its recovery sends nothing.
 
 ---
 
