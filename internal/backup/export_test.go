@@ -1,6 +1,9 @@
 package backup
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // SetPgDumpAvailableForTest overrides whether pg_dump counts as installed.
 func SetPgDumpAvailableForTest(t testing.TB, v bool) {
@@ -11,7 +14,7 @@ func SetPgDumpAvailableForTest(t testing.TB, v bool) {
 }
 
 // SetRunPgDumpForTest replaces the pg_dump run a backup makes.
-func SetRunPgDumpForTest(t testing.TB, f func(DBConnParams, string) error) {
+func SetRunPgDumpForTest(t testing.TB, f func(DBConnParams, string, time.Duration) error) {
 	t.Helper()
 	old := runPgDump
 	runPgDump = f

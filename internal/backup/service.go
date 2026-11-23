@@ -114,6 +114,22 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 // runPgDump is RunPgDump; tests replace it to make a backup fail.
 var runPgDump = RunPgDump
 
+// dumpTimeout scales the pg_dump deadline with the database size. The size
+// counts indexes and dead rows, which a dump leaves out, so it errs on the
+// generous side. When it can't be read, the dump gets the base timeout: a
+// database that can't answer this query fails pg_dump quickly anyway.
+func (s *Service) dumpTimeout() time.Duration {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var size int64
+	if err := s.db.QueryRowContext(ctx, "SELECT pg_database_size(current_database())").Scan(&size); err != nil {
+		slog.WarnContext(ctx, "backup: could not read the database size, using the base pg_dump timeout",
+			logging.KeyErr, err, "timeout", toolTimeoutBase, logging.Cat(logging.CategoryDB))
+		return toolTimeoutBase
+	}
+	return toolTimeout(size)
+}
+
 // createBackupLocked is CreateBackup for a caller that holds the lock: the
 // restore makes its pre-restore backup with it.
 func (s *Service) createBackupLocked(backupType string) (string, error) {
@@ -139,7 +155,7 @@ func (s *Service) createBackupLocked(backupType string) (string, error) {
 	}
 
 	dbSQLPath := filepath.Join(backupDir, "database.sql")
-	if err := runPgDump(conn, dbSQLPath); err != nil {
+	if err := runPgDump(conn, dbSQLPath, s.dumpTimeout()); err != nil {
 		return "", fmt.Errorf("pg_dump: %w", err)
 	}
 

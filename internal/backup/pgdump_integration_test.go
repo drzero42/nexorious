@@ -3,9 +3,12 @@ package backup_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
@@ -50,7 +53,7 @@ func TestRunPgDump_ExcludesQueueAndRestoreMarker(t *testing.T) {
 	})
 
 	dumpPath := filepath.Join(t.TempDir(), "database.sql")
-	if err := backup.RunPgDump(conn, dumpPath); err != nil {
+	if err := backup.RunPgDump(conn, dumpPath, 5*time.Minute); err != nil {
 		t.Fatalf("RunPgDump: %v", err)
 	}
 
@@ -104,5 +107,33 @@ func TestRunPgDump_ExcludesQueueAndRestoreMarker(t *testing.T) {
 	}
 	if lastValue < maxJobID {
 		t.Errorf("river_job_id_seq last_value = %d, want >= %d (sequence lost)", lastValue, maxJobID)
+	}
+}
+
+// A dump cut off by its deadline says so, instead of the bare "signal: killed"
+// the killed process leaves behind (#1359).
+func TestRunPgDump_ReportsTimeout(t *testing.T) {
+	conn := requirePsqlTools(t)
+	err := backup.RunPgDump(conn, filepath.Join(t.TempDir(), "database.sql"), time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "pg_dump timed out after 1ms") {
+		t.Fatalf("err = %v, want a pg_dump timeout", err)
+	}
+}
+
+// A backup scales pg_dump's deadline with the database size, so a database
+// that takes longer than the base timeout to dump can still be backed up
+// (#1359). The test database holds a few MiB, which must add to the base.
+func TestCreateBackup_DumpTimeoutScalesWithDatabaseSize(t *testing.T) {
+	var got time.Duration
+	backup.SetRunPgDumpForTest(t, func(_ backup.DBConnParams, _ string, timeout time.Duration) error {
+		got = timeout
+		return errors.New("stop here")
+	})
+	svc := backup.NewService(testDB, testDSN, t.TempDir(), t.TempDir(), "0.1.0")
+	if _, err := svc.CreateBackup("manual"); err == nil {
+		t.Fatal("CreateBackup succeeded with a failing pg_dump")
+	}
+	if got <= 5*time.Minute {
+		t.Errorf("pg_dump timeout = %s, want more than the 5m base for a database of several MiB", got)
 	}
 }
