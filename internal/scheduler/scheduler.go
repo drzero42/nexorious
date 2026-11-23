@@ -154,21 +154,29 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 	}
 
 	now := time.Now().UTC()
-	intervals := map[string]float64{
-		"hourly": 3600,
-		"daily":  86400,
-		"weekly": 604800,
+	intervals := map[string]time.Duration{
+		"hourly": time.Hour,
+		"daily":  24 * time.Hour,
+		"weekly": 7 * 24 * time.Hour,
 	}
 
 	for _, cfg := range configs {
+		interval, known := intervals[cfg.Frequency]
 		needsSync := false
 		if cfg.LastSyncedAt == nil {
 			needsSync = true
-		} else if threshold, ok := intervals[cfg.Frequency]; ok {
-			needsSync = now.Sub(*cfg.LastSyncedAt).Seconds() >= threshold
+		} else if known {
+			needsSync = now.Sub(*cfg.LastSyncedAt) >= interval
 		}
 
 		if !needsSync {
+			continue
+		}
+		if !known {
+			interval = 24 * time.Hour
+		}
+		if wait, backingOff := syncBackoff(ctx, w.DB, cfg, interval, now); backingOff {
+			slog.DebugContext(ctx, "CheckPendingSyncs: store is failing; backing off", logging.KeyUserID, cfg.UserID, logging.KeySource, cfg.Storefront, "retry_in", wait.Round(time.Second))
 			continue
 		}
 
@@ -462,4 +470,45 @@ func CleanupExpiredSessions(ctx context.Context, db *bun.DB) {
 	if rows > 0 {
 		slog.InfoContext(ctx, "cleanup: deleted expired sessions", "count", rows)
 	}
+}
+
+// syncRetryBase is the wait after a store's first failed sync. Each further
+// failure doubles it, up to the store's sync interval (#1344).
+const syncRetryBase = 15 * time.Minute
+
+// syncRetryDelay is how long to wait after the newest of failures consecutive
+// failed syncs: syncRetryBase doubled per earlier failure, capped at interval.
+func syncRetryDelay(failures int, interval time.Duration) time.Duration {
+	d := syncRetryBase
+	for i := 1; i < failures && d < interval; i++ {
+		d *= 2
+	}
+	return min(d, interval)
+}
+
+// syncBackoff reports whether a store whose syncs have been failing should
+// wait before its next scheduled sync, and for how long. The failures counted
+// are the store's failed syncs since its last successful one, manual or
+// scheduled, credential failures included. A failed lookup never holds a sync
+// back.
+func syncBackoff(ctx context.Context, db *bun.DB, cfg models.UserSyncConfig, interval time.Duration, now time.Time) (time.Duration, bool) {
+	var row struct {
+		Failures   int        `bun:"failures"`
+		LastFailed *time.Time `bun:"last_failed"`
+	}
+	if err := db.NewRaw(
+		`SELECT COUNT(*) AS failures, MAX(completed_at) AS last_failed FROM jobs
+		 WHERE user_id = ? AND source = ? AND job_type = 'sync' AND status = 'failed'
+		   AND completed_at IS NOT NULL
+		   AND (?::timestamptz IS NULL OR completed_at > ?::timestamptz)`,
+		cfg.UserID, cfg.Storefront, cfg.LastSyncedAt, cfg.LastSyncedAt,
+	).Scan(ctx, &row); err != nil {
+		slog.WarnContext(ctx, "CheckPendingSyncs: count failed syncs", logging.Cat(logging.CategoryDB), logging.KeyErr, err, logging.KeyUserID, cfg.UserID, logging.KeySource, cfg.Storefront)
+		return 0, false
+	}
+	if row.Failures == 0 || row.LastFailed == nil {
+		return 0, false
+	}
+	wait := row.LastFailed.Add(syncRetryDelay(row.Failures, interval)).Sub(now)
+	return wait, wait > 0
 }
