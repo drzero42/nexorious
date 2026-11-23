@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.99.0 (2026-11-23)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Features
+* feat(sync): add Amazon Games storefront through nile by @Ashkaan in https://github.com/drzero42/nexorious/pull/1315
+### Bug fixes
+* fix(sync): never let a child game wait on a parent that has no item in the sync by @drzero42 in https://github.com/drzero42/nexorious/pull/1364
+* fix(sync): rematch and unskip write the library directly instead of queueing sync work by @drzero42 in https://github.com/drzero42/nexorious/pull/1367
+* fix(backup): give every backup a unique id so a restore never overwrites its upload by @drzero42 in https://github.com/drzero42/nexorious/pull/1369
+* fix: keep the job queue out of backups and retry a failed River start by @drzero42 in https://github.com/drzero42/nexorious/pull/1371
+* fix: add id tiebreak to paginated list ordering by @Ashkaan in https://github.com/drzero42/nexorious/pull/1319
+* fix: hold a server whose restore did not finish, and clear in-flight work before Ready by @drzero42 in https://github.com/drzero42/nexorious/pull/1375
+* fix(steam): fail sync when owned-games reply has neither games nor game_count by @Ashkaan in https://github.com/drzero42/nexorious/pull/1318
+* fix: restore sorting by library fields by @Ashkaan in https://github.com/drzero42/nexorious/pull/1372
+* fix: allow 500 games per library page by @Ashkaan in https://github.com/drzero42/nexorious/pull/1373
+* fix: return empty library and job pages past the end by @Ashkaan in https://github.com/drzero42/nexorious/pull/1374
+* fix: stop background work before a restore, keep the lock throughout, and restart the server afterwards by @drzero42 in https://github.com/drzero42/nexorious/pull/1377
+* fix(ui): show the correct count on job progress cards by @Ashkaan in https://github.com/drzero42/nexorious/pull/1350
+* fix(sync): don't mark a reconnected store expired from an older sync by @Ashkaan in https://github.com/drzero42/nexorious/pull/1347
+* fix: wait for the server to restart after a restore in the web UI and nexctl by @drzero42 in https://github.com/drzero42/nexorious/pull/1378
+* fix(nix): put nile 1.2.0 on the server's PATH for Amazon Games sync by @drzero42 in https://github.com/drzero42/nexorious/pull/1379
+* fix(ui): sync page fixes and a cheaper connection refresh by @Ashkaan in https://github.com/drzero42/nexorious/pull/1348
+* fix: scale the pg_dump timeout with the database size by @drzero42 in https://github.com/drzero42/nexorious/pull/1381
+* fix(sync): notify once when a Steam library becomes unavailable by @Ashkaan in https://github.com/drzero42/nexorious/pull/1376
+* fix(sync): bind Amazon and Epic failures to the last saved sign-in by @Ashkaan in https://github.com/drzero42/nexorious/pull/1382
+* fix(ui): raise the contrast of the "Not Configured" sync badge by @drzero42 in https://github.com/drzero42/nexorious/pull/1383
+* fix(sync): give each Epic sign-in and sync its own Legendary directory by @drzero42 in https://github.com/drzero42/nexorious/pull/1384
+* fix(sync): back off failing scheduled syncs and notify once per outage by @drzero42 in https://github.com/drzero42/nexorious/pull/1386
+* fix(sync): remove Epic session directories left behind by a crash by @drzero42 in https://github.com/drzero42/nexorious/pull/1388
+
+## New Contributors
+* @Ashkaan made their first contribution in https://github.com/drzero42/nexorious/pull/1319
+
+**Full Changelog**: https://github.com/drzero42/nexorious/compare/v0.98.1...v0.99.0
+
 ## 0.98.1 (2026-11-23)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
