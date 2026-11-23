@@ -413,7 +413,7 @@ A restore loads the backup's `database.sql` with `psql` in restricted mode, so p
 
 The SQL in a backup still runs as Nexorious's database role, so **the role in `DATABASE_URL` must not be a PostgreSQL superuser**. See [Database role](#database-role).
 
-Keeping backups somewhere off the server, especially before upgrades, is the safest habit while the project is still moving quickly.
+Keeping backups somewhere off the server, especially before upgrades, is the safest habit while the project is still moving quickly. `nexctl backup create --download` takes a backup and downloads it in one step; `--out PATH` picks the file, and `--out -` writes the archive to stdout.
 
 #### What a restore does
 
@@ -582,7 +582,7 @@ Two command groups are operator-only and require an **admin** user's key — not
 |---|---|
 | `nexctl admin user list \| show \| create \| enable \| disable \| set-admin \| passwd \| rm` | Manage users from the terminal — the same operations as the [User Management](#user-management) page. `user rm` shows the deletion impact before confirming. |
 | `nexctl admin reset` | The instance [database reset](#database-reset). The loudest confirmation in the client; mirrors the danger-zone action in the UI. |
-| `nexctl backup list \| create \| rm \| download \| restore \| schedule set` | Manage [backups](#backups-and-restore): create one synchronously, download or remove backups, restore from a backup id or an uploaded file (a loud destructive confirm), and set the backup schedule. |
+| `nexctl backup list \| create \| rm \| download \| restore \| schedule set` | Manage [backups](#backups-and-restore): create one synchronously (`create --download [--out PATH\|-]` also downloads it), download or remove backups, restore from a backup id or an uploaded file (a loud destructive confirm), and set the backup schedule. |
 
 Per-user settings live under **`nexctl config`** (deal region, notification channels and subscriptions) — these aren't admin-only; any user manages their own.
 

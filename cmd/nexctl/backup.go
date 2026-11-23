@@ -90,30 +90,76 @@ func newBackupListCmd() *cobra.Command {
 }
 
 func newBackupCreateCmd() *cobra.Command {
-	return &cobra.Command{
+	var outPath string
+	var download bool
+	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Trigger a manual backup",
+		Long: `Trigger a manual backup and wait for it to finish.
+
+With --download the new archive is also downloaded, to --out (a path, or "-"
+for stdout) or, without --out, to the server filename (else backup-<id>.tar.gz).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
+			errW := cmd.ErrOrStderr()
+			asJSON, quiet := flagBool(cmd, "json"), flagBool(cmd, "quiet")
+			// Validate flags before the backup exists, so a usage error never
+			// leaves a backup behind.
+			if cmd.Flags().Changed("out") && !download {
+				return fmt.Errorf("--out needs --download")
+			}
+			toStdout := download && outPath == "-"
+			if toStdout && (asJSON || quiet) {
+				return fmt.Errorf("--out - writes the archive to stdout; it can't be combined with --json or --quiet")
+			}
+
 			p, _, err := resolveProfile(cmd)
 			if err != nil {
 				return err
 			}
-			res, err := cliclient.New(p.URL).CreateBackup(cmd.Context(), p.Key)
+			c := cliclient.New(p.URL)
+			res, err := c.CreateBackup(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("create backup: %w", err)
 			}
-			if flagBool(cmd, "json") {
-				return cliui.EncodeJSON(out, res)
+
+			// With the archive on stdout, the status line goes to stderr.
+			statusW := out
+			if toStdout {
+				statusW = errW
 			}
-			if flagBool(cmd, "quiet") {
+			switch {
+			case asJSON:
+				if err := cliui.EncodeJSON(out, res); err != nil {
+					return err
+				}
+			case quiet:
 				fmt.Fprintln(out, res.BackupID)
+			default:
+				fmt.Fprintf(statusW, "created backup %s\n", res.BackupID)
+			}
+			if !download {
 				return nil
 			}
-			fmt.Fprintf(out, "created backup %s\n", res.BackupID)
+
+			destPath, err := saveBackup(cmd.Context(), c, p.Key, res.BackupID, outPath, out)
+			if err != nil {
+				return fmt.Errorf("%w (backup %s was created; retry with: nexctl backup download %s)", err, res.BackupID, res.BackupID)
+			}
+			if destPath != "" {
+				// Keep stdout to the id / JSON under --quiet and --json.
+				doneW := out
+				if asJSON || quiet {
+					doneW = errW
+				}
+				fmt.Fprintf(doneW, "downloaded to %s\n", destPath)
+			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&download, "download", false, "Download the new backup once it is created")
+	cmd.Flags().StringVar(&outPath, "out", "", `With --download: output path; "-" for stdout; empty uses the server filename (else backup-<id>.tar.gz)`)
+	return cmd
 }
 
 func newBackupRmCmd() *cobra.Command {
@@ -178,40 +224,52 @@ func newBackupDownloadCmd() *cobra.Command {
 				}
 			}
 
-			serverName, body, err := c.OpenBackupDownload(cmd.Context(), p.Key, id)
+			destPath, err := saveBackup(cmd.Context(), c, p.Key, id, outPath, outW)
 			if err != nil {
-				return fmt.Errorf("download backup: %w", err)
+				return err
 			}
-			defer func() { _ = body.Close() }()
-
-			if outPath == "-" {
-				// Stream directly to stdout; no extra output so the stream is clean.
-				if _, err := io.Copy(outW, body); err != nil {
-					return fmt.Errorf("stream backup: %w", err)
-				}
-				return nil
+			if destPath != "" {
+				fmt.Fprintf(outW, "downloaded to %s\n", destPath)
 			}
-
-			// Prefer an explicit --out, then the server-suggested filename,
-			// then a predictable fallback.
-			destPath := outPath
-			if destPath == "" {
-				destPath = serverName
-			}
-			if destPath == "" {
-				destPath = fmt.Sprintf("backup-%s.tar.gz", id)
-			}
-
-			if err := writeFileAtomic(destPath, body); err != nil {
-				return fmt.Errorf("download backup: %w", err)
-			}
-			fmt.Fprintf(outW, "downloaded to %s\n", destPath)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&outPath, "out", "", `Output path; "-" for stdout; empty uses the server filename (else backup-<id>.tar.gz)`)
 	cmd.Flags().BoolVar(&latest, "latest", false, "Download the most recent backup instead of an explicit id")
 	return cmd
+}
+
+// saveBackup downloads backup id to outPath: "-" streams it to stdout,
+// empty uses the server-suggested filename (else backup-<id>.tar.gz). It
+// returns the path written, or "" when the archive went to stdout. It prints
+// nothing itself, so stdout carries only the archive under "-".
+func saveBackup(ctx context.Context, c *cliclient.Client, key, id, outPath string, stdout io.Writer) (string, error) {
+	serverName, body, err := c.OpenBackupDownload(ctx, key, id)
+	if err != nil {
+		return "", fmt.Errorf("download backup: %w", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	if outPath == "-" {
+		if _, err := io.Copy(stdout, body); err != nil {
+			return "", fmt.Errorf("stream backup: %w", err)
+		}
+		return "", nil
+	}
+
+	// Prefer an explicit --out, then the server-suggested filename,
+	// then a predictable fallback.
+	destPath := outPath
+	if destPath == "" {
+		destPath = serverName
+	}
+	if destPath == "" {
+		destPath = fmt.Sprintf("backup-%s.tar.gz", id)
+	}
+	if err := writeFileAtomic(destPath, body); err != nil {
+		return "", fmt.Errorf("download backup: %w", err)
+	}
+	return destPath, nil
 }
 
 // latestBackupID returns the id of the newest backup, resolving "latest" by
