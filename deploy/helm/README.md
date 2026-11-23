@@ -438,3 +438,16 @@ See [docs/observability.md](../../docs/observability.md) for full setup.
   brief downtime window.
 - All storage (cover art, uploads, backups) lives on the `storage` PVC
   mounted at `/app/storage`.
+
+## Working on the chart
+
+The bjw-s `common` library dependency is not committed. Fetch the version
+pinned in `Chart.lock` before running `helm lint` or `helm template` against
+the chart source:
+
+```sh
+helm dependency build deploy/helm/
+```
+
+This downloads it into `deploy/helm/charts/`, which is gitignored. Re-run it
+after a `Chart.lock` change.

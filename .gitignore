@@ -40,6 +40,9 @@ coverage.html
 # Test deployment values for helm chart
 deploy/nexorious-values.yaml
 
+# Helm chart dependencies, fetched by `helm dependency build` from Chart.lock
+deploy/helm/charts/
+
 # Nix build artifacts (`result`, plus `result-1`, `result-2`, … when building
 # multiple installables in one `nix build`)
 result
