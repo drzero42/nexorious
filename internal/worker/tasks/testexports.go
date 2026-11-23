@@ -37,3 +37,28 @@ func LoadUserGamesWithRelationsForTest(ctx context.Context, db *bun.DB, userID s
 func ApplyImportedPoolsForTest(ctx context.Context, db *bun.DB, jobID, userID string) {
 	applyImportedPools(ctx, db, jobID, userID)
 }
+
+// ErrChildRepointedForTest exposes errChildRepointed for cross-package tests.
+var ErrChildRepointedForTest = errChildRepointed
+
+// DecideChildWaitForTest exposes decideChildWait for cross-package tests. It
+// returns the action as "proceed", "wait" or "failed".
+func DecideChildWaitForTest(ctx context.Context, db *bun.DB, itemID, jobID, gameID, parentID string) (string, error) {
+	res, err := decideChildWait(ctx, db, itemID, jobID, gameID, parentID)
+	if err != nil {
+		return "", err
+	}
+	switch res.action {
+	case childWait:
+		return "wait", nil
+	case childFailed:
+		return "failed", nil
+	default:
+		return "proceed", nil
+	}
+}
+
+// RepairChildSkipsForTest exposes repairChildSkips for cross-package tests.
+func RepairChildSkipsForTest(ctx context.Context, db *bun.DB, userID, storefront string) error {
+	return repairChildSkips(ctx, db, userID, storefront)
+}

@@ -102,7 +102,7 @@ flowchart TD
 
     subgraph Stage2["Stage 2 — IGDB Match"]
         H{is_skipped?} -->|yes| L
-        H -->|no| I{Sibling resolved?}
+        H -->|no| I{Child of a<br/>matched parent?}
         I -->|yes| J[Inherit resolved_igdb_id]
         J --> K{resolved_igdb_id set?}
         I -->|no| K
@@ -135,11 +135,13 @@ flowchart TD
 ### DispatchSyncWorker responsibilities
 
 - Recording `sync_started_at` at the beginning of a sync run
+- Repairing Child games before the fetch: aligning each child's skip with its parent's and promoting the children of parents that have left the library (see [Siblings](#siblings))
 - Calling the adapter's batch callback and iterating until the library is fully fetched
 - Applying rate limiting between API calls
 - Upserting `external_games` and `external_game_platforms` after each batch
 - Enqueuing Stage 2 jobs after each batch
-- Running the availability sweep at the end of the fetch phase
+- Running the availability sweep at the end of the fetch phase, then promoting the children of parents that left in this sync
+- Re-queueing, once the dispatch is done, every `pending` item of its Job that has nothing running it (waiting children, promoted games)
 - Failing the job and cancelling pending items on credential errors
 
 ### Storefront adapter responsibilities
@@ -172,15 +174,18 @@ The interface requires a `GetLibrary` method that accepts a context, a batch siz
 
 The `DispatchSyncWorker` runs once per sync job. It:
 
-1. Records `sync_started_at`
+1. Records `sync_started_at`, then repairs Child games: every child gets its parent's `is_skipped`, and the children of parents that left the library in an earlier sync are promoted (see [Siblings](#siblings))
 2. Calls the storefront adapter which fetches the library and yields games in batches of ≤10
 3. After each batch:
    - Upserts each game into `external_games`, always setting `updated_at = now()` and `is_available = true`
    - Accumulates each game's `external_id` into an in-memory set of fetched IDs
    - Upserts platform rows into `external_game_platforms`; removes any platform rows for that game that were not in this batch
-   - Enqueues one Stage 2 job per game in the batch
+   - Enqueues one Stage 2 job per game in the batch that is not skipped. A skipped game gets no job item, only a `skipped` change
 4. After all batches complete, runs a sweep: queries all `external_games` rows for this user and storefront where `is_available = true`, and marks any whose `external_id` is not in the fetched ID set as `is_available = false` — these are games that were not seen in this sync run and have been removed from the user's library. For each game marked unavailable, writes a `removed` entry to `sync_changes`
+   After the sweep, the children of parents that left in this sync are promoted.
    The sweep is skipped when the fetch returned no games at all while at least one game is still marked available for this storefront. An empty reply is far more likely a privacy setting, an upstream glitch or a changed response shape than a library that really went to zero, so the job fails instead (`sync.failed`) and nothing is marked removed. If the library really is empty, reset the storefront's sync data or disconnect it.
+
+5. Marks the dispatch done, then gives a Stage 2 job to every `pending` item of this Job that has no River job running or queued. This is how a child that waited while the dispatch could still add its parent's item is looked at again. It only runs while the Job is active, so a sync cancelled during its dispatch is not restarted.
 
 If a credential error occurs at any point, the job is marked `failed` and all pending job_items are cancelled. Any `external_games` rows already upserted in this run are kept.
 
@@ -191,8 +196,8 @@ If a credential error occurs at any point, the job is marked `failed` and all pe
 One `IGDBMatchWorker` job runs per game. River handles retries with exponential backoff for transient IGDB API failures.
 
 1. **Skipped?** If `is_skipped` is true, route directly to Stage 3 — no matching is ever performed for skipped games
-2. **Sibling check:** Look for another `external_games` row for the same user, storefront, and title that already has `resolved_igdb_id` set. If found, inherit its `resolved_igdb_id`. This avoids an unnecessary IGDB search when a related entry has already been matched
-3. **Already resolved?** If `resolved_igdb_id` is now set — either from a previous sync run or just inherited from a sibling — route directly to Stage 3. On subsequent syncs, most games will take this path
+2. **Already resolved?** If `resolved_igdb_id` is set from a previous sync run, route directly to Stage 3. On subsequent syncs, most games will take this path
+3. **Child game?** If the game has a parent (`parent_id`) whose `resolved_igdb_id` is set, inherit it and route to Stage 3. If the parent is unmatched, the child waits or fails (see [Siblings](#siblings))
 4. **Search IGDB** for the game title; score each candidate using fuzzy title matching
 5. **Auto-resolve** if the best candidate scores ≥ 0.85 and has a clear margin (> 0.01) over the second-best: set `resolved_igdb_id` on the `external_game` and enqueue Stage 3
 6. **pending_review** if no clear winner is found, or if IGDB API calls fail after all River retries are exhausted: mark the item `pending_review` for the user to resolve
@@ -203,17 +208,24 @@ Before searching, titles are normalised (trademark symbols removed, diacritics f
 
 ### Siblings
 
-A sibling is another `external_games` row for the same user, storefront, and title. This occurs on storefronts that assign separate identifiers to different platform releases of the same game — for example, PSN assigns distinct title IDs to the PS4 and PS5 versions of a game.
+A sibling is another `external_games` row for the same user, storefront, and title. This occurs on storefronts that assign separate identifiers to different platform releases of the same game — for example, PSN assigns distinct title IDs to the PS4 and PS5 versions of a game. One of them is the parent; the others are its **Child games** (`parent_id`). The tree is flat: a parent is never itself a child.
 
-The sibling relationship is established explicitly during **Stage 1**: when a new `external_games` row is inserted with the same `(user_id, storefront, title)` as an existing row that has no `parent_id` itself, the new row's `parent_id` is set to the existing row's `id`. This produces a flat tree — all siblings point to one parent; no chaining.
+**Choosing the parent (Stage 1).** When a new `external_games` row is inserted with the same `(user_id, storefront, title)` as a top-level row, the new row becomes that row's child, but only if the existing row is available, matched or skipped. An unmatched, unskipped game that has left the library could never give a child anything to inherit, so it is not chosen. When several qualify, the oldest wins. The child takes its parent's `is_skipped` in the same statement, so a new edition of a skipped game is skipped too: it gets no job item and is not added to the library.
 
-The sibling relationship is acted on in three places:
+**Keeping a family together (Stage 1, at the start of each dispatch).**
 
-- **Stage 2 (child):** if the external game has `parent_id IS NOT NULL`, check whether the parent already has `resolved_igdb_id`. If yes, inherit it and proceed to Stage 3. If no (parent still in flight or in `pending_review`), return without advancing the job item — the child waits in `pending` state.
-- **Stage 3 (sibling trigger):** after writing the parent's library entries, query for child rows with `parent_id = eg.id` that are not yet resolved and have a `pending` job item. Re-enqueue Stage 2 for each. This handles the case where the child's Stage 2 ran before the parent was resolved, and also handles siblings that arrive in the library after the parent was already matched.
-- **Manual match / skip (cascade):** `HandleRematchExternalGame` and `HandleSkipGame` look up children via `parent_id = eg.id` and propagate the resolution or skip flag to each child, then enqueue Stage 3 (rematch) or mark job items skipped (skip).
+- Every child gets its parent's `is_skipped`, in both directions. A skip or unskip only cascades to the children that exist at that moment, so this catches later editions and failed cascades. A child this unskips whose `resolved_igdb_id` differs from its parent's carries a stale match: its platform links are removed (the user game they were on is kept) and it takes the parent's match. The repair is one transaction.
+- **Promotion.** A parent that is unavailable, unmatched and not skipped will never be matched by a sync. If it has an available child, the oldest available child becomes the parent (`parent_id` cleared) and the other children point to it. Unfinished items of the two games left in finished Jobs are cancelled, so the promoted game is listed and its review can be done. Promotion runs at the start of the dispatch, for parents that left in an earlier sync, and again after the availability sweep, for parents that left in this one. It is the only thing that changes `parent_id` after a game is created; a parent that later returns to the library stays a separate top-level game.
+
+**Stage 2 (child).** A child whose parent is matched inherits the match and proceeds to Stage 3. A child whose parent is unmatched waits only when the wait can end: its Job is active, the parent is top-level, and the parent has an unfinished item in this Job (`pending`, `processing`, `pending_review`) or the dispatch is still running and may add one. Otherwise the item fails with `parent game is unmatched and is not part of this sync`, and the sync completes with errors; the next sync tries again. The decision is taken in one transaction with the parent row locked, so a rematch or promotion committing meanwhile is not missed.
+
+**Waking a waiting child.** After writing the parent's library entries, Stage 3 re-enqueues Stage 2 for the parent's children that are not yet resolved and have a `pending` job item. A child that waited while the dispatch was running is re-queued when the dispatch is done (Stage 1, step 5). A child waiting on a parent that ends after that is picked up by the orphaned-item rescue (see [docs/maintenance.md](maintenance.md)).
+
+**Manual match / skip (cascade).** `HandleRematchExternalGame` and `HandleSkipGame` look up children via `parent_id = eg.id` and propagate the resolution or skip flag to each child, then enqueue Stage 3 (rematch) or mark job items skipped (skip).
 
 Child rows (`parent_id IS NOT NULL`) are filtered from all UI lists and counts — only the parent row is visible and actionable by the user.
+
+Both item workers do nothing for an item that is no longer `pending`, so a late or duplicate River job cannot run a finished item again.
 
 ---
 
@@ -313,7 +325,7 @@ The user searches IGDB and selects a match. Once a match is chosen, the resolve 
 
 ### Skipping a game
 
-The user marks a game as ignored. `is_skipped` is set to `true` on the `external_game` and the job_item is marked `skipped`. No Stage 3 job is created. On future syncs, Stage 2 routes the game directly to Stage 3, which updates `external_game.updated_at` and does nothing else.
+The user marks a game as ignored. `is_skipped` is set to `true` on the `external_game` and its children, and the job_items are marked `skipped`. No Stage 3 job is created. On future syncs the dispatch creates no job item for a skipped game and records a `skipped` change instead. A new edition of a skipped game that appears later is skipped too (see [Siblings](#siblings)).
 
 ### Unskipping a game
 
