@@ -102,11 +102,14 @@ func (w *StoreLinkRefreshDispatchWorker) SelectGroups(ctx context.Context, args 
 	return groups, total, nil
 }
 
+// storeLinkItems gives one item per group. The item key names the user as well
+// as the storefront: an all-users refresh has a group per user for the same
+// storefront, and item keys are unique within a Job.
 func storeLinkItems(groups []storeLinkGroup, force bool) []joblifecycle.NewItem {
 	items := make([]joblifecycle.NewItem, len(groups))
 	for i, g := range groups {
 		meta, _ := json.Marshal(storeLinkItemMeta{Storefront: g.Storefront, Force: force}) //nolint:errcheck // fixed struct
-		items[i] = joblifecycle.NewItem{UserID: g.UserID, ItemKey: g.Storefront, SourceTitle: g.Storefront, SourceMetadata: meta}
+		items[i] = joblifecycle.NewItem{UserID: g.UserID, ItemKey: g.UserID + ":" + g.Storefront, SourceTitle: g.Storefront, SourceMetadata: meta}
 	}
 	return items
 }
