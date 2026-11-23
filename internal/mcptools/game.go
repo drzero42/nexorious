@@ -86,7 +86,7 @@ type gameListInput struct {
 	SortBy          string `json:"sort_by,omitempty"`
 	SortOrder       string `json:"sort_order,omitempty"`
 	Page            int    `json:"page,omitempty"`
-	PerPage         int    `json:"per_page,omitempty" jsonschema:"page size, max 200"`
+	PerPage         int    `json:"per_page,omitempty" jsonschema:"page size, max 500"`
 }
 
 type gameListOutput struct {

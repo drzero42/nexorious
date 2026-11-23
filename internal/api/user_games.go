@@ -197,8 +197,8 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		}
 	}
 	if pp := c.QueryParam("per_page"); pp != "" {
-		if v, err := strconv.Atoi(pp); err == nil && v >= 1 && v <= 200 {
-			perPage = v
+		if v, err := strconv.Atoi(pp); (err == nil || errors.Is(err, strconv.ErrRange)) && v >= 1 {
+			perPage = min(v, 500)
 		}
 	}
 
