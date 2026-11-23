@@ -571,13 +571,13 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 	var items []models.JobItem
 	if statusParam == "pending_review" {
 		if err := h.db.NewRaw(
-			`SELECT DISTINCT ON (source_title) * FROM job_items WHERE job_id = ? AND status = 'pending_review' ORDER BY source_title ASC LIMIT ? OFFSET ?`,
+			`SELECT DISTINCT ON (source_title) * FROM job_items WHERE job_id = ? AND status = 'pending_review' ORDER BY source_title ASC, created_at ASC, id ASC LIMIT ? OFFSET ?`,
 			jobID, perPage, offset,
 		).Scan(context.Background(), &items); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
 		}
 	} else {
-		if err := q.OrderExpr("created_at ASC").Limit(int64(perPage)).Offset(int64(offset)).Scan(context.Background(), &items); err != nil {
+		if err := q.OrderExpr("created_at ASC, id ASC").Limit(int64(perPage)).Offset(int64(offset)).Scan(context.Background(), &items); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
 		}
 	}

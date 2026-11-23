@@ -9,8 +9,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/uptrace/bun"
 
@@ -441,4 +443,71 @@ func TestImportNexorious_CreatesPoolsItemHiddenFromListing(t *testing.T) {
 			t.Errorf("listing leaked synthetic __pools__ item")
 		}
 	}
+}
+
+// assertImportItemOrder checks the exact order job items will be listed and
+// ensures their timestamps start with the job's timestamp and then increase.
+func assertImportItemOrder(t *testing.T, jobID string, wantKeys []string) {
+	t.Helper()
+	var rows []struct {
+		ItemKey string    `bun:"item_key"`
+		ItemAt  time.Time `bun:"item_at"`
+		JobAt   time.Time `bun:"job_at"`
+	}
+	if err := testDB.NewRaw(
+		`SELECT ji.item_key, ji.created_at AS item_at, j.created_at AS job_at
+		 FROM job_items ji JOIN jobs j ON j.id = ji.job_id
+		 WHERE ji.job_id = ? ORDER BY ji.created_at, ji.id`, jobID,
+	).Scan(context.Background(), &rows); err != nil {
+		t.Fatalf("read job items: %v", err)
+	}
+	gotKeys := make([]string, len(rows))
+	for i, r := range rows {
+		gotKeys[i] = r.ItemKey
+		if want := r.JobAt.Add(time.Duration(i) * time.Microsecond); r.ItemAt.Year() < 2000 || !r.ItemAt.Equal(want) {
+			t.Errorf("item %s created_at = %v, want %v", r.ItemKey, r.ItemAt, want)
+		}
+	}
+	if !slices.Equal(gotKeys, wantKeys) {
+		t.Errorf("item order = %v, want %v", gotKeys, wantKeys)
+	}
+}
+
+func TestImportNexorious_ItemsFollowFileOrder(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "imp-createdat")
+
+	export := map[string]any{
+		"format":  "nexorious-library",
+		"version": "2.1",
+		"games": []map[string]any{
+			{"igdb_id": 1, "title": "Game 1"},
+			{"igdb_id": 2, "title": "Game 2"},
+			{"igdb_id": 3, "title": "Game 3"},
+		},
+		"pools": []map[string]any{{
+			"name":     "Backlog",
+			"position": 0,
+			"games":    []map[string]any{{"igdb_id": 1, "position": nil}},
+		}},
+	}
+	data, err := json.Marshal(export)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	rec := postMultipartFile(t, e, "/api/import/nexorious", "export.json", data, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode resp: %v", err)
+	}
+	jobID, _ := resp["job_id"].(string)
+	if jobID == "" {
+		t.Fatal("no job_id in response")
+	}
+	assertImportItemOrder(t, jobID, []string{"__pools__", "igdb_1", "igdb_2", "igdb_3"})
 }

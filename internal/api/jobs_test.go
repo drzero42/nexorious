@@ -1239,6 +1239,12 @@ func TestHandleGetJobItems_DeduplicatesPendingReview(t *testing.T) {
 	// Same source_title, different item_key (PS4 and PS5 SKUs of the same game).
 	insertJobItem(t, testDB, "ji-dedup-ps4", "job-dedup", userID, "CUSA12345_00", "Call of Duty", "pending_review")
 	insertJobItem(t, testDB, "ji-dedup-ps5", "job-dedup", userID, "PPSA07890_00", "Call of Duty", "pending_review")
+	insertJobItem(t, testDB, "ji-dedup-a", "job-dedup", userID, "SKU-3", "Call of Duty", "pending_review")
+	if _, err := testDB.ExecContext(context.Background(), `UPDATE job_items SET created_at =
+		CASE WHEN id = 'ji-dedup-ps4' THEN TIMESTAMPTZ '2026-01-02' ELSE TIMESTAMPTZ '2026-01-01' END
+		WHERE job_id = ?`, "job-dedup"); err != nil {
+		t.Fatalf("set test timestamps: %v", err)
+	}
 	// A distinct title to verify other items still appear.
 	insertJobItem(t, testDB, "ji-dedup-other", "job-dedup", userID, "CUSA99999_00", "Other Game", "pending_review")
 
@@ -1257,6 +1263,9 @@ func TestHandleGetJobItems_DeduplicatesPendingReview(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items (deduplicated), got %d", len(items))
 	}
+	if got := items[0].(map[string]any)["id"]; got != "ji-dedup-a" {
+		t.Errorf("representative item ID = %v, want the earliest timestamp then smallest ID", got)
+	}
 	// Items must be sorted alphabetically.
 	titles := []string{
 		items[0].(map[string]any)["source_title"].(string),
@@ -1264,6 +1273,49 @@ func TestHandleGetJobItems_DeduplicatesPendingReview(t *testing.T) {
 	}
 	if titles[0] != "Call of Duty" || titles[1] != "Other Game" {
 		t.Errorf("expected [Call of Duty, Other Game], got %v", titles)
+	}
+}
+
+// insertTiedJobItems inserts four items of jobID, ids prefix-1..4, in
+// tiedInsertOrder, all with one identical created_at. It returns the ids in
+// ascending order, the order the item list must use.
+func insertTiedJobItems(t *testing.T, jobID, userID, prefix string) []string {
+	t.Helper()
+	for _, n := range tiedInsertOrder {
+		id := fmt.Sprintf("%s-%d", prefix, n)
+		insertJobItem(t, testDB, id, jobID, userID, "key-"+id, "Game "+id, "completed")
+	}
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE job_items SET created_at = '2026-01-01T00:00:00Z' WHERE job_id = ?`, jobID,
+	); err != nil {
+		t.Fatalf("tie created_at: %v", err)
+	}
+	return []string{prefix + "-1", prefix + "-2", prefix + "-3", prefix + "-4"}
+}
+
+func TestHandleGetJobItems_TiedCreatedAt_PagesByIDAsc(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-items-tie")
+	insertJob(t, testDB, "job-tie", userID, "import", "csv", "processing")
+	want := insertTiedJobItems(t, "job-tie", userID, "ji-tie")
+
+	got := pagedIDs(t, e, "/api/jobs/job-tie/items", token, "items", len(want))
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("one-per-page ids = %v, want %v (each once, id ascending)", got, want)
+	}
+}
+
+func TestHandleGetJobItems_TiedCreatedAt_OnePageInIDOrder(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-items-tone")
+	insertJob(t, testDB, "job-tone", userID, "import", "csv", "processing")
+	want := insertTiedJobItems(t, "job-tone", userID, "ji-tone")
+
+	got := listIDs(t, e, "/api/jobs/job-tone/items", token, "items")
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("one page: ids = %v, want %v (id ascending)", got, want)
 	}
 }
 

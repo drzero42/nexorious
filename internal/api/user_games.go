@@ -300,8 +300,9 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	if orderExpr != "" {
 		idQ = idQ.OrderExpr(orderExpr)
 	}
-	// stable secondary sort
-	idQ = idQ.OrderExpr("ug.created_at DESC").
+	// stable secondary sort; id breaks created_at ties so rows that tie on every
+	// other key keep one order between page reads (#1311)
+	idQ = idQ.OrderExpr("ug.created_at DESC, ug.id DESC").
 		Offset(int64((page - 1) * perPage)).
 		Limit(int64(perPage))
 
@@ -341,7 +342,7 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		}
 		q = q.OrderExpr(orderExpr)
 	}
-	q = q.OrderExpr("user_game.created_at DESC")
+	q = q.OrderExpr("user_game.created_at DESC, user_game.id DESC")
 
 	if err := q.Scan(ctx); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")

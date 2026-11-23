@@ -152,6 +152,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	}
 
 	reqCtx := c.Request().Context()
+	gameItemStart := now
 
 	// Stash any pools section as a synthetic, pre-completed job_item. It carries
 	// no River task and is applied once at the job-completion transition, after
@@ -159,6 +160,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	// before any game task is enqueued so it is present at completion time (the
 	// legacy completion check does not gate on dispatch_complete).
 	if len(export.Pools) > 0 && string(export.Pools) != "null" {
+		gameItemStart = now.Add(time.Microsecond)
 		poolsMeta, err := json.Marshal(map[string]any{"item_type": "pools", "data": export.Pools})
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to build pools item metadata")
@@ -173,13 +175,15 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			Status:         models.JobItemStatusCompleted,
 			Result:         json.RawMessage(`{}`),
 			IGDBCandidates: json.RawMessage(`[]`),
+			CreatedAt:      now,
 		}
 		if _, err := h.db.NewInsert().Model(poolsItem).Exec(ctx); err != nil {
 			slog.ErrorContext(reqCtx, "import: create pools item", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	}
 
-	// Create one JobItem per game and enqueue a task.
+	// Create one JobItem per game and enqueue a task. Space timestamps by
+	// PostgreSQL's precision so the jobs list preserves the order in the file.
 	var skipCount int
 	for i, raw := range export.Games {
 		var gameFields struct {
@@ -220,6 +224,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			Status:         models.JobItemStatusPending,
 			Result:         json.RawMessage(`{}`),
 			IGDBCandidates: json.RawMessage(`[]`),
+			CreatedAt:      gameItemStart.Add(time.Duration(i) * time.Microsecond),
 		}
 		if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
@@ -304,6 +309,7 @@ func (h *ImportHandler) enqueueImportJob(reqCtx context.Context, userID, source,
 			Status:         models.JobItemStatusPending,
 			Result:         json.RawMessage(`{}`),
 			IGDBCandidates: json.RawMessage(`[]`),
+			CreatedAt:      now.Add(time.Duration(i) * time.Microsecond),
 		}
 		if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
 			return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
