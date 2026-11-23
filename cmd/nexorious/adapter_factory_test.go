@@ -40,9 +40,7 @@ func TestBoundToCredentials(t *testing.T) {
 	}
 }
 
-// The factory binds Steam, PlayStation, GOG and Humble Bundle to the stored
-// sign-in it decrypted, and leaves Epic unbound (its adapter rewrites its
-// snapshot during the run).
+// The factory initially binds every store to the stored sign-in it decrypted.
 func TestAdapterFactory_BindsStoresToLoadedSignIn(t *testing.T) {
 	enc, err := crypto.NewEncrypter("0123456789abcdef0123456789abcdef")
 	if err != nil {
@@ -52,13 +50,13 @@ func TestAdapterFactory_BindsStoresToLoadedSignIn(t *testing.T) {
 	for _, tc := range []struct {
 		storefront string
 		creds      string
-		wantBound  bool
 	}{
-		{"steam", `{"web_api_key":"k","steam_id":"1"}`, true},
-		{"playstation-store", `{"npsso_token":"t"}`, true},
-		{"gog", `{"refresh_token":"r","username":"u"}`, true},
-		{"humble-bundle", `{"session_cookie":"c"}`, true},
-		{"epic-games-store", `{"k":"v"}`, false},
+		{"steam", `{"web_api_key":"k","steam_id":"1"}`},
+		{"playstation-store", `{"npsso_token":"t"}`},
+		{"gog", `{"refresh_token":"r","username":"u"}`},
+		{"humble-bundle", `{"session_cookie":"c"}`},
+		{"epic-games-store", `{"k":"v"}`},
+		{"amazon-games", amazonOldUserData},
 	} {
 		t.Run(tc.storefront, func(t *testing.T) {
 			ct, err := enc.Encrypt([]byte(tc.creds))
@@ -70,11 +68,11 @@ func TestAdapterFactory_BindsStoresToLoadedSignIn(t *testing.T) {
 				t.Fatalf("factory: %v", err)
 			}
 			got, isBound := adapter.(credentialsBoundAdapter)
-			if isBound != tc.wantBound {
-				t.Fatalf("bound = %v, want %v", isBound, tc.wantBound)
+			if !isBound {
+				t.Fatal("factory returned an unbound adapter")
 			}
-			if isBound && got.loaded != ct {
-				t.Errorf("bound to %q, want the loaded ciphertext", got.loaded)
+			if got.ciphertext() != ct {
+				t.Error("adapter is not bound to the loaded ciphertext")
 			}
 		})
 	}

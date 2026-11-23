@@ -51,6 +51,7 @@ describe('useSyncStatusWithConnections', () => {
     [SyncStorefront.GOG]: syncKeys.gogConnection(),
     [SyncStorefront.PLAYSTATION_STORE]: syncKeys.playstationStoreStatus(),
     [SyncStorefront.HUMBLE]: syncKeys.humbleStatus(),
+    [SyncStorefront.AMAZON_GAMES]: syncKeys.amazonGamesConnection(),
   };
   const idle = { ...mockSyncStatusApi, external_game_count: 10 };
   const running = { ...idle, is_syncing: true, active_job_id: 'job-1' };

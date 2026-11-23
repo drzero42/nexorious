@@ -12,37 +12,31 @@ import (
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
-// credentialsBoundAdapter ties an adapter's credentials failures to the stored
-// sign-in the sync loaded (tasks.CredentialsErrorFor), so the worker does not
-// flag a sign-in the user replaced while the sync ran. It wraps every store
-// whose credentials failure is reported before its adapter writes the stored
-// sign-in: Steam, PlayStation and Humble never write it, and GOG fails on a
-// refused refresh before storing the new token. Not Epic, whose adapter
-// rewrites its snapshot on every run, failed ones included, so the loaded
-// ciphertext is stale by the time its failure is reported and binding to it
-// would hide a real expiry.
+// credentialsBoundAdapter ties a credentials failure to the sign-in the
+// sync last read or saved. A reconnect during the sync has a different
+// ciphertext, so the worker leaves that connection alone.
 type credentialsBoundAdapter struct {
-	inner  tasks.StorefrontAdapter
-	loaded string
+	inner      tasks.StorefrontAdapter
+	ciphertext func() string
 }
 
 func boundToCredentials(inner tasks.StorefrontAdapter, loaded string) tasks.StorefrontAdapter {
-	return credentialsBoundAdapter{inner: inner, loaded: loaded}
+	return credentialsBoundAdapter{inner: inner, ciphertext: func() string { return loaded }}
 }
 
 func (a credentialsBoundAdapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]tasks.ExternalGameEntry) error) error {
 	err := a.inner.GetLibrary(ctx, batchSize, onBatch)
 	if errors.Is(err, tasks.ErrCredentials) {
-		return &tasks.CredentialsErrorFor{Credentials: &a.loaded, Err: err}
+		ciphertext := a.ciphertext()
+		return &tasks.CredentialsErrorFor{Credentials: &ciphertext, Err: err}
 	}
 	return err
 }
 
 // storedCredentialsWriter saves a sign-in a sync refreshed (GOG's new refresh
-// token, Epic's new snapshot) only while the stored sign-in is still the one
-// this sync last read or wrote. A reconnect committed while the sync ran is
-// never overwritten by the older sign-in's refreshed tokens; the refreshed
-// value is dropped instead.
+// token, Epic's new snapshot, or Amazon's updated user data) while the stored
+// sign-in still matches the one the sync last read or wrote. A reconnect's
+// newer sign-in wins and the old refresh is dropped.
 type storedCredentialsWriter struct {
 	db         *bun.DB
 	userID     string
@@ -54,6 +48,19 @@ type storedCredentialsWriter struct {
 
 func newStoredCredentialsWriter(db *bun.DB, userID, storefront, loaded string) *storedCredentialsWriter {
 	return &storedCredentialsWriter{db: db, userID: userID, storefront: storefront, current: loaded}
+}
+
+// bind reads the last saved value at failure time. Epic and Amazon can
+// persist a refresh before reporting the failure.
+func (w *storedCredentialsWriter) bind(inner tasks.StorefrontAdapter) tasks.StorefrontAdapter {
+	return credentialsBoundAdapter{
+		inner: inner,
+		ciphertext: func() string {
+			w.mu.Lock()
+			defer w.mu.Unlock()
+			return w.current
+		},
+	}
 }
 
 func (w *storedCredentialsWriter) write(ctx context.Context, ciphertext string) error {

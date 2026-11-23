@@ -641,7 +641,7 @@ func buildAdapterFactoryWithAmazon(
 				}
 				return stored.write(context.WithoutCancel(ctx), enc)
 			}
-			return boundToCredentials(gogsvc.NewAdapter(gogsvc.NewClient(), creds.RefreshToken, onNewTokens), *cfg.StorefrontCredentials), nil
+			return stored.bind(gogsvc.NewAdapter(gogsvc.NewClient(), creds.RefreshToken, onNewTokens)), nil
 
 		case "epic-games-store":
 			if cfg.StorefrontCredentials == nil {
@@ -665,7 +665,7 @@ func buildAdapterFactoryWithAmazon(
 				}
 				return stored.write(context.WithoutCancel(ctx), enc)
 			}
-			return epicgamesstoresvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot), nil
+			return stored.bind(epicgamesstoresvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot)), nil
 
 		case "amazon-games":
 			if cfg.StorefrontCredentials == nil {
@@ -677,7 +677,15 @@ func buildAdapterFactoryWithAmazon(
 				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: amazon-games decrypt failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
-			return amazongamessvc.NewAdapter(amazonClient, plain, amazonUserDataWriter(db, encrypter, cfg.UserID, loaded)), nil
+			stored := newStoredCredentialsWriter(db, cfg.UserID, "amazon-games", loaded)
+			onUserData := func(userData json.RawMessage) error {
+				enc, encErr := encrypter.Encrypt(userData)
+				if encErr != nil {
+					return encErr
+				}
+				return stored.write(context.WithoutCancel(ctx), enc)
+			}
+			return stored.bind(amazongamessvc.NewAdapter(amazonClient, plain, onUserData)), nil
 
 		case "humble-bundle":
 			if cfg.StorefrontCredentials == nil {
@@ -699,25 +707,6 @@ func buildAdapterFactoryWithAmazon(
 		default:
 			return nil, fmt.Errorf("unknown storefront: %s", storefront)
 		}
-	}
-}
-
-// amazonUserDataWriter persists nile's refreshed user data for an Amazon
-// sync. It writes only onto the connection the sync loaded (loaded is that
-// row's ciphertext): if the user reconnected while the sync ran, the new
-// sign-in stays and the refreshed old one is dropped.
-func amazonUserDataWriter(db *bun.DB, encrypter *crypto.Encrypter, userID, loaded string) func(json.RawMessage) error {
-	return func(userData json.RawMessage) error {
-		enc, err := encrypter.Encrypt(userData)
-		if err != nil {
-			return err
-		}
-		_, err = db.NewRaw(
-			`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now()
-			 WHERE user_id = ? AND storefront = 'amazon-games' AND storefront_credentials = ?`,
-			enc, userID, loaded,
-		).Exec(context.Background())
-		return err
 	}
 }
 

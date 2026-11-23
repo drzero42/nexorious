@@ -146,3 +146,56 @@ func TestAdapterFactory_AmazonGames_UnusableCredentials(t *testing.T) {
 		t.Errorf("undecryptable credentials: err = %v, want ErrCredentials", err)
 	}
 }
+
+func TestAdapterFactory_AmazonGames_BindsAuthFailureToLastSavedSignIn(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		refresh   bool
+		reconnect bool
+	}{
+		{name: "unmodified sign-in"},
+		{name: "saved refresh", refresh: true},
+		{name: "discarded refresh after reconnect", refresh: true, reconnect: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enc := amazonTestEncrypter(t)
+			cfg := seedAmazonSync(t, enc, amazonOldUserData)
+			lib := &fakeAmazonLibrary{err: amazongamessvc.ErrAuthFailed}
+			if tc.refresh {
+				lib.refreshed = json.RawMessage(amazonRefreshedUserData)
+			}
+			if tc.reconnect {
+				lib.during = func() {
+					ct, err := enc.Encrypt([]byte(amazonReconnectUserData))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := testDB.NewRaw(`UPDATE user_sync_configs SET storefront_credentials = ? WHERE id = 'cfg-amz'`, ct).
+						Exec(context.Background()); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+
+			err := runAmazonFactory(t, enc, cfg, lib)
+			var bound *tasks.CredentialsErrorFor
+			if !errors.As(err, &bound) || bound.Credentials == nil {
+				t.Fatalf("expected a credentials error tied to the sync's sign-in, got %v", err)
+			}
+
+			want := *cfg.StorefrontCredentials
+			if tc.refresh && !tc.reconnect {
+				want = storedSignIn(t, cfg.UserID, "amazon-games")
+				if got := storedAmazonUserData(t, enc, cfg.UserID); got != amazonRefreshedUserData {
+					t.Fatal("expected the refreshed sign-in to be stored")
+				}
+			}
+			if *bound.Credentials != want {
+				t.Fatal("credentials error refers to the wrong stored sign-in")
+			}
+			if tc.reconnect && storedAmazonUserData(t, enc, cfg.UserID) != amazonReconnectUserData {
+				t.Fatal("expected the reconnect's sign-in to survive")
+			}
+		})
+	}
+}
