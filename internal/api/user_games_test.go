@@ -1673,6 +1673,47 @@ func TestCollectionStats(t *testing.T) {
 	})
 }
 
+func TestListUserGames_EverySortKeyBothDirections(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	userID, token := setupUserGamesUser(t, testDB, e, "all-sorts")
+	for i, title := range []string{"Alpha", "Beta"} {
+		n := i + 1
+		gameID := insertTestGame(t, testDB, title)
+		id := fmt.Sprintf("ug-sort-%d", n)
+		insertTestUserGame(t, testDB, id, userID, int(gameID))
+		day := fmt.Sprintf("2026-01-0%d", n)
+		status := []string{"completed", "not_started"}[i]
+		for _, statement := range []struct {
+			query string
+			args  []any
+		}{
+			{"UPDATE games SET release_date = ?::timestamptz, howlongtobeat_main = ?, rating_average = ? WHERE id = ?", []any{day, n * 10, n * 20, gameID}},
+			{"UPDATE user_games SET created_at = ?::timestamptz, updated_at = ?::timestamptz, play_status = ?, personal_rating = ?, is_loved = ? WHERE id = ?", []any{day, day, status, n, n == 2, id}},
+			{"INSERT INTO user_game_platforms (id, user_game_id, platform, storefront, hours_played) VALUES (?, ?, 'pc-windows', 'steam', ?)", []any{"p-" + id, id, n * 10}},
+		} {
+			if _, err := testDB.ExecContext(context.Background(), statement.query, statement.args...); err != nil {
+				t.Fatalf("set fixture for %s: %v", id, err)
+			}
+		}
+	}
+
+	for _, key := range []string{"title", "created_at", "updated_at", "play_status", "personal_rating", "is_loved", "release_date", "hours_played", "howlongtobeat_main", "rating_average"} {
+		for _, order := range []string{"asc", "desc"} {
+			t.Run(key+"/"+order, func(t *testing.T) {
+				want := "ug-sort-1,ug-sort-2"
+				if order == "desc" {
+					want = "ug-sort-2,ug-sort-1"
+				}
+				ids := listIDs(t, e, "/api/user-games?sort_by="+key+"&sort_order="+order, token, "user_games")
+				if got := strings.Join(ids, ","); got != want {
+					t.Errorf("sorted IDs = %s, want %s", got, want)
+				}
+			})
+		}
+	}
+}
+
 func TestListUserGamesSortByHours(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
