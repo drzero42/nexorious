@@ -21,8 +21,13 @@ on:
 permissions:
   contents: read
 
+# Keyed on the event action too: release-please and Renovate push the branch and
+# rewrite the PR description at the same moment, so one synchronize and one edited
+# run start together. In a shared group one would cancel the other, leaving a
+# cancelled ❌ on the PR (#1362). A newer run still cancels an older one of the
+# same action.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.action }}
   cancel-in-progress: true
 
 jobs:
