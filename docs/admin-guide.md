@@ -62,7 +62,59 @@ helm install nexorious oci://ghcr.io/drzero42/charts/nexorious \
   --set nexorious.postgresql.password="$(openssl rand -hex 16)"
 ```
 
+**Choosing the database.** By default the chart runs PostgreSQL itself as a single StatefulSet. That's fine for trying Nexorious out, but for anything you care about, use the chart's [CloudNativePG](https://cloudnative-pg.io/) option instead: set `cnpg.enabled` and turn off the bundled PostgreSQL, and the chart creates a CloudNativePG `Cluster` and connects Nexorious to it. CloudNativePG handles major-version upgrades, failover and its own backups with point-in-time recovery, which the bundled StatefulSet leaves to you. It needs the CloudNativePG operator and its CRDs installed in the cluster first. The chart README's [CloudNativePG section](../deploy/helm/README.md#cloudnativepg-recommended) has the values; to move an existing install over, see [Switching to CloudNativePG](#switching-to-cloudnativepg) below. You can also point the chart at a database you run yourself, including a CloudNativePG cluster you created ([Bring your own PostgreSQL](../deploy/helm/README.md#bring-your-own-postgresql-eg-cloudnativepg)).
+
 With the bundled PostgreSQL, a `db-role` initContainer first makes the app's own non-superuser database role (see [Database role](#database-role)). By default the chart also adds a `migrate` initContainer that runs `nexorious migrate` before the main container serves traffic, so pending migrations are applied automatically on every deploy — there's no manual migration step. See `deploy/helm/values.yaml` in the repository for the full set of chart values (including how to adjust or disable that initContainer).
+
+#### Switching to CloudNativePG
+
+Switching an existing install from the bundled PostgreSQL to CloudNativePG starts a new, empty database, so you move your data with a backup and a restore.
+
+Before you start:
+
+- Install the [CloudNativePG operator](https://cloudnative-pg.io/documentation/current/installation_upgrade/) in the cluster.
+- Pick a quiet moment. Changes made after the backup in step 1 are lost.
+- Log `nexctl` in as an admin (`nexctl account login`).
+- Keep `nexorious.dbEncryptionKey` (or `dbEncryptionKeyFrom`) exactly as it is. The stored sync credentials in the backup are encrypted with it.
+
+1. **Take a backup.**
+
+   ```bash
+   nexctl backup create
+   ```
+
+   It's saved on the Nexorious storage volume, which the switch leaves alone. To keep a copy off the cluster as well, run `nexctl backup download <id>` with the id it printed.
+
+2. **Switch the chart to CloudNativePG.** Add these values and run `helm upgrade`:
+
+   ```yaml
+   cnpg:
+     enabled: true
+   controllers:
+     postgresql:
+       enabled: false
+   service:
+     postgresql:
+       enabled: false
+   persistence:
+     postgresql-data:
+       enabled: false
+   ```
+
+   **This deletes the bundled database and its volume.** Nexorious starts on the new, empty CloudNativePG database and shows the setup screen. The pod waits until CloudNativePG has created the database, which can take a minute or two.
+
+3. **Restore the backup.** List the backups on the storage volume, then restore the one from step 1:
+
+   ```bash
+   nexctl setup backups --url https://nexorious.example.com
+   nexctl setup restore <filename> --url https://nexorious.example.com
+   ```
+
+   The filename is the backup id plus `.tar.gz`. You can also restore from the setup screen in the browser. When the restore is done, log in with your usual account.
+
+If something goes wrong, you still have the backup on the storage volume (and the copy you downloaded): `nexctl setup restore --file <path>` uploads one.
+
+> **Tip: keep the old database until the switch has worked.** Before step 2, run `helm upgrade` once with `persistence.postgresql-data.retain: true` added to your values. Helm then leaves the old database volume in place when step 2 turns it off. Once you're happy with the new database, delete it: `kubectl get pvc` shows it as the volume whose name ends in `-postgresql-data` (`nexorious-postgresql-data` for a release named `nexorious`), and `kubectl delete pvc <name>` removes it.
 
 ### NixOS
 
@@ -432,7 +484,8 @@ How each deployment handles it:
 
 - **Docker Compose and the Helm chart's bundled PostgreSQL** — the official `postgres` image creates `POSTGRES_USER` (`nexorious`) as a superuser. Nexorious keeps that role for administration only. Before every start, `nexorious ensure-db-role` (the Compose `db-role` service, or the chart's `db-role` initContainer) connects as it and makes `nexorious_app` a non-superuser role that owns the database and everything in it. The app connects as `nexorious_app`, with the same `POSTGRES_PASSWORD`. Existing installs are taken over the same way on their first start after upgrading, with no manual steps. In the Helm chart the role name is `nexorious.postgresql.appUsername`.
 - **NixOS module** — its local database already uses a plain owner role.
-- **Your own PostgreSQL** (including CloudNativePG) — give Nexorious a role that owns its database and is not a superuser. With CloudNativePG, use the cluster's `-app` Secret, not `-superuser`.
+- **The Helm chart's CloudNativePG option** (`cnpg.enabled`) — CloudNativePG creates `nexorious_app` as a plain role that owns the database, and the chart connects with the cluster's `-app` Secret. Nothing to do.
+- **Your own PostgreSQL** (including a CloudNativePG cluster you created yourself) — give Nexorious a role that owns its database and is not a superuser. With CloudNativePG, use the cluster's `-app` Secret, not `-superuser`.
 
 `nexorious_app` shares its password with the `nexorious` superuser. SQL in a backup can't use that, but anyone holding the app's credentials could also log in as the superuser. To keep them apart, give the superuser its own password, or clear it so it can only log in from inside the database container:
 
@@ -461,7 +514,7 @@ Your `.env` file doesn't change.
 
 **CloudNativePG**
 
-Point `nexorious.databaseUrlFrom` at the cluster's `<cluster>-app` Secret, not `<cluster>-superuser`.
+With the chart's `cnpg.enabled` option the chart already uses the `-app` Secret. For a cluster you created yourself, point `nexorious.databaseUrlFrom` at the cluster's `<cluster>-app` Secret, not `<cluster>-superuser`.
 
 **Your own PostgreSQL (native packages, single binary, an external server)**
 

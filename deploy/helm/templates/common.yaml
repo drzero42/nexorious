@@ -3,4 +3,5 @@
 {{- include "nexorious.injectTmpDir" . -}}
 {{- include "nexorious.injectReloaderAnnotation" . -}}
 {{- include "nexorious.injectDbRoleInit" . -}}
+{{- include "nexorious.injectCnpgDatabaseUrl" . -}}
 {{- include "bjw-s.common.loader.all" . -}}
