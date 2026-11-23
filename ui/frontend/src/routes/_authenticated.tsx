@@ -73,7 +73,7 @@ export function AuthenticatedLayout() {
               <Link
                 to="/help/$slug"
                 params={{ slug: 'admin-guide' }}
-                hash="database-role"
+                hash="fixing-the-database-role-warning"
                 className="underline"
               >
                 How to fix this

@@ -339,6 +339,8 @@ A restore loads the backup's `database.sql` with `psql` in restricted mode, so p
 
 The SQL in a backup still runs as Nexorious's database role, so **the role in `DATABASE_URL` must not be a PostgreSQL superuser**. See [Database role](#database-role).
 
+Keeping backups somewhere off the server, especially before upgrades, is the safest habit while the project is still moving quickly.
+
 ### Database role
 
 A restored backup is SQL that runs as the role in `DATABASE_URL`. A PostgreSQL superuser can run programs on the database host from plain SQL (`COPY … TO PROGRAM`), so if Nexorious connects as one, a crafted backup file could run commands there. The same goes for a role in `pg_execute_server_program` or `pg_write_server_files`. Nexorious needs none of that: a plain role that owns its database is enough, migrations included.
@@ -360,7 +362,46 @@ docker compose exec db psql -U nexorious -c "ALTER ROLE nexorious PASSWORD NULL"
 
 If you change `POSTGRES_PASSWORD` later, `ensure-db-role` updates `nexorious_app`'s password on the next start; the superuser's password is yours to manage.
 
-Keeping backups somewhere off the server, especially before upgrades, is the safest habit while the project is still moving quickly.
+### Fixing the database role warning
+
+If Nexorious warns that its database role is a superuser, follow the steps for how you run it. When you're done, restart Nexorious: the startup warning stops and the banner goes away on the next page load.
+
+**Docker Compose with the bundled PostgreSQL**
+
+1. Replace your `docker-compose.yml` with the one from the release you run (`deploy/docker/docker-compose.yml`). It adds a `db-role` service and connects the app as `nexorious_app`. If you've customised your compose file, make those two changes by hand: copy in the `db-role` service, and in the `app` service's `DATABASE_URL` change the user from `nexorious` to `nexorious_app`.
+2. Run `docker compose pull && docker compose up -d`.
+
+Your `.env` file doesn't change.
+
+**Helm with the bundled PostgreSQL**
+
+1. Upgrade to the current chart with `helm upgrade`.
+2. If you set `nexorious.databaseUrl`, `nexorious.databaseUrlFrom` or the `nexorious.db*From` values, the chart doesn't manage the role for you. Remove them so the chart builds the connection itself, or follow the steps for your own PostgreSQL below.
+
+**CloudNativePG**
+
+Point `nexorious.databaseUrlFrom` at the cluster's `<cluster>-app` Secret, not `<cluster>-superuser`.
+
+**Your own PostgreSQL (native packages, single binary, an external server)**
+
+1. Connect to the database as an admin and remove the extra rights from the role Nexorious uses (here `nexorious`):
+
+   ```sql
+   ALTER ROLE nexorious NOSUPERUSER;
+   REVOKE pg_execute_server_program, pg_write_server_files FROM nexorious;
+   ```
+
+   A warning that the role "has not been granted membership" is fine: it just didn't have that right.
+
+2. If PostgreSQL refuses with "The bootstrap superuser must have the SUPERUSER attribute", that role created the database cluster and can't be changed. Make Nexorious a new role instead. `nexorious ensure-db-role` creates it and hands it the database:
+
+   ```bash
+   DATABASE_URL='postgres://nexorious_app:NEW_PASSWORD@DB_HOST:5432/nexorious' \
+   DB_ADMIN_USER=nexorious DB_ADMIN_PASSWORD='CURRENT_PASSWORD' \
+     nexorious ensure-db-role
+   ```
+
+   Then set `DATABASE_URL` in your configuration to the same `nexorious_app` URL. If the password has characters like `@`, `:` or `/`, URL-encode them.
 
 ### Maintenance
 
