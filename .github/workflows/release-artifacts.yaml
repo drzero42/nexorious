@@ -120,7 +120,7 @@ jobs:
 
       - name: Attest build provenance (binaries, packages, source SBOM)
         if: github.event_name == 'release'
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest@v4
         with:
           subject-path: |
             dist/nexorious*
@@ -282,7 +282,7 @@ jobs:
 
       - name: Attest image provenance
         if: github.event_name == 'release'
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest@v4
         with:
           subject-name: ghcr.io/drzero42/nexorious
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -305,7 +305,7 @@ jobs:
 
       - name: Attest image SBOM
         if: github.event_name == 'release'
-        uses: actions/attest-sbom@v4
+        uses: actions/attest@v4
         with:
           subject-name: ghcr.io/drzero42/nexorious
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -402,7 +402,7 @@ jobs:
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Attest chart provenance
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest@v4
         with:
           subject-name: ghcr.io/drzero42/charts/nexorious
           subject-digest: ${{ steps.push.outputs.digest }}
