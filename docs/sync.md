@@ -377,6 +377,8 @@ All storefronts expose credential problems through a unified `credentials_error`
 
 When a credential error occurs mid-sync, the job is marked `failed` and all pending job_items are cancelled. The user must reconfigure their credentials before triggering a new sync.
 
+A credentials error belongs to the stored sign-in the sync loaded. `credentials_error` is set, and the expiry notification sent, only when that sign-in is still stored, checked in the same `UPDATE` that sets the flag, so reconnecting while a sync runs never gets the new sign-in marked expired. This covers a failure while building the adapter (no stored sign-in, or one that does not decrypt) for every storefront, and a failure during the fetch for Steam, PSN, GOG and Humble Bundle. Epic is the exception for the fetch: its adapter rewrites its snapshot on every run, so its fetch failures flag the storefront unconditionally. The flag and its notification are saved in one transaction, so neither is left without the other, and both are written before the job is marked failed, so a page that refreshes the connection when it sees the job end already finds it. The other way round holds too: a GOG token or Epic snapshot the sync refreshed is saved only while the stored sign-in is still the one the sync read or last wrote, so a reconnect is never overwritten by the older sign-in.
+
 Credentials are stored encrypted at rest in `user_sync_configs.storefront_credentials`. Decryption happens in memory during Stage 1 only; plaintext is never persisted. On decryption failure, the encrypted bytes are left untouched in the database — they are never cleared.
 
 ---
