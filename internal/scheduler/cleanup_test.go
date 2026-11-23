@@ -458,7 +458,8 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 // TestCheckPendingSyncs_BacksOffAfterFailures checks the retry delay after
 // failed syncs (#1344): 15 minutes after the first failure, doubling per
 // failure, capped at the sync interval. Failures from before the last
-// successful sync do not count.
+// successful fetch do not count, even after Reset sync data has cleared
+// last_synced_at (#1405).
 func TestCheckPendingSyncs_BacksOffAfterFailures(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {
@@ -466,24 +467,32 @@ func TestCheckPendingSyncs_BacksOffAfterFailures(t *testing.T) {
 		frequency  string
 		lastSynced time.Duration   // ago
 		failedAgo  []time.Duration // completed_at of each failed sync, ago
+		reset      bool            // Reset sync data has cleared last_synced_at
 		wantSync   bool
 	}{
-		{"first failure, inside 15 min", "daily", 48 * time.Hour, []time.Duration{10 * time.Minute}, false},
-		{"first failure, past 15 min", "daily", 48 * time.Hour, []time.Duration{20 * time.Minute}, true},
-		{"third failure, inside 1 h", "daily", 48 * time.Hour, []time.Duration{3 * time.Hour, 2 * time.Hour, 50 * time.Minute}, false},
-		{"third failure, past 1 h", "daily", 48 * time.Hour, []time.Duration{3 * time.Hour, 2 * time.Hour, 70 * time.Minute}, true},
-		{"many failures, daily cap not reached", "daily", 72 * time.Hour, repeatAgo(10, 23*time.Hour), false},
-		{"many failures, hourly cap reached", "hourly", 72 * time.Hour, repeatAgo(10, 61*time.Minute), true},
-		{"failures before the last success", "daily", 48 * time.Hour, []time.Duration{50 * time.Hour, 49 * time.Hour}, true},
+		{"first failure, inside 15 min", "daily", 48 * time.Hour, []time.Duration{10 * time.Minute}, false, false},
+		{"first failure, past 15 min", "daily", 48 * time.Hour, []time.Duration{20 * time.Minute}, false, true},
+		{"third failure, inside 1 h", "daily", 48 * time.Hour, []time.Duration{3 * time.Hour, 2 * time.Hour, 50 * time.Minute}, false, false},
+		{"third failure, past 1 h", "daily", 48 * time.Hour, []time.Duration{3 * time.Hour, 2 * time.Hour, 70 * time.Minute}, false, true},
+		{"many failures, daily cap not reached", "daily", 72 * time.Hour, repeatAgo(10, 23*time.Hour), false, false},
+		{"many failures, hourly cap reached", "hourly", 72 * time.Hour, repeatAgo(10, 61*time.Minute), false, true},
+		{"failures before the last success", "daily", 48 * time.Hour, []time.Duration{50 * time.Hour, 49 * time.Hour}, false, true},
+		{"failure before the last success, then a reset", "daily", 5 * time.Minute, []time.Duration{10 * time.Minute}, true, true},
+		{"failure after the last success, then a reset", "daily", 48 * time.Hour, []time.Duration{10 * time.Minute}, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			truncateAllTables(t)
 			userID := insertUser(t, ctx, nil)
 			now := time.Now().UTC()
+			lastFetched := now.Add(-tc.lastSynced)
+			var lastSynced *time.Time
+			if !tc.reset {
+				lastSynced = &lastFetched
+			}
 			if _, err := testDB.NewRaw(
-				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at)
-				 VALUES (?, ?, 'steam', ?, ?)`,
-				uuid.NewString(), userID, tc.frequency, now.Add(-tc.lastSynced),
+				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at, last_fetched_at)
+				 VALUES (?, ?, 'steam', ?, ?, ?)`,
+				uuid.NewString(), userID, tc.frequency, lastSynced, lastFetched,
 			).Exec(ctx); err != nil {
 				t.Fatalf("insert sync config: %v", err)
 			}
