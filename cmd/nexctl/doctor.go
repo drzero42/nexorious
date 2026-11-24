@@ -156,7 +156,7 @@ func newDoctorApplyCmd() *cobra.Command {
 				return fmt.Errorf("aborted")
 			}
 
-			res, err := c.ApplySmell(cmd.Context(), p.Key, checkID, ids)
+			res, err := clientops.ApplySmell(cmd.Context(), c, p.Key, checkID, ids)
 			if err != nil {
 				return fmt.Errorf("apply failed: %w", err)
 			}
@@ -195,7 +195,7 @@ func newDoctorIgnoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := c.IgnoreSmell(cmd.Context(), p.Key, args[0], ids)
+			n, err := clientops.IgnoreSmell(cmd.Context(), c, p.Key, args[0], ids)
 			if err != nil {
 				return fmt.Errorf("ignore failed: %w", err)
 			}
@@ -221,7 +221,7 @@ func newDoctorRestoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := c.RestoreSmell(cmd.Context(), p.Key, args[0], ids)
+			n, err := clientops.RestoreSmell(cmd.Context(), c, p.Key, args[0], ids)
 			if err != nil {
 				return fmt.Errorf("restore failed: %w", err)
 			}
