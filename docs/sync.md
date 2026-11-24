@@ -304,7 +304,7 @@ Items in a Job that is not active are left alone, and a rematch outside an activ
 
 ### Skipping a game
 
-The user marks a game as ignored. `is_skipped` is set to `true` on the `external_game` and its children. When the game or a child has an open item in an active Job, this runs in the Job lifecycle module's transaction for that Job: those items become `skipped`, a River job working on one is cancelled, and the game's `skipped` change is written when its own item was skipped. Otherwise only the flags are set. On future syncs the dispatch creates no job item for a skipped game and records a `skipped` change instead. A new edition of a skipped game that appears later is skipped too (see [Siblings](#siblings)).
+The user Skips a game. `is_skipped` is set to `true` on the `external_game` and its children. When the game or a child has an open item in an active Job, this runs in the Job lifecycle module's transaction for that Job: those items become `skipped`, a River job working on one is cancelled, and the game's `skipped` change is written when its own item was skipped. Otherwise only the flags are set. On future syncs the dispatch creates no job item for a skipped game and records a `skipped` change instead. A new edition of a skipped game that appears later is skipped too (see [Siblings](#siblings)).
 
 ### Unskipping a game
 
