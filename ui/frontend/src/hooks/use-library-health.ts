@@ -36,11 +36,14 @@ export function useSmellItems(checkID: string, page: number, enabled: boolean) {
   });
 }
 
-export function useIgnoredItems(checkID: string, enabled: boolean) {
+export function useIgnoredItems(checkID: string, page: number, enabled: boolean) {
   return useQuery<IgnoredListResponse, Error>({
-    queryKey: smellKeys.ignored(checkID),
-    queryFn: () => smellsApi.getIgnoredItems(checkID),
+    // Same per-page caching as useSmellItems: invalidating the
+    // smellKeys.ignored(checkID) prefix clears every page.
+    queryKey: [...smellKeys.ignored(checkID), page],
+    queryFn: () => smellsApi.getIgnoredItems(checkID, SMELL_PAGE_SIZE, page),
     enabled,
+    placeholderData: keepPreviousData,
   });
 }
 
