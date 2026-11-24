@@ -800,10 +800,10 @@ func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
 		status  string
 	}{
 		{name: "import", suffix: "jobs-retry-withfail", jobID: "job-retry-wf", jobType: "import", source: "steam", status: "completed"},
-		// A failed sync is never reopened (TestRetryFailed_LifecycleKindFinishedJobIs409).
+		// A failed sync is never reopened (TestRetryFailed_LifecycleKindEndedJobIs409).
 		{name: "sync", suffix: "jobs-retry-sync", jobID: "job-retry-sync", jobType: "sync", source: "steam", status: "completed"},
 		// A kind on the lifecycle module (import, metadata_refresh) is retried
-		// only while active or completed (TestRetryFailed_LifecycleKindFinishedJobIs409).
+		// only while active or completed (TestRetryFailed_LifecycleKindEndedJobIs409).
 		{name: "metadata_refresh", suffix: "jobs-retry-meta", jobID: "job-retry-meta", jobType: "metadata_refresh", source: "system", status: "completed"},
 	}
 

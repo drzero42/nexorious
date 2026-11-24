@@ -14,7 +14,7 @@ import (
 
 // syncDispatchJob makes the test's River job the dispatch owner of a sync Job
 // a test inserted directly (older rows default to dispatch_complete = true) and
-// returns it. A Job that does not exist or is finished is left alone.
+// returns it. A Job that does not exist or has ended is left alone.
 func syncDispatchJob(t *testing.T, args tasks.DispatchSyncArgs) *river.Job[tasks.DispatchSyncArgs] {
 	t.Helper()
 	owner := nextFakeOwner()
@@ -60,7 +60,7 @@ func writeJob(t *testing.T, args tasks.UserGameArgs) *river.Job[tasks.UserGameAr
 	return riverJob(ownItem(t, args.JobItemID), 1, args)
 }
 
-// runSyncEffects runs every queued finishing-effects River job, as River would,
+// runSyncEffects runs every queued ending-effects River job, as River would,
 // and marks each completed. It returns how many it ran.
 func runSyncEffects(t *testing.T, lc *joblifecycle.Module) int {
 	t.Helper()

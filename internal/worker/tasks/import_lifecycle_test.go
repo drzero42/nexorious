@@ -99,7 +99,7 @@ func execSQL(t *testing.T, q string, args ...any) {
 	}
 }
 
-// runEffectsErr runs every queued finishing-effects River job and returns the
+// runEffectsErr runs every queued ending-effects River job and returns the
 // first error. The rows stay available, as a River retry would find them.
 func runEffectsErr(t *testing.T, lc *joblifecycle.Module) error {
 	t.Helper()
@@ -355,7 +355,7 @@ func TestImportRetryGoesToTheFailedStage(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range ids {
-		if err := lc.FinishItem(ctx, id, itemOwner(t, id), joblifecycle.ItemResult{Status: models.JobItemStatusFailed, Message: "boom"}); err != nil {
+		if err := lc.EndItem(ctx, id, itemOwner(t, id), joblifecycle.ItemResult{Status: models.JobItemStatusFailed, Message: "boom"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -393,7 +393,7 @@ func countPools(t *testing.T, userID string) int {
 
 // The notification goes first and a pools error is retried; a call that does
 // not complete the Job sends nothing; the pools are applied on the first
-// finish only, not when a retried Job completes again.
+// ending only, not when a retried Job completes again.
 func TestImportEffectsNotificationAndPools(t *testing.T) {
 	userID := importUser(t)
 	lc := newTestLC(t)
@@ -418,7 +418,7 @@ func TestImportEffectsNotificationAndPools(t *testing.T) {
 	}
 
 	// B fails; the Job completes with one failure.
-	if err := lc.FinishItem(ctx, ids[1], itemOwner(t, ids[1]), joblifecycle.ItemResult{Status: models.JobItemStatusFailed, Message: "boom"}); err != nil {
+	if err := lc.EndItem(ctx, ids[1], itemOwner(t, ids[1]), joblifecycle.ItemResult{Status: models.JobItemStatusFailed, Message: "boom"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -458,10 +458,10 @@ func TestImportEffectsNotificationAndPools(t *testing.T) {
 		t.Fatal(err)
 	}
 	if countPools(t, userID) != 0 {
-		t.Error("pools applied again on a second finish")
+		t.Error("pools applied again on a second ending")
 	}
 	if countEventKey(t, jobID, notify.TypeImportCompleted) != 1 {
-		t.Error("import.completed not sent on the second finish")
+		t.Error("import.completed not sent on the second ending")
 	}
 }
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
-import { DismissedItems } from './dismissed-items';
+import { IgnoredItems } from './ignored-items';
 
 vi.mock('@/hooks', () => ({
   useIgnoredItems: vi.fn(),
@@ -14,7 +14,7 @@ const mkMutation = (over = {}) => ({
   ...over,
 });
 
-describe('DismissedItems', () => {
+describe('IgnoredItems', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     const { useIgnoredItems, useRestoreSmell } = vi.mocked(await import('@/hooks'));
@@ -31,8 +31,8 @@ describe('DismissedItems', () => {
     useRestoreSmell.mockReturnValue(mkMutation() as unknown as ReturnType<typeof useRestoreSmell>);
   });
 
-  it('lists dismissed items', () => {
-    render(<DismissedItems checkID="orphan-game" />);
+  it('lists ignored games', () => {
+    render(<IgnoredItems checkID="orphan-game" />);
     expect(screen.getByText('Hades')).toBeInTheDocument();
   });
 
@@ -43,21 +43,21 @@ describe('DismissedItems', () => {
     useRestoreSmell.mockReturnValue(
       mkMutation({ mutateAsync }) as unknown as ReturnType<typeof useRestoreSmell>,
     );
-    render(<DismissedItems checkID="orphan-game" />);
+    render(<IgnoredItems checkID="orphan-game" />);
     await user.click(screen.getByRole('button', { name: /restore/i }));
     await waitFor(() =>
       expect(mutateAsync).toHaveBeenCalledWith({ checkID: 'orphan-game', userGameIds: ['ug-1'] }),
     );
   });
 
-  it('shows an empty message when there are no dismissed items', async () => {
+  it('shows an empty message when there are no ignored games', async () => {
     const { useIgnoredItems } = vi.mocked(await import('@/hooks'));
     useIgnoredItems.mockReturnValue({
       data: { items: [], total: 0, page: 1, per_page: 200, pages: 0 },
       isLoading: false,
     } as unknown as ReturnType<typeof useIgnoredItems>);
-    render(<DismissedItems checkID="orphan-game" />);
-    expect(screen.getByText(/no dismissed items/i)).toBeInTheDocument();
+    render(<IgnoredItems checkID="orphan-game" />);
+    expect(screen.getByText(/no ignored games/i)).toBeInTheDocument();
   });
 
   const mkPage = (
@@ -71,20 +71,20 @@ describe('DismissedItems', () => {
   });
 
   it('hides pagination controls for a single page', () => {
-    render(<DismissedItems checkID="orphan-game" />);
+    render(<IgnoredItems checkID="orphan-game" />);
     expect(screen.queryByRole('button', { name: /next/i })).not.toBeInTheDocument();
   });
 
-  it('pages through dismissed items beyond the first page', async () => {
+  it('pages through ignored games beyond the first page', async () => {
     const user = userEvent.setup();
     const { useIgnoredItems } = vi.mocked(await import('@/hooks'));
     useIgnoredItems.mockImplementation(
       (_checkID: string, page: number) =>
         mkPage(page, 3) as unknown as ReturnType<typeof useIgnoredItems>,
     );
-    render(<DismissedItems checkID="orphan-game" />);
+    render(<IgnoredItems checkID="orphan-game" />);
     expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
-    expect(screen.getByText('75 dismissed')).toBeInTheDocument();
+    expect(screen.getByText('75 ignored')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /previous/i })).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: /next/i }));
@@ -100,7 +100,7 @@ describe('DismissedItems', () => {
       (_checkID: string, page: number) =>
         mkPage(page, 2) as unknown as ReturnType<typeof useIgnoredItems>,
     );
-    render(<DismissedItems checkID="orphan-game" />);
+    render(<IgnoredItems checkID="orphan-game" />);
     await user.click(screen.getByRole('button', { name: /next/i }));
     expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
 

@@ -36,10 +36,10 @@ func TestSyncCompletion_EnqueuesStoreLinkRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The last item finishing completes the sync; its completed effect
+	// The last item ending completes the sync; its completed effect
 	// queues the store-link refresh.
 	lc := newTestLC(t)
-	if err := lc.FinishItem(ctx, itemID, ownItem(t, itemID), joblifecycle.ItemResult{Status: models.JobItemStatusCompleted}); err != nil {
+	if err := lc.EndItem(ctx, itemID, ownItem(t, itemID), joblifecycle.ItemResult{Status: models.JobItemStatusCompleted}); err != nil {
 		t.Fatal(err)
 	}
 	if got := jobStatus(t, jobID); got != models.JobStatusCompleted {

@@ -24,7 +24,7 @@ func doctorServer(t *testing.T) *httptest.Server {
 		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"id": "orphan-game", "title": "Orphan game", "description": "d", "tier": "inconsistency", "auto_fixable": false, "count": 2},
 			{"id": "wishlisted-yet-owned", "title": "Wishlisted yet owned", "description": "d", "tier": "inconsistency", "auto_fixable": true, "count": 1},
-			{"id": "unrated-after-finishing", "title": "Unrated after finishing", "description": "d", "tier": "nudge", "auto_fixable": false, "count": 0},
+			{"id": "unrated-after-finishing", "title": "Unrated after beating", "description": "d", "tier": "nudge", "auto_fixable": false, "count": 0},
 		})
 	})
 	mux.HandleFunc("/api/library/smells/orphan-game", func(w http.ResponseWriter, _ *http.Request) {
@@ -100,7 +100,7 @@ func TestDoctorDetail(t *testing.T) {
 		}
 	}
 	if !bytes.Contains(out.Bytes(), []byte("-")) {
-		t.Fatalf("detail SUGGESTION fallback %q missing:\n%s", "-", out.String())
+		t.Fatalf("detail DETAIL fallback %q missing:\n%s", "-", out.String())
 	}
 }
 

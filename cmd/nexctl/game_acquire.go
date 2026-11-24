@@ -13,7 +13,7 @@ func newGameAcquireCmd() *cobra.Command {
 	var platform, storefront, ownership string
 	cmd := &cobra.Command{
 		Use:   "acquire <ref>",
-		Short: "Promote a wishlisted game to the library",
+		Short: "Acquire a wishlisted game: move it into the library with a copy",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()

@@ -1286,7 +1286,7 @@ func TestIGDBMatchWorker_ChildInheritsFromResolvedParent(t *testing.T) {
 }
 
 func TestUserGameWorker_SiblingTrigger(t *testing.T) {
-	// When the parent's item finishes, the module queues the items that wait
+	// When the parent's item ends, the module queues the items that wait
 	// on it (its children's, pending with no owner) for Stage 2.
 	truncateAllTables(t)
 	ctx := context.Background()
@@ -1915,7 +1915,7 @@ func TestDispatchSync_Success_ClearsCredentialsFlag(t *testing.T) {
 
 // syncCompletionFixture inserts an active sync Job for storefront with its
 // dispatch done and one pending item per status in pending (owned by a fake
-// River job) plus the given finished or in-review items. It returns the Job id
+// River job) plus the given ended or in-review items. It returns the Job id
 // and the pending items' ids.
 func syncCompletionFixture(t *testing.T, storefront string, dispatchComplete bool, pending int, others ...string) (userID, jobID string, pendingIDs []string) {
 	t.Helper()
@@ -1949,14 +1949,14 @@ func syncCompletionFixture(t *testing.T, storefront string, dispatchComplete boo
 	return userID, jobID, pendingIDs
 }
 
-func finishSyncItem(t *testing.T, lc *joblifecycle.Module, itemID, status string) {
+func endSyncItem(t *testing.T, lc *joblifecycle.Module, itemID, status string) {
 	t.Helper()
-	if err := lc.FinishItem(context.Background(), itemID, itemOwner(t, itemID), joblifecycle.ItemResult{Status: status, Message: "boom"}); err != nil {
-		t.Fatalf("finish item: %v", err)
+	if err := lc.EndItem(context.Background(), itemID, itemOwner(t, itemID), joblifecycle.ItemResult{Status: status, Message: "boom"}); err != nil {
+		t.Fatalf("end item: %v", err)
 	}
 }
 
-// The last item finishing completes the sync, even when items failed: a
+// The last item ending completes the sync, even when items failed: a
 // failed item is surfaced through the completed-with-errors notification,
 // not the Job status.
 func TestSyncCompletion_FailedItemYieldsCompletedWithErrors(t *testing.T) {
@@ -1964,11 +1964,11 @@ func TestSyncCompletion_FailedItemYieldsCompletedWithErrors(t *testing.T) {
 	lc := newTestLC(t)
 	userID, jobID, items := syncCompletionFixture(t, "steam", true, 2)
 
-	finishSyncItem(t, lc, items[0], models.JobItemStatusFailed)
+	endSyncItem(t, lc, items[0], models.JobItemStatusFailed)
 	if got := jobStatus(t, jobID); got != models.JobStatusProcessing {
 		t.Fatalf("job with a pending item left: want processing, got %q", got)
 	}
-	finishSyncItem(t, lc, items[1], models.JobItemStatusCompleted)
+	endSyncItem(t, lc, items[1], models.JobItemStatusCompleted)
 	if got := jobStatus(t, jobID); got != models.JobStatusCompleted {
 		t.Fatalf("job: want completed, got %q", got)
 	}
@@ -2000,7 +2000,7 @@ func TestSyncCompletion_SyncDiffNamesStorefront(t *testing.T) {
 		t.Fatalf("insert change: %v", err)
 	}
 
-	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	endSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
 	runSyncEffects(t, lc)
 
 	var payload []byte
@@ -2019,15 +2019,15 @@ func TestSyncCompletion_SyncDiffNamesStorefront(t *testing.T) {
 	}
 }
 
-// #642: while the dispatch is still adding batches, the last item finishing
+// #642: while the dispatch is still adding batches, the last item ending
 // must not complete the sync, or later batches' items would be orphaned under
-// a finished Job.
+// an ended Job.
 func TestSyncCompletion_DispatchNotDone_StaysProcessing(t *testing.T) {
 	truncateAllTables(t)
 	lc := newTestLC(t)
 	_, jobID, items := syncCompletionFixture(t, "steam", false, 1)
 
-	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	endSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
 	if got := jobStatus(t, jobID); got != models.JobStatusProcessing {
 		t.Errorf("dispatch not done: want processing, got %q", got)
 	}
@@ -2040,8 +2040,8 @@ func TestSyncCompletion_PendingReviewBlocksAndNotifiesOnce(t *testing.T) {
 	lc := newTestLC(t)
 	_, jobID, items := syncCompletionFixture(t, "steam", true, 2, models.JobItemStatusPendingReview)
 
-	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
-	finishSyncItem(t, lc, items[1], models.JobItemStatusCompleted)
+	endSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	endSyncItem(t, lc, items[1], models.JobItemStatusCompleted)
 	if got := jobStatus(t, jobID); got != models.JobStatusProcessing {
 		t.Errorf("pending_review present: want processing, got %q", got)
 	}
@@ -2498,7 +2498,7 @@ func (a *streamProbeAdapter) GetLibrary(_ context.Context, _ int, onBatch func([
 
 // TestDispatchSync_FlagFalseWhileStreaming proves DispatchSyncWorker sets
 // dispatch_complete=false while it is still streaming batches, and true once
-// dispatch finishes.
+// the dispatch is done.
 func TestDispatchSync_FlagFalseWhileStreaming(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
@@ -2541,7 +2541,7 @@ func TestDispatchSync_FlagFalseWhileStreaming(t *testing.T) {
 		t.Fatalf("query dispatch_complete: %v", err)
 	}
 	if !finalFlag {
-		t.Error("expected dispatch_complete=true after dispatch finished")
+		t.Error("expected dispatch_complete=true after dispatch was done")
 	}
 }
 
@@ -2875,7 +2875,7 @@ func TestUserGameWorker_PromotesWishlistedGame(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Finishing effects — notifications
+// Ending effects — notifications
 // ---------------------------------------------------------------------------
 
 func TestSyncCompletion_EmitsCompleted(t *testing.T) {
@@ -2884,7 +2884,7 @@ func TestSyncCompletion_EmitsCompleted(t *testing.T) {
 	lc := newTestLC(t)
 	_, jobID, items := syncCompletionFixture(t, "steam", true, 1)
 
-	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	endSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
 	runSyncEffects(t, lc)
 	// Run again (a River retry): the dedup key keeps it to one event.
 	if _, err := testDB.ExecContext(context.Background(), `UPDATE river_job SET state = 'available', finalized_at = NULL WHERE kind = ?`, joblifecycle.EffectsArgs{}.Kind()); err != nil {
@@ -3040,7 +3040,7 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 		t.Fatalf("insert change removed: %v", err)
 	}
 
-	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	endSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
 	runSyncEffects(t, lc)
 
 	// sync.diff event must have been emitted.
@@ -3080,7 +3080,7 @@ func TestNoSyncDiffWhenNoChanges(t *testing.T) {
 	_, jobID, items := syncCompletionFixture(t, "steam", true, 1)
 	// No changes rows inserted.
 
-	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	endSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
 	runSyncEffects(t, lc)
 
 	// No sync.diff event should have been emitted.

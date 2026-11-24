@@ -338,7 +338,7 @@ func (m *Module) Owns(ctx context.Context, itemID string, riverJobID int64) erro
 	return nil
 }
 
-// ItemResult is how an item finished.
+// ItemResult is how an item ended.
 type ItemResult struct {
 	Status  string // completed, failed or skipped
 	Message string // the error message of a failed item
@@ -381,15 +381,15 @@ func (m *Module) lockItem(ctx context.Context, tx bun.Tx, itemID string, riverJo
 	return job, k, &item, nil
 }
 
-// FinishItem moves an item its caller owns to completed, failed or skipped,
+// EndItem moves an item its caller owns to completed, failed or skipped,
 // with the caller's own write, and evaluates completion.
-func (m *Module) FinishItem(ctx context.Context, itemID string, riverJobID int64, r ItemResult) error {
+func (m *Module) EndItem(ctx context.Context, itemID string, riverJobID int64, r ItemResult) error {
 	switch r.Status {
 	case models.JobItemStatusCompleted, models.JobItemStatusFailed, models.JobItemStatusSkipped:
 	default:
-		return fmt.Errorf("joblifecycle: FinishItem with status %q", r.Status)
+		return fmt.Errorf("joblifecycle: EndItem with status %q", r.Status)
 	}
-	return m.run(ctx, "finish_item", func(ctx context.Context, tx bun.Tx, st *txState) error {
+	return m.run(ctx, "end_item", func(ctx context.Context, tx bun.Tx, st *txState) error {
 		job, k, item, err := m.lockItem(ctx, tx, itemID, riverJobID)
 		if err != nil {
 			return err
@@ -400,15 +400,15 @@ func (m *Module) FinishItem(ctx context.Context, itemID string, riverJobID int64
 				return err
 			}
 		}
-		if err := m.finishItem(ctx, tx, st, k, job, item, r.Status, r.Message, result); err != nil {
+		if err := m.endItem(ctx, tx, st, k, job, item, r.Status, r.Message, result); err != nil {
 			return err
 		}
 		return m.evaluate(ctx, tx, st, k, job, false)
 	})
 }
 
-// finishItem writes an item's finished status and clears its owner.
-func (m *Module) finishItem(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, item *models.JobItem, status, msg string, result json.RawMessage) error {
+// endItem writes an item's ended status and clears its owner.
+func (m *Module) endItem(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, item *models.JobItem, status, msg string, result json.RawMessage) error {
 	now := time.Now().UTC()
 	var errMsg *string
 	if status == models.JobItemStatusFailed {
@@ -425,11 +425,11 @@ func (m *Module) finishItem(ctx context.Context, tx bun.Tx, st *txState, k *Kind
 		q = q.Set("result = ?", result)
 	}
 	if _, err := q.Exec(ctx); err != nil {
-		return fmt.Errorf("finish item: %w", err)
+		return fmt.Errorf("end item: %w", err)
 	}
 	if k.Observer != nil {
 		jobCopy := *job
-		st.onCommit(func(ctx context.Context) { k.Observer.ItemFinished(ctx, jobCopy, status) })
+		st.onCommit(func(ctx context.Context) { k.Observer.ItemEnded(ctx, jobCopy, status) })
 	}
 	return m.releaseWaiters(ctx, tx, k, job, []string{item.ID})
 }
@@ -448,8 +448,8 @@ type Failure struct {
 }
 
 // Fail fails an active Job for its dispatch owner, with the caller's own
-// writes: its unfinished items are cancelled, its River jobs cancelled or
-// signalled (except the caller's), and its finishing effects queued.
+// writes: its open items are cancelled, its River jobs cancelled or
+// signalled (except the caller's), and its ending effects queued.
 func (m *Module) Fail(ctx context.Context, jobID string, f Failure) error {
 	return m.run(ctx, "fail", func(ctx context.Context, tx bun.Tx, st *txState) error {
 		job, k, err := m.lockDispatch(ctx, tx, jobID, f.CallerRiverJobID)
@@ -470,9 +470,9 @@ func (m *Module) Fail(ctx context.Context, jobID string, f Failure) error {
 	})
 }
 
-// fail finishes an active Job as failed. The Job row is locked.
+// fail ends an active Job as failed. The Job row is locked.
 func (m *Module) fail(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, msg string, kindData json.RawMessage, except int64) error {
-	first, err := m.finishJob(ctx, tx, st, k, job, models.JobStatusFailed, scrub(msg), except)
+	first, err := m.endJob(ctx, tx, st, k, job, models.JobStatusFailed, scrub(msg), except)
 	if err != nil {
 		return err
 	}
@@ -484,8 +484,8 @@ func (m *Module) fail(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job 
 	return nil
 }
 
-// Cancel finishes an active Job as cancelled: its unfinished items are
-// cancelled and its River jobs cancelled or signalled. It has no finishing
+// Cancel ends an active Job as cancelled: its open items are
+// cancelled and its River jobs cancelled or signalled. It has no ending
 // effects. Authorisation is the caller's.
 func (m *Module) Cancel(ctx context.Context, jobID string) error {
 	return m.run(ctx, "cancel", func(ctx context.Context, tx bun.Tx, st *txState) error {
@@ -500,15 +500,15 @@ func (m *Module) Cancel(ctx context.Context, jobID string) error {
 		if !job.IsActive() {
 			return ErrJobNotActive
 		}
-		_, err = m.finishJob(ctx, tx, st, k, job, models.JobStatusCancelled, "", 0)
+		_, err = m.endJob(ctx, tx, st, k, job, models.JobStatusCancelled, "", 0)
 		return err
 	})
 }
 
-// finishJob moves an active Job to failed or cancelled: River jobs first (so
+// endJob moves an active Job to failed or cancelled: River jobs first (so
 // the item owners are still recorded), then the items, then the Job. It
-// reports whether this is the Job's first finish.
-func (m *Module) finishJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, status, msg string, except int64) (bool, error) {
+// reports whether this is the Job's first ending.
+func (m *Module) endJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, status, msg string, except int64) (bool, error) {
 	if err := m.cancelJobRiverJobs(ctx, tx, k, job.ID, except); err != nil {
 		return false, err
 	}
@@ -530,7 +530,7 @@ func (m *Module) finishJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind,
 		 WHERE id = ? AND status IN ('pending', 'processing')`,
 		status, now, errMsg, job.ID,
 	).Exec(ctx); err != nil {
-		return false, fmt.Errorf("finish job: %w", err)
+		return false, fmt.Errorf("end job: %w", err)
 	}
 	job.Status, job.CompletedAt, job.RiverJobID = status, &now, nil
 	if errMsg != nil {

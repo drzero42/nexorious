@@ -121,7 +121,7 @@ var ErrStillRestoring = errors.New("restore marker says restoring")
 //   - river_job and river_leader are emptied (without RESTART IDENTITY, so job
 //     ids keep increasing);
 //   - every active Job (pending, processing) is failed with InterruptedMessage
-//     and its unfinished items are cancelled, by joblifecycle.FailAllAfterRestore.
+//     and its open items are cancelled, by joblifecycle.FailAllAfterRestore.
 //
 // With no marker it does nothing and reports false. It reports true when it
 // cleared. With the marker at restoring it changes nothing and returns
@@ -154,7 +154,7 @@ func Clear(ctx context.Context, db *bun.DB) (bool, error) {
 			return fmt.Errorf("empty the queue: %w", err)
 		}
 		// The Job lifecycle module is the one writer of Job and item status,
-		// also here; it queues no finishing effects for a restore.
+		// also here; it queues no ending effects for a restore.
 		if err := joblifecycle.FailAllAfterRestore(ctx, tx, InterruptedMessage); err != nil {
 			return err
 		}

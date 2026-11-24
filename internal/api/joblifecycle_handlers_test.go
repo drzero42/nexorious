@@ -29,7 +29,7 @@ func jobItemRow(t *testing.T, id string) (status string, owner *int64) {
 // Retry on a failed or cancelled Job of a kind on the lifecycle module is
 // refused with 409, before "no failed items" is considered: such a Job is
 // never reopened.
-func TestRetryFailed_LifecycleKindFinishedJobIs409(t *testing.T) {
+func TestRetryFailed_LifecycleKindEndedJobIs409(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "lc-retry-409")
@@ -80,7 +80,7 @@ func TestRetryFailed_LifecycleKindReopensCompletedJob(t *testing.T) {
 	}
 }
 
-// Cancel of a moved kind cancels the Job's unfinished items too, and the
+// Cancel of a moved kind cancels the Job's open items too, and the
 // progress counts report them.
 func TestCancelJob_LifecycleKindCancelsItems(t *testing.T) {
 	truncateAllTables(t)
@@ -113,7 +113,7 @@ func TestCancelJob_LifecycleKindCancelsItems(t *testing.T) {
 	if resp.Progress["cancelled"] != 2 || resp.Progress["total"] != 3 {
 		t.Errorf("progress = %v, want cancelled 2 of 3", resp.Progress)
 	}
-	// A second cancel finds the Job finished.
+	// A second cancel finds the Job ended.
 	if rec := postJSONAuth(t, e, "/api/jobs/lc-cancel-job/cancel", nil, token); rec.Code != http.StatusConflict {
 		t.Errorf("second cancel: %d", rec.Code)
 	}

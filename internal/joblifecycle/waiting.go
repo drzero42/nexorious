@@ -34,7 +34,7 @@ type WaitEdge struct {
 }
 
 // waitable reports which of itemIDs may wait now: the kind names an item each
-// waits on, and that item is unfinished in the Job, or it does not exist and
+// waits on, and that item is open in the Job, or it does not exist and
 // the dispatch is not done. The Job row is locked.
 func (m *Module) waitable(ctx context.Context, tx bun.Tx, k *Kind, job *models.Job, itemIDs []string) (map[string]bool, error) {
 	out := map[string]bool{}
@@ -111,12 +111,12 @@ func (m *Module) Wait(ctx context.Context, itemID string, riverJobID int64) (boo
 }
 
 // releaseWaiters queues the pending items without an owner that wait on one
-// of finished, items that have just finished in this transaction.
-func (m *Module) releaseWaiters(ctx context.Context, tx bun.Tx, k *Kind, job *models.Job, finished []string) error {
-	if k.WaitsOn == nil || len(finished) == 0 {
+// of ended, items that have just ended in this transaction.
+func (m *Module) releaseWaiters(ctx context.Context, tx bun.Tx, k *Kind, job *models.Job, ended []string) error {
+	if k.WaitsOn == nil || len(ended) == 0 {
 		return nil
 	}
-	edges, err := k.WaitsOn(ctx, tx, WaitQuery{JobID: job.ID, Awaited: finished})
+	edges, err := k.WaitsOn(ctx, tx, WaitQuery{JobID: job.ID, Awaited: ended})
 	if err != nil {
 		return fmt.Errorf("waits on: %w", err)
 	}
@@ -184,7 +184,7 @@ type Selector func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, e
 // returns how many items it skipped; a Job that is not active is refused
 // (ErrJobNotActive) before sel runs.
 func (m *Module) SkipItems(ctx context.Context, jobID string, sel Selector) (int, error) {
-	return m.finishSelected(ctx, "skip_items", jobID, models.JobItemStatusSkipped, sel)
+	return m.endSelected(ctx, "skip_items", jobID, models.JobItemStatusSkipped, sel)
 }
 
 // CompleteByRematch completes the items sel returns that are pending or in
@@ -193,10 +193,10 @@ func (m *Module) SkipItems(ctx context.Context, jobID string, sel Selector) (int
 // evaluated. It returns how many it completed; a Job that is not active is
 // refused (ErrJobNotActive) before sel runs.
 func (m *Module) CompleteByRematch(ctx context.Context, jobID string, sel Selector) (int, error) {
-	return m.finishSelected(ctx, "complete_by_rematch", jobID, models.JobItemStatusCompleted, sel)
+	return m.endSelected(ctx, "complete_by_rematch", jobID, models.JobItemStatusCompleted, sel)
 }
 
-func (m *Module) finishSelected(ctx context.Context, op, jobID, status string, sel Selector) (int, error) {
+func (m *Module) endSelected(ctx context.Context, op, jobID, status string, sel Selector) (int, error) {
 	var n int
 	err := m.run(ctx, op, func(ctx context.Context, tx bun.Tx, st *txState) error {
 		n = 0
@@ -247,7 +247,7 @@ func (m *Module) finishSelected(ctx context.Context, op, jobID, status string, s
 		if k.Observer != nil {
 			jobCopy := *job
 			for range done {
-				st.onCommit(func(ctx context.Context) { k.Observer.ItemFinished(ctx, jobCopy, status) })
+				st.onCommit(func(ctx context.Context) { k.Observer.ItemEnded(ctx, jobCopy, status) })
 			}
 		}
 		if err := m.releaseWaiters(ctx, tx, k, job, done); err != nil {

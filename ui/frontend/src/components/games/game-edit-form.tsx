@@ -324,7 +324,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
 
             {/* Is Loved */}
             <div className="space-y-2">
-              <Label>Favorite</Label>
+              <Label>Loved</Label>
               <div className="flex items-center gap-2 pt-2">
                 <Checkbox
                   id="is-loved"
@@ -361,10 +361,10 @@ export function GameEditForm({ game }: GameEditFormProps) {
         </CardContent>
       </Card>
 
-      {/* Platforms & Ownership */}
+      {/* Copies */}
       <Card>
         <CardHeader>
-          <CardTitle>Platforms & Ownership</CardTitle>
+          <CardTitle>Copies</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {platformsLoading ? (

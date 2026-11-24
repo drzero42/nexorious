@@ -276,7 +276,7 @@ func registerGameTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, out, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "game_show", Description: "Show full detail for one game (by id or title). If the title matches multiple games, returns candidates to disambiguate."},
+	addTool(s, &mcp.Tool{Name: "game_show", Description: "Show full detail for one game (by id or title). If the title matches multiple games, returns the matching games in `candidates` to choose from."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameShowInput) (*mcp.CallToolResult, gameShowOutput, error) {
 			key := apiKey(ctx)
 			games, err := clientops.FindUserGamesByRef(ctx, c, key, in.Ref)
@@ -347,7 +347,7 @@ func registerGameTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, out, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "game_add", Description: "Add a game to the collection via IGDB lookup. Provide title or igdb_id. If title matches multiple IGDB games, returns candidates with igdb_id — call again with igdb_id to proceed."},
+	addTool(s, &mcp.Tool{Name: "game_add", Description: "Add a game to the collection via IGDB lookup. Provide title or igdb_id. If title matches multiple IGDB games, returns them in `candidates` with their igdb_id — call again with igdb_id to proceed."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameAddInput) (*mcp.CallToolResult, gameAddOutput, error) {
 			key := apiKey(ctx)
 			if in.IgdbID == 0 && in.Title == "" {
@@ -418,7 +418,7 @@ func registerGameTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, gameAddOutput{Game: &b}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "game_edit", Description: "Edit one or more games in the collection (status, rating, notes, platforms, tags). Use refs (ids/title substrings) or filter. Ambiguous refs return candidates — call again with the id."},
+	addTool(s, &mcp.Tool{Name: "game_edit", Description: "Edit one or more games in the collection (status, rating, notes, platforms, tags). Use refs (ids/title substrings) or filter. Ambiguous refs return the matching games in `candidates` — call again with the id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameEditInput) (*mcp.CallToolResult, gameWriteOutput, error) {
 			key := apiKey(ctx)
 			if len(in.Refs) == 0 && in.Filter == nil {
@@ -475,7 +475,7 @@ func registerGameTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, gameWriteOutput{Updated: updated}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "game_acquire", Description: "Promote a wishlisted game to the library with a platform. Ref is a game id or title substring."},
+	addTool(s, &mcp.Tool{Name: "game_acquire", Description: "Acquire a wishlisted game: move it into the library with a copy on the given platform. Ref is a game id or title substring."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameAcquireInput) (*mcp.CallToolResult, gameWriteOutput, error) {
 			key := apiKey(ctx)
 			if in.Platform == "" {

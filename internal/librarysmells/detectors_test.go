@@ -336,7 +336,7 @@ func TestDetectUnratedAfterFinishing(t *testing.T) {
 	dominatedUnrated := seedUserGame(t, userID, 5) // dominated, no rating → flags
 	setStatus(t, dominatedUnrated, "dominated")
 
-	items, err := detectUnratedAfterFinishing(ctx, testDB, userID)
+	items, err := detectUnratedAfterBeating(ctx, testDB, userID)
 	if err != nil {
 		t.Fatalf("detect: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestRegistryComplete(t *testing.T) {
 			t.Errorf("duplicate check id %q", c.ID)
 		}
 		seen[c.ID] = true
-		if c.Tier != TierInconsistency && c.Tier != TierNudge {
+		if c.Tier != TierInconsistency && c.Tier != TierSmell {
 			t.Errorf("check %q has invalid tier %q", c.ID, c.Tier)
 		}
 		if c.Detect == nil {

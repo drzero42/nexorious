@@ -58,7 +58,7 @@ type EpicGamesStoreClient interface {
 	// state snapshot. The caller stores the snapshot in the DB.
 	Authenticate(ctx context.Context, userID, authCode string) (*EpicGamesStoreAccountInfo, map[string]string, error)
 	// Cleanup removes the user's legendary files that older versions left
-	// on disk. Sign-ins and syncs remove their own files when they finish.
+	// on disk. Sign-ins and syncs remove their own files when they end.
 	Cleanup(ctx context.Context, userID string) error
 	Configured() bool
 }
@@ -597,7 +597,7 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 	ctx := context.Background()
 
 	// A failed read answers 500, never an idle store: the store page treats a
-	// cleared active job as a finished sync.
+	// cleared active job as an ended sync.
 	statusReadFailed := func(what string, err error) error {
 		slog.ErrorContext(c.Request().Context(), "sync: status read failed", "what", what, logging.KeyErr, err, logging.KeySource, sf, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read sync status")
@@ -1236,7 +1236,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	ctx := context.Background()
 
 	// A plain read, no lock: the Jobs in which the game or a child has an
-	// unfinished item. Each is entered through the module, which locks the
+	// open item. Each is entered through the module, which locks the
 	// Job row before the family (one lock order everywhere).
 	var jobIDs []string
 	if err := h.db.NewRaw(`
@@ -1263,7 +1263,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 		case err == nil:
 			flagged = true
 		case errors.Is(err, joblifecycle.ErrJobNotActive), errors.Is(err, joblifecycle.ErrGone):
-			// Finished meanwhile: only the flags, below.
+			// Ended meanwhile: only the flags, below.
 		default:
 			return skipHTTPError(c, err, id)
 		}
@@ -1291,7 +1291,7 @@ func skipHTTPError(c *echo.Context, err error, id string) error {
 // skipFamily skips a game and its Child games: it locks the family through
 // lockFamily, which refuses a Child game with 400, and sets their skip flags.
 // With jobID set it runs in the module's transaction for that Job and returns
-// the family's unfinished items in it, for the module to skip; the game's
+// the family's open items in it, for the module to skip; the game's
 // 'skipped' row is written only when the game's own item is among them
 // (children get none).
 func skipFamily(ctx context.Context, tx bun.Tx, userID, id, jobID string) ([]string, error) {

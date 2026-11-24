@@ -177,7 +177,7 @@ var playedButNotStartedCheck = Check{
 	ID:          "played-but-not-started",
 	Title:       "Played but \"not started\"",
 	Description: "Marked as not started, but it already has playtime logged.",
-	Tier:        TierNudge,
+	Tier:        TierSmell,
 	AutoFixable: true,
 	Detect:      detectPlayedButNotStarted,
 	Apply:       applyPlayedButNotStarted,
@@ -206,7 +206,7 @@ var inProgressUntouchedCheck = Check{
 	ID:          "in-progress-untouched",
 	Title:       "In progress but never touched",
 	Description: "Marked as in progress, but it has no playtime logged.",
-	Tier:        TierNudge,
+	Tier:        TierSmell,
 	AutoFixable: true,
 	Detect:      detectInProgressUntouched,
 	Apply:       applyInProgressUntouched,
@@ -231,15 +231,18 @@ func detectInProgressUntouched(ctx context.Context, db *bun.DB, userID string) (
 	return items, err
 }
 
-var unratedAfterFinishingCheck = Check{
+// unratedAfterBeatingCheck keeps its old id, "unrated-after-finishing": the
+// id is visible in the REST API and MCP. It counts Beaten games only
+// (Completed, Mastered, Dominated), not Dropped.
+var unratedAfterBeatingCheck = Check{
 	ID:          "unrated-after-finishing",
-	Title:       "Unrated after finishing",
-	Description: "You finished this game but never gave it a rating.",
-	Tier:        TierNudge,
-	Detect:      detectUnratedAfterFinishing,
+	Title:       "Unrated after beating",
+	Description: "You beat this game but never gave it a rating.",
+	Tier:        TierSmell,
+	Detect:      detectUnratedAfterBeating,
 }
 
-func detectUnratedAfterFinishing(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
+func detectUnratedAfterBeating(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
 	var items []FlaggedItem
 	err := db.NewRaw(
 		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url

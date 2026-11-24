@@ -37,13 +37,13 @@ type recorder struct {
 	effectsFail error
 }
 
-func (r *recorder) ItemFinished(_ context.Context, _ models.Job, status string) {
+func (r *recorder) ItemEnded(_ context.Context, _ models.Job, status string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.itemCalls = append(r.itemCalls, status)
 }
 
-func (r *recorder) JobFinished(_ context.Context, _ models.Job, outcome string, _ int) {
+func (r *recorder) JobEnded(_ context.Context, _ models.Job, outcome string, _ int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.jobCalls = append(r.jobCalls, outcome)
@@ -163,10 +163,10 @@ func mustCreateWithItems(t *testing.T, m *Module, user string, n int) (string, [
 	return c.JobID, loadItems(t, c.JobID)
 }
 
-func finish(t *testing.T, m *Module, it models.JobItem, status string) {
+func end(t *testing.T, m *Module, it models.JobItem, status string) {
 	t.Helper()
-	if err := m.FinishItem(context.Background(), it.ID, *it.RiverJobID, ItemResult{Status: status, Message: "boom"}); err != nil {
-		t.Fatalf("FinishItem: %v", err)
+	if err := m.EndItem(context.Background(), it.ID, *it.RiverJobID, ItemResult{Status: status, Message: "boom"}); err != nil {
+		t.Fatalf("EndItem: %v", err)
 	}
 }
 
@@ -227,7 +227,7 @@ func TestDispatchOwnership(t *testing.T) {
 		t.Fatalf("start after done: %v, want ErrDispatchDone", err)
 	}
 	for _, it := range loadItems(t, c.JobID) {
-		finish(t, m, it, models.JobItemStatusCompleted)
+		end(t, m, it, models.JobItemStatusCompleted)
 	}
 	if s := loadJob(t, c.JobID).Status; s != models.JobStatusCompleted {
 		t.Fatalf("job = %s, want completed", s)
@@ -289,33 +289,33 @@ func TestItemOwnership(t *testing.T) {
 	if err := m.Owns(ctx, it.ID, owner); err != nil {
 		t.Fatalf("owns: %v", err)
 	}
-	if err := m.FinishItem(ctx, it.ID, owner+999, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrNotOwner) {
+	if err := m.EndItem(ctx, it.ID, owner+999, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrNotOwner) {
 		t.Fatalf("other river job: %v, want ErrNotOwner", err)
 	}
 	// A River retry of the owner is the same River job id: accepted.
-	finish(t, m, it, models.JobItemStatusCompleted)
-	// The owner, run again after finishing: refused.
-	if err := m.FinishItem(ctx, it.ID, owner, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrNotOwner) {
-		t.Fatalf("owner after finish: %v, want ErrNotOwner", err)
+	end(t, m, it, models.JobItemStatusCompleted)
+	// The owner, run again after ending the item: refused.
+	if err := m.EndItem(ctx, it.ID, owner, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("owner after end: %v, want ErrNotOwner", err)
 	}
 	if err := m.Owns(ctx, it.ID, owner); !errors.Is(err, ErrNotOwner) {
-		t.Fatalf("owns after finish: %v", err)
+		t.Fatalf("owns after end: %v", err)
 	}
-	if err := m.FinishItem(ctx, uuid.NewString(), owner, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrGone) {
+	if err := m.EndItem(ctx, uuid.NewString(), owner, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrGone) {
 		t.Fatalf("missing item: %v, want ErrGone", err)
 	}
 	if s := loadJob(t, jobID).Status; s != models.JobStatusProcessing {
-		t.Fatalf("job finished early: %s", s)
+		t.Fatalf("job ended early: %s", s)
 	}
 }
 
-func TestFinishItemOwnWriteAndScrub(t *testing.T) {
+func TestEndItemOwnWriteAndScrub(t *testing.T) {
 	m, _ := newTestModule(t)
 	ctx := context.Background()
 	user := insertUser(t)
 	_, its := mustCreateWithItems(t, m, user, 2)
 
-	err := m.FinishItem(ctx, its[0].ID, *its[0].RiverJobID, ItemResult{
+	err := m.EndItem(ctx, its[0].ID, *its[0].RiverJobID, ItemResult{
 		Status: models.JobItemStatusCompleted,
 		Own: func(context.Context, bun.Tx) (json.RawMessage, error) {
 			return json.RawMessage(`{"ok":true}`), nil
@@ -324,7 +324,7 @@ func TestFinishItemOwnWriteAndScrub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.FinishItem(ctx, its[1].ID, *its[1].RiverJobID, ItemResult{
+	if err := m.EndItem(ctx, its[1].ID, *its[1].RiverJobID, ItemResult{
 		Status: models.JobItemStatusFailed, Message: "GET https://api.example/x?key=secret failed",
 	}); err != nil {
 		t.Fatal(err)
@@ -338,14 +338,14 @@ func TestFinishItemOwnWriteAndScrub(t *testing.T) {
 	}
 }
 
-func TestConcurrentFinishCompletesOnce(t *testing.T) {
+func TestConcurrentEndCompletesOnce(t *testing.T) {
 	for range 5 {
 		m, rec := newTestModule(t)
 		user := insertUser(t)
 		jobID, its := mustCreateWithItems(t, m, user, 2)
 		var wg sync.WaitGroup
 		for _, it := range its {
-			wg.Go(func() { finish(t, m, it, models.JobItemStatusCompleted) })
+			wg.Go(func() { end(t, m, it, models.JobItemStatusCompleted) })
 		}
 		wg.Wait()
 		if s := loadJob(t, jobID).Status; s != models.JobStatusCompleted {
@@ -355,7 +355,7 @@ func TestConcurrentFinishCompletesOnce(t *testing.T) {
 			t.Fatalf("effects jobs = %d, want 1", n)
 		}
 		if len(rec.jobCalls) != 1 {
-			t.Fatalf("JobFinished calls = %d", len(rec.jobCalls))
+			t.Fatalf("JobEnded calls = %d", len(rec.jobCalls))
 		}
 	}
 }
@@ -366,8 +366,8 @@ func TestCancelledContextRecordsNothing(t *testing.T) {
 	_, its := mustCreateWithItems(t, m, user, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := m.FinishItem(ctx, its[0].ID, *its[0].RiverJobID, ItemResult{Status: models.JobItemStatusCompleted}); err == nil {
-		t.Fatal("finish on cancelled context succeeded")
+	if err := m.EndItem(ctx, its[0].ID, *its[0].RiverJobID, ItemResult{Status: models.JobItemStatusCompleted}); err == nil {
+		t.Fatal("end on cancelled context succeeded")
 	}
 	if s := loadItems(t, its[0].JobID)[0].Status; s != models.JobItemStatusPending {
 		t.Fatalf("item = %s, want pending", s)
@@ -376,7 +376,7 @@ func TestCancelledContextRecordsNothing(t *testing.T) {
 
 // ── Cancel and Fail ──────────────────────────────────────────────────────────
 
-func TestCancelLeavesNothingUnfinished(t *testing.T) {
+func TestCancelLeavesNothingOpen(t *testing.T) {
 	m, rec := newTestModule(t)
 	ctx := context.Background()
 	user := insertUser(t)
@@ -412,7 +412,7 @@ func TestCancelLeavesNothingUnfinished(t *testing.T) {
 		t.Errorf("running river job not signalled (signalled=%v)", signalled)
 	}
 	// A write attempted by the running River job afterwards is refused.
-	if err := m.FinishItem(ctx, its[0].ID, running, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrJobNotActive) {
+	if err := m.EndItem(ctx, its[0].ID, running, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrJobNotActive) {
 		t.Fatalf("late write: %v, want ErrJobNotActive", err)
 	}
 	if err := m.Cancel(ctx, jobID); !errors.Is(err, ErrJobNotActive) {
@@ -479,8 +479,8 @@ func TestRetryReopensCompletedJob(t *testing.T) {
 	ctx := context.Background()
 	user := insertUser(t)
 	jobID, its := mustCreateWithItems(t, m, user, 2)
-	finish(t, m, its[0], models.JobItemStatusCompleted)
-	finish(t, m, its[1], models.JobItemStatusFailed)
+	end(t, m, its[0], models.JobItemStatusCompleted)
+	end(t, m, its[1], models.JobItemStatusFailed)
 	first := loadJob(t, jobID)
 	if first.Status != models.JobStatusCompleted {
 		t.Fatalf("job = %s", first.Status)
@@ -498,19 +498,19 @@ func TestRetryReopensCompletedJob(t *testing.T) {
 	if retried.Status != models.JobItemStatusPending || retried.ErrorMessage != nil || retried.RiverJobID == nil {
 		t.Fatalf("retried item = %+v", retried)
 	}
-	finish(t, m, retried, models.JobItemStatusCompleted)
+	end(t, m, retried, models.JobItemStatusCompleted)
 	if s := loadJob(t, jobID).Status; s != models.JobStatusCompleted {
 		t.Fatalf("job = %s", s)
 	}
 	if len(rec.jobCalls) != 1 {
-		t.Errorf("observer JobFinished = %d, want 1 (not again on the second completion)", len(rec.jobCalls))
+		t.Errorf("observer JobEnded = %d, want 1 (not again on the second completion)", len(rec.jobCalls))
 	}
-	var firstFinishes []bool
-	if err := testDB.NewRaw(`SELECT (args->>'first_finish')::bool FROM river_job WHERE kind = ? ORDER BY id`, EffectsArgs{}.Kind()).Scan(ctx, &firstFinishes); err != nil {
+	var firstEnds []bool
+	if err := testDB.NewRaw(`SELECT (args->>'first_finish')::bool FROM river_job WHERE kind = ? ORDER BY id`, EffectsArgs{}.Kind()).Scan(ctx, &firstEnds); err != nil {
 		t.Fatal(err)
 	}
-	if len(firstFinishes) != 2 || !firstFinishes[0] || firstFinishes[1] {
-		t.Errorf("effects first_finish = %v, want [true false]", firstFinishes)
+	if len(firstEnds) != 2 || !firstEnds[0] || firstEnds[1] {
+		t.Errorf("effects first_finish = %v, want [true false]", firstEnds)
 	}
 
 	// No failed items: nothing changes.
@@ -527,7 +527,7 @@ func TestRetryRefusals(t *testing.T) {
 	ctx := context.Background()
 	user := insertUser(t)
 	jobID, its := mustCreateWithItems(t, m, user, 1)
-	finish(t, m, its[0], models.JobItemStatusFailed)
+	end(t, m, its[0], models.JobItemStatusFailed)
 
 	// Another active Job with the same duplicate key blocks the reopen.
 	if _, err := m.CreateWithDispatch(ctx, newJob(user)); err != nil {
@@ -567,7 +567,7 @@ func TestAwaitingReviewQueuesEffectOnce(t *testing.T) {
 	if _, err := testDB.ExecContext(ctx, `UPDATE job_items SET status = 'pending_review', river_job_id = NULL WHERE id = ?`, its[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	finish(t, m, its[1], models.JobItemStatusCompleted)
+	end(t, m, its[1], models.JobItemStatusCompleted)
 	if s := loadJob(t, jobID).Status; s != models.JobStatusProcessing {
 		t.Fatalf("job = %s, want processing (waiting on the user)", s)
 	}
@@ -600,12 +600,12 @@ func TestEffectsWorker(t *testing.T) {
 	ctx := context.Background()
 	w := &EffectsWorker{Module: m}
 	jobID, its := mustCreateWithItems(t, m, insertUser(t), 1)
-	finish(t, m, its[0], models.JobItemStatusCompleted)
+	end(t, m, its[0], models.JobItemStatusCompleted)
 
 	job := func(attempt int) *river.Job[EffectsArgs] {
 		return &river.Job[EffectsArgs]{
 			JobRow: &rivertype.JobRow{Attempt: attempt, MaxAttempts: 5},
-			Args:   EffectsArgs{JobID: jobID, Outcome: OutcomeCompleted, FirstFinish: true},
+			Args:   EffectsArgs{JobID: jobID, Outcome: OutcomeCompleted, FirstEnd: true},
 		}
 	}
 	rec.effectsFail = errors.New("smtp down")
@@ -616,7 +616,7 @@ func TestEffectsWorker(t *testing.T) {
 	if err := w.Work(ctx, job(2)); err != nil {
 		t.Fatal(err)
 	}
-	if len(rec.effects) != 1 || rec.effects[0].Job.ID != jobID || !rec.effects[0].FirstFinish {
+	if len(rec.effects) != 1 || rec.effects[0].Job.ID != jobID || !rec.effects[0].FirstEnd {
 		t.Fatalf("effects = %+v", rec.effects)
 	}
 	if _, err := testDB.ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, jobID); err != nil {
@@ -741,12 +741,12 @@ func TestRecoveryDispatch(t *testing.T) {
 	}
 }
 
-func TestRecoveryCompletesFinishedJob(t *testing.T) {
+func TestRecoveryCompletesEndedJob(t *testing.T) {
 	m, _ := newTestModule(t)
 	ctx := context.Background()
 	user := insertUser(t)
 	jobID, its := mustCreateWithItems(t, m, user, 1)
-	// A processing Job whose items all finished without completing it.
+	// A processing Job whose items all ended without completing it.
 	if _, err := testDB.ExecContext(ctx, `UPDATE job_items SET status = 'completed', river_job_id = NULL WHERE id = ?`, its[0].ID); err != nil {
 		t.Fatal(err)
 	}

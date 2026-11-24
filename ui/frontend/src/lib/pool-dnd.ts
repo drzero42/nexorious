@@ -1,6 +1,6 @@
 /**
  * Pure helpers for cross-zone drag-and-drop on the pool page. The three zones —
- * Up Next (queue), Candidates, and Suggestions — are the three membership
+ * Queue, Candidates, and Suggestions — are the three membership
  * states, so a drag between them is a membership transition. This module maps a
  * drag's source/target zones onto the transition it means; the page component
  * executes it with the pool mutations.

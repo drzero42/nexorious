@@ -510,7 +510,7 @@ A grid of storefront cards — one per supported storefront. Each card shows:
 - Connection status (Connected / Credentials Error / Not Configured)
 - Last synced timestamp
 - Count of external games currently available on that storefront (`is_available = true`), including skipped games; shown as a simple number (e.g. "482 games")
-- Pending review count badge; clicking it navigates to that storefront's detail page, anchoring to the Needs Review section where possible
+- Pending review count badge; clicking it navigates to that storefront's detail page, anchoring to the Pending Review section where possible
 - A Sync Now button to trigger a manual sync without navigating into the detail page
 
 ### Platform Detail Page
@@ -545,13 +545,13 @@ A permanent view of all external games for this storefront, organised into five 
 
 | Group | Condition | Default | Actions |
 |---|---|---|---|
-| **Needs Review** | Newest job item in `pending_review` | Expanded | Pick IGDB match, Skip |
+| **Pending Review** | Newest job item in `pending_review` | Expanded | Pick IGDB match, Skip |
 | **Failed** | Newest job item failed | Expanded | Retry (per game), Retry All |
 | **Unmatched** | Not skipped and no match, e.g. after unskipping a game that was never matched | Expanded | Pick IGDB match, Skip |
 | **Matched** | `resolved_igdb_id` set | Collapsed | Change match |
 | **Skipped** | `is_skipped = true` | Collapsed | Unskip |
 
-The Needs Review group is the most prominent — these games are blocking the job from completing and require user action.
+The Pending Review group is the most prominent — these games are blocking the job from completing and require user action.
 
 The **Matched** group displays the external game title alongside a **Platform** column showing the platforms associated with that external game (sourced from `external_game_platforms`). Each platform is rendered as its canonical slug (e.g. `pc-windows`, `playstation-5`). When an external game has multiple platforms, all are shown in the same row.
 

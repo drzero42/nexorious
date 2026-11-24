@@ -211,7 +211,7 @@ func TestDispatchSync_CredentialsError_FlagSetBeforeJobFails(t *testing.T) {
 	}
 }
 
-// tryEffects runs the queued finishing effects once each and returns the
+// tryEffects runs the queued ending effects once each and returns the
 // first error; an effect that failed stays queued, as River would retry it.
 func tryEffects(t *testing.T, lc *joblifecycle.Module) error {
 	t.Helper()

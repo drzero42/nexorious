@@ -127,11 +127,11 @@ describe('BulkActions', () => {
       expect(screen.getByRole('combobox')).toBeInTheDocument();
     });
 
-    it('renders delete button', () => {
+    it('renders remove button', () => {
       const props = createDefaultProps();
       render(<BulkActions {...props} />);
 
-      expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /remove/i })).toBeInTheDocument();
     });
 
     it('renders clear selection button', () => {
@@ -279,16 +279,16 @@ describe('BulkActions', () => {
   });
 
   describe('delete functionality', () => {
-    it('opens AlertDialog when delete button is clicked', async () => {
+    it('opens AlertDialog when remove button is clicked', async () => {
       const user = userEvent.setup();
       const props = createDefaultProps();
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
 
       await waitFor(() => {
         expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-        expect(screen.getByText('Delete Games')).toBeInTheDocument();
+        expect(screen.getByText('Remove from collection?')).toBeInTheDocument();
       });
     });
 
@@ -297,10 +297,12 @@ describe('BulkActions', () => {
       const props = createDefaultProps({ selectedIds: new Set(['game-1']) });
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
 
       await waitFor(() => {
-        expect(screen.getByText(/Are you sure you want to delete 1 game\?/)).toBeInTheDocument();
+        expect(
+          screen.getByText(/Are you sure you want to remove 1 game from your collection\?/),
+        ).toBeInTheDocument();
       });
     });
 
@@ -309,10 +311,12 @@ describe('BulkActions', () => {
       const props = createDefaultProps({ selectedIds: new Set(['game-1', 'game-2']) });
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
 
       await waitFor(() => {
-        expect(screen.getByText(/Are you sure you want to delete 2 games\?/)).toBeInTheDocument();
+        expect(
+          screen.getByText(/Are you sure you want to remove 2 games from your collection\?/),
+        ).toBeInTheDocument();
       });
     });
 
@@ -329,12 +333,12 @@ describe('BulkActions', () => {
       const props = createDefaultProps({ selectedIds: new Set(['game-1', 'game-2']) });
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
       await waitFor(() => {
         expect(screen.getByRole('alertdialog')).toBeInTheDocument();
       });
 
-      const confirmButton = screen.getByRole('button', { name: 'Delete' });
+      const confirmButton = screen.getByRole('button', { name: 'Remove' });
       await user.click(confirmButton);
 
       expect(mockMutateAsync).toHaveBeenCalledWith(['game-1', 'game-2']);
@@ -353,12 +357,12 @@ describe('BulkActions', () => {
       const props = createDefaultProps();
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
       await waitFor(() => {
         expect(screen.getByRole('alertdialog')).toBeInTheDocument();
       });
 
-      const confirmButton = screen.getByRole('button', { name: 'Delete' });
+      const confirmButton = screen.getByRole('button', { name: 'Remove' });
       await user.click(confirmButton);
 
       await waitFor(() => {
@@ -380,12 +384,12 @@ describe('BulkActions', () => {
       const props = createDefaultProps({ onClearSelection });
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
       await waitFor(() => {
         expect(screen.getByRole('alertdialog')).toBeInTheDocument();
       });
 
-      const confirmButton = screen.getByRole('button', { name: 'Delete' });
+      const confirmButton = screen.getByRole('button', { name: 'Remove' });
       await user.click(confirmButton);
 
       await waitFor(() => {
@@ -407,12 +411,12 @@ describe('BulkActions', () => {
       const props = createDefaultProps({ onSuccess });
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
       await waitFor(() => {
         expect(screen.getByRole('alertdialog')).toBeInTheDocument();
       });
 
-      const confirmButton = screen.getByRole('button', { name: 'Delete' });
+      const confirmButton = screen.getByRole('button', { name: 'Remove' });
       await user.click(confirmButton);
 
       await waitFor(() => {
@@ -433,12 +437,12 @@ describe('BulkActions', () => {
       const props = createDefaultProps({ onSuccess: undefined });
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
       await waitFor(() => {
         expect(screen.getByRole('alertdialog')).toBeInTheDocument();
       });
 
-      const confirmButton = screen.getByRole('button', { name: 'Delete' });
+      const confirmButton = screen.getByRole('button', { name: 'Remove' });
       await user.click(confirmButton);
 
       // Should not throw when onSuccess is undefined
@@ -452,7 +456,7 @@ describe('BulkActions', () => {
       const props = createDefaultProps();
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
       await waitFor(() => {
         expect(screen.getByRole('alertdialog')).toBeInTheDocument();
       });
@@ -477,7 +481,7 @@ describe('BulkActions', () => {
       const props = createDefaultProps();
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
       await waitFor(() => {
         expect(screen.getByRole('alertdialog')).toBeInTheDocument();
       });
@@ -501,16 +505,16 @@ describe('BulkActions', () => {
       const props = createDefaultProps();
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
       await waitFor(() => {
         expect(screen.getByRole('alertdialog')).toBeInTheDocument();
       });
 
-      const confirmButton = screen.getByRole('button', { name: 'Delete' });
+      const confirmButton = screen.getByRole('button', { name: 'Remove' });
       await user.click(confirmButton);
 
       await waitFor(() => {
-        expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to delete games:', expect.any(Error));
+        expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to remove games:', expect.any(Error));
       });
 
       consoleErrorSpy.mockRestore();
@@ -546,7 +550,7 @@ describe('BulkActions', () => {
       render(<BulkActions {...props} />);
 
       expect(screen.getByRole('combobox')).toBeDisabled();
-      expect(screen.getByRole('button', { name: /delete/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /remove/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /clear/i })).toBeDisabled();
     });
 
@@ -565,7 +569,7 @@ describe('BulkActions', () => {
       render(<BulkActions {...props} />);
 
       expect(screen.getByRole('combobox')).toBeDisabled();
-      expect(screen.getByRole('button', { name: /delete/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /remove/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /clear/i })).toBeDisabled();
     });
 
@@ -574,7 +578,7 @@ describe('BulkActions', () => {
       render(<BulkActions {...props} />);
 
       expect(screen.getByRole('combobox')).not.toBeDisabled();
-      expect(screen.getByRole('button', { name: /delete/i })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: /remove/i })).not.toBeDisabled();
       expect(screen.getByRole('button', { name: /clear/i })).not.toBeDisabled();
     });
   });
@@ -624,12 +628,12 @@ describe('BulkActions', () => {
       });
       render(<BulkActions {...props} />);
 
-      await user.click(screen.getByRole('button', { name: /delete/i }));
+      await user.click(screen.getByRole('button', { name: /remove/i }));
       await waitFor(() => {
         expect(screen.getByRole('alertdialog')).toBeInTheDocument();
       });
 
-      const confirmButton = screen.getByRole('button', { name: 'Delete' });
+      const confirmButton = screen.getByRole('button', { name: 'Remove' });
       await user.click(confirmButton);
 
       expect(mockMutateAsync).toHaveBeenCalledWith(['game-a', 'game-b', 'game-c']);

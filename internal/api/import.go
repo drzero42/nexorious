@@ -118,7 +118,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	var items []joblifecycle.NewItem
 
 	// Any pools section is kept as an item created already completed, with no
-	// River job; the finishing effects apply it once the Job first completes.
+	// River job; the ending effects apply it once the Job first completes.
 	// It is not counted in total_items.
 	gameItemStart := now
 	if len(export.Pools) > 0 && string(export.Pools) != "null" {

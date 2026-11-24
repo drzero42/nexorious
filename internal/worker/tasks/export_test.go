@@ -391,7 +391,7 @@ func TestExportJSON_EmitsExportFailed(t *testing.T) {
 		t.Errorf("expected job status=failed when write fails, got %q", status)
 	}
 
-	// …and emit the export.failed event, as its finishing effect.
+	// …and emit the export.failed event, as its ending effect.
 	runEffects(t, lc)
 	dedupKey := jobID + ":" + notify.TypeExportFailed
 	var count int
@@ -533,7 +533,7 @@ func createExportJob(t *testing.T, lc *joblifecycle.Module, userID, source strin
 	return c.JobID, dispatchOwner(t, c.JobID)
 }
 
-// runEffects runs every queued finishing-effects River job.
+// runEffects runs every queued ending-effects River job.
 func runEffects(t *testing.T, lc *joblifecycle.Module) {
 	t.Helper()
 	var rows []struct {

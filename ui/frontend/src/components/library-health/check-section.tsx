@@ -17,7 +17,7 @@ import { Check } from 'lucide-react';
 import type { SmellSummaryItem } from '@/api/library-health';
 import { useSmellItems, useApplySmell, useApplyAllSmell, useIgnoreSmell } from '@/hooks';
 import { FlaggedItemsTable } from './flagged-items-table';
-import { DismissedItems } from './dismissed-items';
+import { IgnoredItems } from './ignored-items';
 
 export interface CheckSectionProps {
   check: SmellSummaryItem;
@@ -31,7 +31,7 @@ export interface CheckSectionProps {
 
 export function CheckSection({ check, expanded, onView, onEdit }: CheckSectionProps) {
   const [confirmAll, setConfirmAll] = useState(false);
-  const [showDismissed, setShowDismissed] = useState(false);
+  const [showIgnored, setShowIgnored] = useState(false);
   const [page, setPage] = useState(1);
 
   const items = useSmellItems(check.id, page, expanded);
@@ -70,7 +70,7 @@ export function CheckSection({ check, expanded, onView, onEdit }: CheckSectionPr
     void ignore
       .mutateAsync({ checkID: check.id, userGameIds: [userGameId] })
       .then(() => {
-        toast.success('Dismissed');
+        toast.success('Ignored');
         setPage(1);
       })
       .catch(() => toast.error('Ignore failed'));
@@ -155,12 +155,12 @@ export function CheckSection({ check, expanded, onView, onEdit }: CheckSectionPr
           )}
 
           <div className="mt-3">
-            <Button size="sm" variant="ghost" onClick={() => setShowDismissed((v) => !v)}>
-              {showDismissed ? 'Hide dismissed' : 'Show dismissed'}
+            <Button size="sm" variant="ghost" onClick={() => setShowIgnored((v) => !v)}>
+              {showIgnored ? 'Hide ignored' : 'Show ignored'}
             </Button>
-            {showDismissed && (
+            {showIgnored && (
               <div className="mt-2">
-                <DismissedItems checkID={check.id} />
+                <IgnoredItems checkID={check.id} />
               </div>
             )}
           </div>

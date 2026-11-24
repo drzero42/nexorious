@@ -12,8 +12,8 @@ import (
 // backup restore has just put in place (docs/job-lifecycle.md, "Outside the
 // lifecycle"): nothing that was in flight when the backup was taken can be
 // resumed, because the River queue is emptied with it. Each active Job is
-// failed with msg, its unfinished items are cancelled, and every owner
-// recorded on them is cleared. No finishing effects are queued, so a restore
+// failed with msg, its open items are cancelled, and every owner
+// recorded on them is cleared. No ending effects are queued, so a restore
 // sends no notifications.
 //
 // It runs in the caller's transaction (the restore marker's, which also
@@ -28,7 +28,7 @@ func FailAllAfterRestore(ctx context.Context, tx bun.Tx, msg string) error {
 		  AND job_id IN (SELECT id FROM jobs WHERE status IN ('pending', 'processing'))`,
 		now,
 	).Exec(ctx); err != nil {
-		return fmt.Errorf("cancel unfinished items: %w", err)
+		return fmt.Errorf("cancel open items: %w", err)
 	}
 	if _, err := tx.NewRaw(`
 		UPDATE jobs SET status = 'failed', error_message = ?, completed_at = ?, river_job_id = NULL

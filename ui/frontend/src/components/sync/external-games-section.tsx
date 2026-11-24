@@ -127,7 +127,7 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
         {needsReview.length > 0 && (
           <Card id="needs-review" className="scroll-mt-4">
             <CardHeader>
-              <CardTitle className="text-base">Needs Review ({needsReview.length})</CardTitle>
+              <CardTitle className="text-base">Pending Review ({needsReview.length})</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>

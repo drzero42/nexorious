@@ -14,7 +14,7 @@ If you've just got an account, here's your first ten minutes:
 
 1. **Sign in** with your username and password.
 2. **Choose how to fill your library.** If your collection already lives on Steam, GOG, Epic, PlayStation, Humble Bundle, or Amazon Games, go to **Sync** and connect an account — for most people that's the quickest way to get going, since it pulls your whole purchase history in at once. If you only want to track a handful of titles, use **Add Game** to search for them instead. You can do both, and add more anytime.
-3. **Review any sync matches.** A sync brings most games in automatically; the few Nexorious isn't sure about wait in a **Needs Review** list for you to confirm. Clearing it once leaves your library tidy.
+3. **Review any sync matches.** A sync brings most games in automatically; the few Nexorious isn't sure about wait in a **Pending Review** list for you to confirm. Clearing it once leaves your library tidy.
 4. **Explore your Library.** Browse, search, and filter your collection, and start tracking where you are with each game using its **play status**.
 
 The rest of this guide is reference detail — read the parts you need when you need them.
@@ -72,11 +72,11 @@ Press **Edit** to change your own details:
 - **Play status** — where you are with the game (see below).
 - **Rating** — your personal score, one to five stars.
 - **Loved** — mark a game as a favourite.
-- **Platforms & ownership** — add or remove platform rows, and for each one set how you own it (owned, borrowed, rented, via a subscription, or no longer owned), the date you acquired it, and hours played. Hours for a synced Steam game are filled in from Steam and can't be edited by hand.
+- **Copies** — add or remove copies of the game. Each copy is one platform, and optionally the storefront you got it from; for each one set how you own it (owned, borrowed, rented, via a subscription, or no longer owned), the date you acquired it, and hours played. Hours for a synced Steam game are filled in from Steam and can't be edited by hand.
 - **Tags** — attach your own labels, creating new ones inline as you go.
 - **Notes** — free-form notes, with basic formatting.
 
-Total hours played is shown as the sum across all your platforms, so you don't add it up yourself.
+Total hours played is shown as the sum across all your copies, so you don't add it up yourself.
 
 To remove a game entirely, use the **Remove** button on its page.
 
@@ -106,6 +106,33 @@ You can filter by play status, ownership status, platform, and whether a game is
 
 Selecting several games at once lets you act on them together — change their play status or remove them in bulk — which saves a lot of clicking when tidying up.
 
+## Library health
+
+**Library Health** runs a set of checks over your collection and lists the games whose data looks wrong or out of date. Nothing is changed until you say so. **Refresh** runs the checks again.
+
+The checks come in two tiers:
+
+- **Inconsistencies** — data that is wrong and probably needs fixing. The Library Health entry in the sidebar shows a badge with how many games these checks flag.
+- **Smells** — data that looks out of date or incomplete. It might be worth updating, but it isn't wrong.
+
+| Check | Tier | What it flags | Auto-fix |
+|---|---|---|---|
+| Storefront-less platform | Inconsistency | A copy that doesn't say which storefront it's from | — |
+| Orphan game | Inconsistency | A game in your library with no copies | — |
+| Wishlisted yet owned | Inconsistency | A game still on your wishlist that is already in your library | Takes it off the wishlist |
+| Missing ownership status | Inconsistency | A copy that doesn't say whether you own it, borrowed it, and so on | — |
+| Impossible acquired date | Inconsistency | A date you got the game that is in the future, or before the game was released | — |
+| Invalid storefront for platform | Inconsistency | A copy whose platform and storefront don't go together, like a PlayStation game on Steam | — |
+| Played but "not started" | Smell | A game marked **Not Started** that has playtime | Sets it to **In Progress** |
+| In progress but never touched | Smell | A game marked **In Progress** with no playtime | Sets it to **Not Started** |
+| Unrated after beating | Smell | A game you beat (**Completed**, **Mastered** or **Dominated**) that has no rating | — |
+
+Open a check to see the games it flags. For a check with an auto-fix, **Apply** fixes one game, and **Apply to all** fixes every game the check flags. A check without one leaves the fix to you: open the game and edit it.
+
+If a flagged game is how you want it, **Ignore** it. That check stops flagging the game; the other checks still look at it. **Show ignored** lists the games you've ignored for a check, and **Restore** makes the check flag a game again.
+
+The same works from the command line with [`nexctl doctor`](#the-everyday-commands), and from an AI chat or agent through the `library_smells_*` tools (see [Connecting AI chats and agents](#connecting-ai-chats-and-agents)).
+
 ## Wishlist
 
 The **Wishlist** holds games you want but don't own. Add a game to it the same way you add to your library — just choose "wishlist" as the destination on the add screen.
@@ -128,8 +155,8 @@ Create a pool from the Planning page — give it a name and, if you like, a colo
 
 Open a pool and you get three stacked sections:
 
-- **Up Next** — the ordered queue. Drag cards to reorder them; the game at the top is marked **Play Next**, your on-deck pick. A pool you never reorder is just a flat list; a pool you do reorder is a proper queue. Either way it's the same thing — a queue is only a pool with an order you care about.
-- **Candidates** — games you've earmarked for the pool but haven't placed in the queue yet. Promote a candidate into **Up Next** when you're ready to commit to an order, or demote one back out if you change your mind.
+- **Queue** — the ordered list of games you plan to play. Drag cards to reorder them; the game at the top is marked **Play Next**, your on-deck pick. A pool you never reorder is just a flat list; a pool you do reorder is a proper queue. Either way it's the same thing — a queue is only a pool with an order you care about.
+- **Candidates** — games you've earmarked for the pool but haven't placed in the queue yet. Promote a candidate into the **Queue** when you're ready to commit to an order, or demote one back out if you change your mind.
 - **Suggestions** — games from your library and wishlist that match the pool's filter but aren't in the pool yet, each with an **Add** button. This is the "matches this pool — add?" list.
 
 ### Filling a pool
@@ -154,11 +181,11 @@ When you set a game's [play status](#tracking-your-progress) to **Completed**, *
 
 Sync is what makes Nexorious worth running if your games are spread across several stores: connect an account once and your purchases there show up in your library automatically, enriched with IGDB metadata. Each person connects their own accounts — your credentials are yours and are stored encrypted on the server.
 
-The **Sync** page shows a card for each supported service — **Steam**, **Epic Games Store**, **PlayStation Store**, **GOG**, **Humble Bundle**, and **Amazon Games** — with its connection status, when it last synced, and how many games are waiting for your attention.
+The **Sync** page shows a card for each supported storefront — **Steam**, **Epic Games Store**, **PlayStation Store**, **GOG**, **Humble Bundle**, and **Amazon Games** — with its connection status, when it last synced, and how many games are waiting for your attention.
 
-### Connecting a service
+### Connecting a storefront
 
-Open a service to connect it. What you provide depends on the store:
+Open a storefront to connect it. What you provide depends on the store:
 
 - **Steam** — your Steam ID and a Steam Web API key. The page links to where you get each.
 - **PlayStation Network** — an NPSSO token from your signed-in PSN session; the page links to instructions for retrieving it.
@@ -166,21 +193,21 @@ Open a service to connect it. What you provide depends on the store:
 - **Humble Bundle** — sign in to bring across your Humble purchases.
 - **Amazon Games** — choose **Sign in with Amazon**, open the Amazon sign-in page it links to, sign in, then paste the full address of the amazon.com page you land on back into Nexorious within 15 minutes. This brings across your Amazon Games purchases and Prime Gaming claims.
 
-Once connected, the card shows your account on that service and a way to disconnect.
+Once connected, the card shows your account on that storefront and a way to disconnect.
 
 ### Sync schedule and running it manually
 
-For each service you can choose how often it syncs — manually only, or hourly, daily, or weekly. Whatever the schedule, **Sync Now** runs it on demand. The service page shows the last sync time and the progress of a running one. If a scheduled sync fails, Nexorious tries again after 15 minutes, then waits twice as long after each further failure, but never longer than the schedule itself. You get one **Sync failed** notification when a service starts failing, not one per attempt; the next failure after a successful sync notifies again. When a service that sent **Sync failed** syncs successfully again, you get a **Sync working again** notification.
+For each storefront you can choose how often it syncs — manually only, or hourly, daily, or weekly. Whatever the schedule, **Sync Now** runs it on demand. The storefront's page shows the last sync time and the progress of a running one. If a scheduled sync fails, Nexorious tries again after 15 minutes, then waits twice as long after each further failure, but never longer than the schedule itself. You get one **Sync failed** notification when a storefront starts failing, not one per attempt; the next failure after a successful sync notifies again. When a storefront that sent **Sync failed** syncs successfully again, you get a **Sync working again** notification.
 
 ### Reviewing matches
 
-Most games match to IGDB automatically. The ones Nexorious isn't sure about land in a **Needs Review** list on the service page, and the Sync entry in the sidebar shows a badge with how many are waiting. For each one you can **find the right match** from IGDB search, or **skip** it so it's left out and not raised again. That search box accepts an **IGDB ID** as well as a title — handy when the title results miss the mark (see [Adding games](#adding-games) for how to find the ID). Matched games can be **re-matched** if Nexorious got one wrong, and anything you skipped can be unskipped later. A game you unskip before it was ever matched appears under **Unmatched**, where you can find its match or skip it again; the next sync also tries to match it while it is still in your storefront library. Matching, re-matching and unskipping take effect in your library straight away. Games whose sync failed appear separately with the reason, and you can retry them individually or all at once.
+Most games match to IGDB automatically. The ones Nexorious isn't sure about land in a **Pending Review** list on the storefront's page, and the Sync entry in the sidebar shows a badge with how many are waiting. For each one you can **find the right match** from IGDB search, or **skip** it so it's left out and not raised again. That search box accepts an **IGDB ID** as well as a title — handy when the title results miss the mark (see [Adding games](#adding-games) for how to find the ID). Matched games can be **re-matched** if Nexorious got one wrong, and anything you skipped can be unskipped later. A game you unskip before it was ever matched appears under **Unmatched**, where you can find its match or skip it again; the next sync also tries to match it while it is still in your storefront library. Matching, re-matching and unskipping take effect in your library straight away. Games whose sync failed appear separately with the reason, and you can retry them individually or all at once.
 
 A sync won't be treated as fully done while items still need review, so it's worth clearing the list now and then.
 
 ### When credentials expire
 
-Store sessions don't last forever. When a service's credentials stop working, its card shows a credentials error and you'll need to reconnect it — re-enter the token or run the sign-in flow again. You can also have Nexorious notify you when this happens (see below).
+Store sessions don't last forever. When a storefront's credentials stop working, its card shows a credentials error and you'll need to reconnect it — re-enter the token or run the sign-in flow again. You can also have Nexorious notify you when this happens (see below).
 
 ## Importing and exporting
 
@@ -192,7 +219,7 @@ The **Import / Export** page moves whole collections in and out.
 
 - **Nexorious JSON or CSV** — restore or merge a collection from a Nexorious export. Either format merges into what you already have rather than wiping it.
 - **vglist JSON** — a migration path for anyone coming from [vglist](https://vglist.co). In vglist, go to **Settings → Export Library** to download your library as a JSON file, then import that file here. Your ratings, play status, playtime, and which stores you own each game on are brought across; the storefront and platform are matched up as closely as vglist's data allows, with anything that doesn't map cleanly kept as a note on the game.
-- **CSV from another tracker** — bring in a library from a CSV export. Known formats are **recognised automatically** when you pick the file: **Darkadia**, **Grouvee**, **Completionator**, and Nexorious's own CSV export all map across with no setup. For anything else, choose your file and map its columns to Nexorious fields yourself in the dialog that follows — so any tracker that can export a CSV can come in. As with the other formats, values that don't map cleanly are kept as a note rather than dropped.
+- **CSV from another tracker** — bring in a library from a CSV export. Exports from known trackers are **recognised automatically** when you pick the file, and their preset maps them across with no setup: **Darkadia**, **Grouvee**, **Completionator**, and Nexorious's own CSV export. You can also pick a preset yourself from the **Preset** list. For anything else, choose your file and map its columns to Nexorious fields yourself in the dialog that follows — so any tracker that can export a CSV can come in. As with the other formats, values that don't map cleanly are kept as a note rather than dropped.
 
 These migration imports are one-off — they bring a collection in once, and don't keep syncing afterwards. All imports run in the background, so you can watch their progress and see recent runs listed on the page.
 
@@ -233,7 +260,8 @@ The groups you'll reach for mirror the web UI:
 - **`nexctl game`** — your library: `list` (with filters), `show`, `add`, `edit`, `acquire` (move a wishlist game into your library), `rm`, plus `stats` and `filters` to see what you can filter on.
 - **`nexctl pool`** — [play-planning pools](#planning): `list`, `show`, `create`, `edit`, `add`/`remove` games, `queue` and `reorder` to manage the order.
 - **`nexctl tag`** — your [tags](#tags): `list`, `create`, `rename`, `rm`.
-- **`nexctl sync`** — [storefront sync](#syncing-your-storefront-libraries): `status`, `connect`/`disconnect` a service, `run` it, set its `config`, and `review`/`resolve`/`skip` the matches that need your attention.
+- **`nexctl sync`** — [storefront sync](#syncing-your-storefront-libraries): `status`, `connect`/`disconnect` a storefront, `run` it, set its `config`, and `review`/`resolve`/`skip` the matches that need your attention.
+- **`nexctl doctor`** — [Library health](#library-health): a summary of every check, the games a check flags, and `apply`, `ignore` and `restore`.
 - **`nexctl import`** and **`nexctl export`** — the same [import and export](#importing-and-exporting) flows: export your whole library to JSON or CSV, and import from a Nexorious export, another tracker's CSV, or a migration source.
 
 You can also tune your own settings — deal region and notifications — with `nexctl config`. If you run the server, there are operator-only groups too (`admin`, `backup`), covered in the [Admin Guide](admin-guide.md#nexctl-the-api-client). `nexctl mcp` connects an AI chat or agent to your collection; see [Connecting AI chats and agents](#connecting-ai-chats-and-agents).

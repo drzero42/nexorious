@@ -9,9 +9,9 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 )
 
-// After a restore every active Job is failed with its unfinished items
-// cancelled, with no owner left recorded and no finishing effects queued;
-// finished Jobs and their items are left alone.
+// After a restore every active Job is failed with its open items
+// cancelled, with no owner left recorded and no ending effects queued;
+// ended Jobs and their items are left alone.
 func TestFailAllAfterRestore(t *testing.T) {
 	m, _ := newTestModule(t)
 	ctx := context.Background()
@@ -21,14 +21,14 @@ func TestFailAllAfterRestore(t *testing.T) {
 	if err := m.AwaitReview(ctx, its[1].ID, *its[1].RiverJobID, Review{}); err != nil {
 		t.Fatal(err)
 	}
-	finish(t, m, its[2], models.JobItemStatusCompleted)
+	end(t, m, its[2], models.JobItemStatusCompleted)
 
 	dispatched, err := m.CreateWithDispatch(ctx, NewJob{UserID: user, JobType: "fake", Source: "other"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	doneID, done := mustCreateWithItems(t, m, insertUser(t), 1)
-	finish(t, m, done[0], models.JobItemStatusFailed)
+	end(t, m, done[0], models.JobItemStatusFailed)
 	effectsBefore := countRiver(t, EffectsArgs{}.Kind())
 
 	if err := testDB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
@@ -47,13 +47,13 @@ func TestFailAllAfterRestore(t *testing.T) {
 	want := []string{models.JobItemStatusCancelled, models.JobItemStatusCancelled, models.JobItemStatusCompleted}
 	for i, it := range loadItems(t, activeID) {
 		if it.Status != want[i] || it.ProcessedAt == nil || it.RiverJobID != nil {
-			t.Errorf("item %d = %s (processed_at %v, owner %v), want %s, finished, no owner", i, it.Status, it.ProcessedAt, it.RiverJobID, want[i])
+			t.Errorf("item %d = %s (processed_at %v, owner %v), want %s, ended, no owner", i, it.Status, it.ProcessedAt, it.RiverJobID, want[i])
 		}
 	}
 	if j := loadJob(t, doneID); j.Status != models.JobStatusCompleted {
-		t.Errorf("finished job changed: %s", j.Status)
+		t.Errorf("ended job changed: %s", j.Status)
 	}
 	if c := countRiver(t, EffectsArgs{}.Kind()); c != effectsBefore {
-		t.Errorf("restore queued finishing effects: %d, want %d", c, effectsBefore)
+		t.Errorf("restore queued ending effects: %d, want %d", c, effectsBefore)
 	}
 }

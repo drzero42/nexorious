@@ -484,11 +484,11 @@ export function GameDetailPage() {
                   </div>
                 </div>
               ) : (
-                /* Platforms & Ownership — shown only for library entries */
+                /* Copies — shown only for library entries */
                 game.platforms &&
                 game.platforms.length > 0 && (
                   <div>
-                    <h3 className="font-medium mb-2">Platforms & Ownership</h3>
+                    <h3 className="font-medium mb-2">Copies</h3>
                     <div className="space-y-2">
                       {game.platforms.map((p) => (
                         <div

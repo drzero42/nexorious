@@ -310,7 +310,7 @@ func TestImportItem_DuplicateGame(t *testing.T) {
 		"title":   "Dupe Game",
 	}
 
-	// Both items exist before either runs: once the first finished, a Job
+	// Both items exist before either runs: once the first ended, a Job
 	// with only that item would be complete.
 	itemID1 := insertTestJobItem(t, testDB, jobID, userID, gameData)
 	itemID2 := insertTestJobItem(t, testDB, jobID, userID, gameData)

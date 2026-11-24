@@ -23,8 +23,8 @@ import (
 
 // PoolsItemKey is the sentinel item_key of the synthetic job_item that carries
 // the Play Planning pools payload for a Nexorious JSON import. It is created
-// already completed and applied by the Job's finishing effects on its first
-// finish; it is not a game item and is excluded from per-job item listings.
+// already completed and applied by the Job's ending effects on its first
+// ending; it is not a game item and is excluded from per-job item listings.
 const PoolsItemKey = "__pools__"
 
 // importPoolData is one pool entry in a Nexorious JSON import's `pools` section.
@@ -186,7 +186,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		tags = append(tags, usergame.TagInput{Name: td.Name, Color: td.Color})
 	}
 
-	err = w.LC.FinishItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{
+	err = w.LC.EndItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{
 		Status: models.JobItemStatusCompleted,
 		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
 			res, err := usergame.Acquire(ctx, tx, usergame.AcquireParams{
@@ -214,7 +214,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			})
 		},
 	})
-	return finishImportItem(ctx, w.LC, job.JobRow, item.ID, err)
+	return endImportItem(ctx, w.LC, job.JobRow, item.ID, err)
 }
 
 // platformInputs builds the Acquire platform inputs of a nexorious export
@@ -272,11 +272,11 @@ func (w *ImportItemWorker) platformInputs(ctx context.Context, pds []importPlatf
 	return plats, nil
 }
 
-// applyImportedPools reads the pools item of a finished nexorious import and
+// applyImportedPools reads the pools item of an ended nexorious import and
 // applies its pools additively: find-or-create each pool by (user_id, name),
 // then attach the members whose games are in the user's library. A bad pools
 // payload is logged and skipped; a database error is returned so the
-// finishing effects are retried (the SQL is idempotent). A member whose game
+// ending effects are retried (the SQL is idempotent). A member whose game
 // was not imported is skipped.
 func applyImportedPools(ctx context.Context, db *bun.DB, jobID, userID string) error {
 	var item models.JobItem
