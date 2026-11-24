@@ -15,6 +15,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
@@ -560,9 +561,6 @@ func flagCredentialsError(ctx context.Context, db bun.IDB, p DispatchSyncArgs, b
 	return true, nil
 }
 
-// boolptr returns a pointer to b.
-func boolptr(b bool) *bool { return &b }
-
 // ── IGDBMatchWorker — Stage 2 ─────────────────────────────────────────────────
 
 type IGDBMatchArgs struct {
@@ -668,7 +666,7 @@ func inheritParentMatch(eg *models.ExternalGame) joblifecycle.OwnWrite {
 		if parentMatch == nil {
 			return joblifecycle.Abort(errParentUnmatched)
 		}
-		if err := EnsureGameRow(ctx, tx, *parentMatch, eg.Title); err != nil {
+		if err := externalgame.EnsureGameRow(ctx, tx, *parentMatch, eg.Title); err != nil {
 			return err
 		}
 		if _, err := tx.NewRaw(
@@ -737,7 +735,7 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 		// NULL: a rematch that committed during the search wins (#1338);
 		// either way the write stage writes whatever match the game has.
 		return w.toWrite(ctx, rj, item.ID, func(ctx context.Context, tx bun.Tx) error {
-			if err := EnsureGameRow(ctx, tx, bestID, eg.Title); err != nil {
+			if err := externalgame.EnsureGameRow(ctx, tx, bestID, eg.Title); err != nil {
 				return err
 			}
 			if _, err := tx.NewRaw(
@@ -803,8 +801,8 @@ type UserGameWorker struct {
 // cannotWrite reports whether err means the game cannot be written, which
 // fails the item, as opposed to an error that might go away by trying again.
 func cannotWrite(err error) bool {
-	return errors.Is(err, ErrExternalGameNotFound) || errors.Is(err, ErrExternalGameUnmatched) ||
-		errors.Is(err, ErrExternalGameNoPlatforms) || errors.Is(err, usergame.ErrValidation) ||
+	return errors.Is(err, externalgame.ErrNotFound) || errors.Is(err, externalgame.ErrUnmatched) ||
+		errors.Is(err, externalgame.ErrNoPlatforms) || errors.Is(err, usergame.ErrValidation) ||
 		errors.Is(err, usergame.ErrNotFound) || errors.Is(err, usergame.ErrConflict) ||
 		errors.Is(err, usergame.ErrUnprocessable)
 }
@@ -837,13 +835,13 @@ func (w *UserGameWorker) Work(ctx context.Context, rj *river.Job[UserGameArgs]) 
 	// after its commit, is refused before it writes anything. The write
 	// re-reads the match and skip flag under the game's row lock, so a
 	// rematch that committed after eg was loaded wins.
-	var lw LibraryWrite
+	var lw externalgame.LibraryWrite
 	err = w.LC.EndItem(ctx, item.ID, rj.ID, joblifecycle.ItemResult{
 		Status: models.JobItemStatusCompleted,
 		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
 			var err error
-			if lw, err = WriteExternalGameToLibrary(ctx, tx, item.UserID, eg.ID); err != nil {
-				if errors.Is(err, ErrExternalGameSkipped) || cannotWrite(err) {
+			if lw, err = externalgame.WriteToLibrary(ctx, tx, item.UserID, eg.ID); err != nil {
+				if errors.Is(err, externalgame.ErrSkipped) || cannotWrite(err) {
 					return nil, joblifecycle.Abort(err)
 				}
 				return nil, err
@@ -857,7 +855,7 @@ func (w *UserGameWorker) Work(ctx context.Context, rj *river.Job[UserGameArgs]) 
 		return ctx.Err()
 	case joblifecycle.IsRefusal(err):
 		return exitOrRetry(ctx, err)
-	case errors.Is(err, ErrExternalGameSkipped):
+	case errors.Is(err, externalgame.ErrSkipped):
 		return w.endSkipped(ctx, rj, item, &eg)
 	case cannotWrite(err), lastAttempt(rj.JobRow):
 		return failItem(ctx, w.LC, item.ID, rj.ID, err.Error())

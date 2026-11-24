@@ -240,7 +240,7 @@ Both item workers act only on an item whose recorded River job they are, so a la
 One `UserGameWorker` job runs per game, handed on by Stage 2.
 
 1. If `is_skipped` is true: record a `skipped` change and finish the item as `skipped`, in one transaction, and stop
-2. In one transaction, after the module checked that this River job still owns the item, the **library write** (`tasks.WriteExternalGameToLibrary`, shared with rematch and unskip), the item's `sync_changes` rows and the item's completion:
+2. In one transaction, after the module checked that this River job still owns the item, the **library write** (`externalgame.WriteToLibrary`, shared with rematch and unskip), the item's `sync_changes` rows and the item's completion:
    - Lock the `external_games` row (`FOR UPDATE`) and read `resolved_igdb_id` and `is_skipped` again under the lock. A writer that loaded the game before a rematch committed writes the rematch's match, never the old one; a game skipped meanwhile is handled as in step 1
    - Ensure the `games` row, then `usergame.Acquire` (`ModeUpsert`) on every row in `external_game_platforms`: one `user_games` row per user + IGDB game ID, and one `user_game_platforms` row per `(user_game_id, platform, storefront)` with `external_game_id` set. On conflict the ownership rank guard applies (never downgrade ownership status), and `hours_played` is updated only if the incoming value is greater
    - Set `external_games.updated_at` and `library_written_at`
