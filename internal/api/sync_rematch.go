@@ -291,8 +291,9 @@ func rematchFamily(ctx context.Context, tx bun.Tx, userID, id string, igdbID int
 // HandleUnskipGame handles POST /api/sync/external-games/:id/unskip. It clears
 // the skip on a top-level game and its Child games; a matched game is written
 // to the library at once, with its children on its match. An unmatched game is
-// only unskipped: it shows as unmatched until the user matches it or the next
-// sync does (#1338). All of it is one transaction.
+// not written: its children are made unmatched too (#1425), and the family
+// shows as unmatched until the user matches it or the next sync does (#1338).
+// All of it is one transaction.
 func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -314,24 +315,26 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		).Exec(ctx); err != nil {
 			return fmt.Errorf("unskip: %w", err)
 		}
-		if eg.ResolvedIGDBID == nil {
-			return nil
-		}
 		// A child skipped with its parent may carry an older match, and one
 		// created while the parent was skipped has none: it takes the parent's,
 		// leaving its old user game (unskip has no orphan_action; it is kept).
+		// An unmatched parent's matched child (data from before #1424) loses
+		// its match the same way, as repairChildSkips does (#1425).
 		for _, ch := range children {
-			if ch.ResolvedIGDBID != nil && *ch.ResolvedIGDBID == *eg.ResolvedIGDBID {
+			if sameMatch(ch.ResolvedIGDBID, eg.ResolvedIGDBID) {
 				continue
 			}
 			if err := usergame.UnlinkExternalGame(ctx, tx, userID, ch.ID); err != nil {
 				return err
 			}
 			if _, err := tx.NewRaw(
-				`UPDATE external_games SET resolved_igdb_id = ? WHERE id = ?`, *eg.ResolvedIGDBID, ch.ID,
+				`UPDATE external_games SET resolved_igdb_id = ? WHERE id = ?`, eg.ResolvedIGDBID, ch.ID,
 			).Exec(ctx); err != nil {
 				return fmt.Errorf("re-point child: %w", err)
 			}
+		}
+		if eg.ResolvedIGDBID == nil {
+			return nil
 		}
 		if _, err := writeFamily(ctx, tx, userID, ids); err != nil {
 			return err
@@ -351,4 +354,12 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		tasks.EnqueueImmediateMetadataFetch(ctx, h.db, h.riverClient, *wrote)
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// sameMatch reports whether two matches are equal, both unmatched included.
+func sameMatch(a, b *int32) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }

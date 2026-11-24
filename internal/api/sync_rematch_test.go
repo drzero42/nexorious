@@ -622,6 +622,32 @@ func TestUnskip_UnmatchedGame_OnlyClearsTheFlag(t *testing.T) {
 	}
 }
 
+// A family from before #1424 can have an unmatched parent and a matched,
+// linked child. Unskip makes the child follow its parent, as the dispatch's
+// repair does: its links go (the user game is kept) and its match is cleared
+// (#1425).
+func TestUnskip_UnmatchedGame_ClearsAMatchedChild(t *testing.T) {
+	f := newRM(t, "unskip-unmatched-child")
+	f.game("eg", "", 0, true, "playstation-4")
+	f.game("ch", "eg", 100, true, "playstation-5")
+	f.link("ug-old", 100, "ch", "playstation-5")
+
+	wantCode(t, f.unskip("eg"), http.StatusNoContent)
+
+	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id IN ('eg', 'ch') AND NOT is_skipped AND resolved_igdb_id IS NULL`); n != 2 {
+		t.Errorf("unskipped, unmatched family: want 2, got %d", n)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM user_game_platforms WHERE external_game_id = 'ch'`); n != 0 {
+		t.Errorf("child links left: %d", n)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM user_games WHERE id = 'ug-old'`); n != 1 {
+		t.Error("the child's user game was removed")
+	}
+	if n := f.count(`SELECT COUNT(*) FROM jobs`) + f.count(`SELECT COUNT(*) FROM river_job`); n != 0 {
+		t.Errorf("jobs or river jobs created: %d", n)
+	}
+}
+
 func TestUnskip_FailureRollsBackTheFlag(t *testing.T) {
 	f := newRM(t, "unskip-rollback")
 	f.game("eg", "", 200, true, "playstation-4")
