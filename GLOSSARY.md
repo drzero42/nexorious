@@ -68,3 +68,38 @@ _Avoid_: pending review (an item in a Job waiting for the user; an Unmatched gam
 **Rematch**:
 Choosing or changing which IGDB game an External game points to. The library is updated at once; a Rematch is not a Job.
 _Avoid_: resolve (a Resolution is the choice; in a sync, the Rematch is the act that makes it)
+
+## Library health
+
+**Library health**:
+The set of Checks run over a user's collection to find data that looks wrong or out of date.
+_Avoid_: library smells (a Smell is one tier of Checks, not the whole feature), doctor (the name of the `nexctl` command, not of the feature)
+
+**Check**:
+One rule in Library health, such as "Wishlisted yet owned". It flags the games that break it, and belongs to one of two tiers: Inconsistency or Smell.
+_Avoid_: detector, smell (a tier of Checks, not one Check)
+
+**Flagged game**:
+A game that a Check currently reports. It stays flagged until its data no longer breaks the Check, or until it is Ignored for that Check.
+_Avoid_: finding, issue, flagged item
+
+**Inconsistency**:
+The tier of Checks whose Flagged games have data that is wrong and probably needs fixing.
+
+**Smell**:
+The tier of Checks whose Flagged games have data that looks out of date or incomplete and might be worth updating, but is not wrong.
+_Avoid_: suggestion (a pool's matching game), nudge
+
+**Apply**:
+Running an auto-fixable Check's fix on some or all of its Flagged games. It is always scoped to one Check. Checks that are not auto-fixable leave the fix to the user.
+_Avoid_: fix all, apply suggestion (a Suggestion belongs to a pool)
+
+**Ignore**:
+Telling one Check to stop flagging one game. Other Checks still apply to the game. **Restore** undoes it.
+_Avoid_: dismiss, un-dismiss
+
+## Pools
+
+**Suggestion**:
+A game from the user's library or wishlist that matches a pool's filter but is not in the pool yet. Finished games are never Suggestions.
+_Avoid_: match, recommendation
