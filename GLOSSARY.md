@@ -26,6 +26,10 @@ While a Job item is Open, its status says who acts next: a worker (`pending`) or
 A Job item a worker could not match to an IGDB game with confidence, waiting for the user to Resolve or Skip it. It keeps its Job from completing.
 _Avoid_: unmatched, needs review
 
+**Possible match**:
+An IGDB game a worker considered for a Job item but could not choose with confidence. They are offered to the user while the item is in Pending review.
+_Avoid_: candidate (a game in a pool not yet in its Queue), suggestion, IGDB candidate
+
 **Resolution**:
 The IGDB game the user chose for an item in Pending review. Resolving lets the item end. In a sync the choice is made by a Rematch.
 
@@ -53,6 +57,10 @@ Handing a Job's failed items back to a worker. Retrying reopens a completed Job 
 
 ## Storefront sync
 
+**Sync**:
+A Job that brings the library of one connected Storefront into the Collection, Acquiring the Games found there. It runs on the Storefront's schedule or when the user asks.
+_Avoid_: service (the Storefront you connect), refresh, import (a one-off from a file)
+
 **External game**:
 A game as it appears in a connected storefront's library, matched to at most one IGDB game.
 _Avoid_: storefront game
@@ -68,6 +76,32 @@ _Avoid_: pending review (an item in a Job waiting for the user; an Unmatched gam
 **Rematch**:
 Choosing or changing which IGDB game an External game points to. The library is updated at once; a Rematch is not a Job.
 _Avoid_: resolve (a Resolution is the choice; in a sync, the Rematch is the act that makes it)
+
+**Unskip**:
+Removing a Skip from an External game. A matched game is written to the Library at once; one that was never matched becomes Unmatched.
+_Avoid_: unignore, restore (undoes an Ignore in Library health)
+
+## Import and export
+
+**Import**:
+A Job that brings Games from a file into the Collection once, merging with what is already there. Unlike a Sync, it does not repeat.
+_Avoid_: migration, sync
+
+**Import source**:
+Where an Import's file comes from: a Nexorious export, vglist, or CSV from another tracker.
+_Avoid_: format (JSON or CSV, the file type), provider
+
+**Preset**:
+A known tracker's CSV layout, such as Darkadia or Grouvee, which a CSV Import recognises by its header row and reads with no setup.
+_Avoid_: format (JSON or CSV, the file type), template, profile
+
+**Mapping**:
+The user's statement of which column of a CSV file holds which field, for a CSV Import with no Preset.
+_Avoid_: column config, schema
+
+**Export**:
+A Job that writes the user's whole Collection to a file, as JSON (complete) or CSV (a flatter summary).
+_Avoid_: backup (an admin's copy of the whole server)
 
 ## Library health
 
