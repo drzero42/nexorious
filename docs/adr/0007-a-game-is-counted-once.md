@@ -17,5 +17,5 @@ We decided that "game" always means the game itself. Anything that shows the use
 - A number that counts something else must not be called games. A Job's progress counts Job items, and a sync has one item per edition, so it reports items.
 - Breakdowns do not add up to the total. A game on two platforms is counted under each platform, and a game owned on two storefronts is counted in each storefront's sync view, but once in the library total.
 - Within one breakdown value a game still counts once: a game owned on PC through two storefronts is one PC game.
-- A storefront's sync view knows two External games are the same game only when they share a title. Two External games with different titles that the user matched to the same IGDB game are two games there and one game in the library.
+- A storefront's sync view and the library can disagree. Editions are grouped under one top-level External game by their title, when they are first seen. Two External games with different titles that the user matched to the same IGDB game are therefore two games in the sync view and one game in the library.
 - That some games are owned on several platforms stays visible: it is shown on the game, not by counting it more than once.
