@@ -59,4 +59,53 @@ describe('DismissedItems', () => {
     render(<DismissedItems checkID="orphan-game" />);
     expect(screen.getByText(/no dismissed items/i)).toBeInTheDocument();
   });
+
+  const mkPage = (
+    page: number,
+    pages: number,
+    items = [{ user_game_id: `ug-p${page}`, title: `Game ${page}`, created_at: '2026-06-01' }],
+  ) => ({
+    data: { items, total: pages * 25, page, per_page: 25, pages },
+    isLoading: false,
+    isFetching: false,
+  });
+
+  it('hides pagination controls for a single page', () => {
+    render(<DismissedItems checkID="orphan-game" />);
+    expect(screen.queryByRole('button', { name: /next/i })).not.toBeInTheDocument();
+  });
+
+  it('pages through dismissed items beyond the first page', async () => {
+    const user = userEvent.setup();
+    const { useIgnoredItems } = vi.mocked(await import('@/hooks'));
+    useIgnoredItems.mockImplementation(
+      (_checkID: string, page: number) =>
+        mkPage(page, 3) as unknown as ReturnType<typeof useIgnoredItems>,
+    );
+    render(<DismissedItems checkID="orphan-game" />);
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+    expect(screen.getByText('75 dismissed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /previous/i })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: /next/i }));
+    expect(useIgnoredItems).toHaveBeenLastCalledWith('orphan-game', 2, true);
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(screen.getByText('Game 2')).toBeInTheDocument();
+  });
+
+  it('steps back a page after restoring the last item on a later page', async () => {
+    const user = userEvent.setup();
+    const { useIgnoredItems } = vi.mocked(await import('@/hooks'));
+    useIgnoredItems.mockImplementation(
+      (_checkID: string, page: number) =>
+        mkPage(page, 2) as unknown as ReturnType<typeof useIgnoredItems>,
+    );
+    render(<DismissedItems checkID="orphan-game" />);
+    await user.click(screen.getByRole('button', { name: /next/i }));
+    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /restore/i }));
+    await waitFor(() => expect(screen.getByText('Page 1 of 2')).toBeInTheDocument());
+    expect(useIgnoredItems).toHaveBeenLastCalledWith('orphan-game', 1, true);
+  });
 });

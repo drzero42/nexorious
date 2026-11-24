@@ -273,7 +273,7 @@ func (h *LibrarySmellsHandler) HandleListIgnored(c *echo.Context) error {
 		 JOIN user_games ug ON ug.id = si.user_game_id
 		 JOIN games g ON g.id = ug.game_id
 		 WHERE si.user_id = ? AND si.check_id = ?
-		 ORDER BY si.created_at DESC`,
+		 ORDER BY si.created_at DESC, si.user_game_id`,
 		userID, check.ID,
 	).Scan(c.Request().Context(), &items)
 	if err != nil {
