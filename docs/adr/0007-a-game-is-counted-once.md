@@ -6,6 +6,7 @@ We decided that "game" always means the game itself. Anything that shows the use
 
 - In the library, a game is one library entry, whatever platforms it has.
 - In a storefront's sync views, a game is one top-level External game. Its Child games are editions of it and are not counted or listed on their own.
+- A record of what a sync wrote to the library ("Added to library", "Already in library", "Status changed") counts library entries, also when it is shown in a sync view. What a sync records about the storefront ("Removed from storefront", "Skipped") counts top-level External games.
 
 ## Considered options
 
