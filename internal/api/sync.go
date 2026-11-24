@@ -1287,25 +1287,18 @@ func skipHTTPError(c *echo.Context, err error, id string) error {
 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 }
 
-// skipFamily skips a game and its Child games: it locks the game, then its
-// children ordered by id, and sets their skip flags. With jobID set it runs in
-// the module's transaction for that Job and returns the family's unfinished
-// items in it, for the module to skip; the game's 'skipped' row is written
-// only when the game's own item is among them (children get none).
+// skipFamily skips a game and its Child games: it locks the family through
+// lockFamily, which refuses a Child game with 400, and sets their skip flags.
+// With jobID set it runs in the module's transaction for that Job and returns
+// the family's unfinished items in it, for the module to skip; the game's
+// 'skipped' row is written only when the game's own item is among them
+// (children get none).
 func skipFamily(ctx context.Context, tx bun.Tx, userID, id, jobID string) ([]string, error) {
-	var eg models.ExternalGame
-	err := tx.NewSelect().Model(&eg).Where("id = ? AND user_id = ?", id, userID).For("UPDATE").Scan(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, joblifecycle.Abort(echo.NewHTTPError(http.StatusNotFound, "not found"))
-	}
+	eg, children, err := lockFamily(ctx, tx, userID, id, "skip")
 	if err != nil {
-		return nil, fmt.Errorf("lock external game: %w", err)
+		return nil, abortHTTP(err)
 	}
-	var childIDs []string
-	if err := tx.NewRaw(`SELECT id FROM external_games WHERE parent_id = ? ORDER BY id FOR UPDATE`, id).Scan(ctx, &childIDs); err != nil {
-		return nil, fmt.Errorf("lock child external games: %w", err)
-	}
-	family := append([]string{id}, childIDs...)
+	family := familyIDs(eg, children)
 	if _, err := tx.NewRaw(
 		`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id IN (?)`, bun.List(family),
 	).Exec(ctx); err != nil {
