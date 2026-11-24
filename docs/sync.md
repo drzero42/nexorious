@@ -308,7 +308,7 @@ The user marks a game as ignored. `is_skipped` is set to `true` on the `external
 
 ### Unskipping a game
 
-The user removes the skip. In one transaction `HandleUnskipGame` locks the family, clears `is_skipped` on the game and its children, and, if the game is matched, gives every child whose match differs the parent's match (removing the child's old platform links; the user game they were on is kept) and writes the family to the library. An unmatched game is only unskipped: it shows as **Unmatched**, where the user can match it; the next sync matches it if it is still in the storefront library.
+The user removes the skip. In one transaction `HandleUnskipGame` locks the family, clears `is_skipped` on the game and its children, and, if the game is matched, gives every child whose match differs the parent's match (removing the child's old platform links; the user game they were on is kept) and writes the family to the library. An unmatched game is not written to the library: any child that still carries a match (possible only in data from before #1424) loses its platform links (the user game they were on is kept) and its match, so the whole family shows as **Unmatched**, where the user can match it; the next sync matches it if it is still in the storefront library.
 
 ### Retrying failed games
 
