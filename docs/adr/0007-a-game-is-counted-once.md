@@ -1,0 +1,21 @@
+# A game is counted once, whatever platforms and editions the user has
+
+One game can be stored as several rows. In the library it has one row per platform and storefront it is owned on. In a storefront's library it has one External game per edition the storefront sells separately: PSN gives the PS4 and PS5 versions of a game different ids, so they arrive as an External game and its Child game. Counts that were labelled "games" had come to count different things: the library total counted games, while the sync status counted editions (#1438).
+
+We decided that "game" always means the game itself. Anything that shows the user a number of games, or a list of games, counts and lists each game once: a game owned on PS4 and PS5 is one game. Platforms, storefronts and editions are details of a game, never more games.
+
+- In the library, a game is one library entry, whatever platforms it has.
+- In a storefront's sync views, a game is one top-level External game. Its Child games are editions of it and are not counted or listed on their own.
+
+## Considered options
+
+- **Count what is stored.** Rejected: the number would depend on how each storefront numbers its releases. The same game on two PlayStation consoles would count as two games on PSN, and as one on a storefront that sells it under one id.
+- **Count a game once per platform.** Rejected for the same reason: it measures how the user owns their games, not how many they have.
+
+## Consequences
+
+- A number that counts something else must not be called games. A Job's progress counts Job items, and a sync has one item per edition, so it reports items.
+- Breakdowns do not add up to the total. A game on two platforms is counted under each platform, and a game owned on two storefronts is counted in each storefront's sync view, but once in the library total.
+- Within one breakdown value a game still counts once: a game owned on PC through two storefronts is one PC game.
+- A storefront's sync view knows two External games are the same game only when they share a title. Two External games with different titles that the user matched to the same IGDB game are two games there and one game in the library.
+- That some games are owned on several platforms stays visible: it is shown on the game, not by counting it more than once.

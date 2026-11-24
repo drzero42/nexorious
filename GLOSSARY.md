@@ -2,6 +2,12 @@
 
 A self-hosted tracker for a personal video-game collection: the games a user owns, wants, and plays, kept in step with their storefront libraries.
 
+## Collection
+
+**Game**:
+One video game, whatever platforms, storefronts and editions the user has it on. It is counted and listed once.
+_Avoid_: game for a platform release, an edition, or a storefront's copy of a game (an External game)
+
 ## Background work
 
 **Job**:
