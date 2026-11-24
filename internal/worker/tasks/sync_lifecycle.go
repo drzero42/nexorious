@@ -82,15 +82,15 @@ type syncFailure struct {
 	Notify bool `json:"notify,omitempty"`
 }
 
-// syncObserver records the sync metrics: items as they finish, and a Job's
-// outcome on its first finish. A cancelled sync records no outcome.
+// syncObserver records the sync metrics: items as they end, and a Job's
+// outcome on its first ending. A cancelled sync records no outcome.
 type syncObserver struct{}
 
-func (syncObserver) ItemFinished(ctx context.Context, job models.Job, status string) {
+func (syncObserver) ItemEnded(ctx context.Context, job models.Job, status string) {
 	observability.RecordSyncItems(ctx, job.Source, status, 1)
 }
 
-func (syncObserver) JobFinished(ctx context.Context, job models.Job, outcome string, failedItems int) {
+func (syncObserver) JobEnded(ctx context.Context, job models.Job, outcome string, failedItems int) {
 	switch outcome {
 	case models.JobStatusFailed:
 		observability.RecordSyncOutcome(ctx, job.Source, "failed")
@@ -103,7 +103,7 @@ func (syncObserver) JobFinished(ctx context.Context, job models.Job, outcome str
 	}
 }
 
-// syncEffects are the sync kind's finishing effects. Each is idempotent for
+// syncEffects are the sync kind's ending effects. Each is idempotent for
 // its Job: notifications carry a dedup key per Job and type.
 func syncEffects(ctx context.Context, db *bun.DB, e joblifecycle.Effect) error {
 	switch e.Outcome {

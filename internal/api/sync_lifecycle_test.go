@@ -20,7 +20,7 @@ import (
 // failItemOf fails an item through its recorded owner.
 func failItemOf(t *testing.T, lc *joblifecycle.Module, itemID string) {
 	t.Helper()
-	if err := lc.FinishItem(context.Background(), itemID, itemOwnerID(t, itemID), joblifecycle.ItemResult{
+	if err := lc.EndItem(context.Background(), itemID, itemOwnerID(t, itemID), joblifecycle.ItemResult{
 		Status: "failed", Message: "boom",
 	}); err != nil {
 		t.Fatalf("fail item: %v", err)
@@ -113,9 +113,9 @@ func (f *rmFixture) skip(id string) *httptest.ResponseRecorder {
 	return postJSONAuth(f.t, f.e, "/api/sync/ignored/"+id, nil, f.token)
 }
 
-// A Skip that finds no unfinished item of the game in an active Job sets only
+// A Skip that finds no open item of the game in an active Job sets only
 // the flags: no item changes and no diff row.
-func TestSkip_NoUnfinishedItem_SetsOnlyTheFlags(t *testing.T) {
+func TestSkip_NoOpenItem_SetsOnlyTheFlags(t *testing.T) {
 	f := newRM(t, "skip-flags")
 	f.game("eg", "", 100, false, "playstation-4")
 	f.game("ch", "eg", 100, false, "playstation-5")
@@ -124,7 +124,7 @@ func TestSkip_NoUnfinishedItem_SetsOnlyTheFlags(t *testing.T) {
 	job := newSyncJob(t, lc, f.userID, rmStore)
 	ids := job.add(t, f.userID, "eg", "other")
 	job.done(t)
-	if err := lc.FinishItem(context.Background(), ids[0], itemOwnerID(t, ids[0]), joblifecycle.ItemResult{Status: "completed"}); err != nil {
+	if err := lc.EndItem(context.Background(), ids[0], itemOwnerID(t, ids[0]), joblifecycle.ItemResult{Status: "completed"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -134,7 +134,7 @@ func TestSkip_NoUnfinishedItem_SetsOnlyTheFlags(t *testing.T) {
 		t.Errorf("skipped family members: want 2, got %d", n)
 	}
 	if s := f.itemStatus(ids[0]); s != "completed" {
-		t.Errorf("finished item: want completed, got %s", s)
+		t.Errorf("ended item: want completed, got %s", s)
 	}
 	if s := f.itemStatus(ids[1]); s != "pending" {
 		t.Errorf("another game's item: want pending, got %s", s)
@@ -232,7 +232,7 @@ func TestSkip_ConcurrentWrite_NoDeadlock(t *testing.T) {
 	}
 }
 
-// Reset during a running sync cancels it through the module (no unfinished
+// Reset during a running sync cancels it through the module (no open
 // item, no queued River job) and deletes the storefront's games.
 func TestResetSyncData_DuringASync(t *testing.T) {
 	f := newRM(t, "reset-during")
@@ -247,7 +247,7 @@ func TestResetSyncData_DuringASync(t *testing.T) {
 		t.Errorf("job: want cancelled, got %s", s)
 	}
 	if n := f.count(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status IN ('pending', 'pending_review')`, job.ID); n != 0 {
-		t.Errorf("unfinished items: %d", n)
+		t.Errorf("open items: %d", n)
 	}
 	if n := f.count(`SELECT COUNT(*) FROM river_job WHERE state IN ('available', 'scheduled', 'retryable', 'pending')`); n != 0 {
 		t.Errorf("queued River jobs left: %d", n)

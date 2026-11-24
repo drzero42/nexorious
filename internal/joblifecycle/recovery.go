@@ -24,7 +24,7 @@ const (
 	msgItemGaveUp     = "the worker gave up after its last attempt"
 	msgItemNoResult   = "the worker stopped without a result"
 	msgDispatchGaveUp = "interrupted: the dispatch gave up after its last attempt"
-	msgDispatchNoDone = "interrupted: the dispatch stopped without finishing"
+	msgDispatchNoDone = "interrupted: the dispatch stopped before it was done"
 	msgDispatchLost   = "interrupted; start it again"
 )
 
@@ -125,7 +125,7 @@ func (m *Module) recoverJob(ctx context.Context, tx bun.Tx, st *txState, jobID s
 	}
 	ctx = logging.WithJobID(ctx, job.ID)
 
-	// An unfinished dispatch first: when it decides the Job fails, its items
+	// A dispatch that is not done first: when it decides the Job fails, its items
 	// are cancelled with it and need nothing queued.
 	if !job.DispatchComplete {
 		failMsg, err := m.recoverDispatch(ctx, tx, k, job, r)
@@ -213,7 +213,7 @@ func (m *Module) recoverJob(ctx context.Context, tx bun.Tx, st *txState, jobID s
 // recoverDispatch applies the recovery rule to a Job whose dispatch is not
 // done: it adopts a live dispatch River job, leaves a live owner alone, or
 // inserts the dispatch again. It returns the message to fail the Job with
-// when the dispatch ended without finishing or cannot be run again, else "".
+// when the dispatch stopped before it was done or cannot be run again, else "".
 func (m *Module) recoverDispatch(ctx context.Context, tx bun.Tx, k *Kind, job *models.Job, r *RecoveryResult) (string, error) {
 	if job.RiverJobID == nil {
 		rid, err := findLive(ctx, tx, k.DispatchRiverKinds, "job_id", job.ID)
@@ -269,7 +269,7 @@ func (m *Module) recoverDispatch(ctx context.Context, tx bun.Tx, k *Kind, job *m
 
 func (m *Module) recoveryFailItem(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, it *models.JobItem, msg string) error {
 	slog.WarnContext(ctx, "job recovery: failed interrupted work", logging.KeyJobType, job.JobType, logging.KeyJobItemID, it.ID, "reason", msg)
-	return m.finishItem(ctx, tx, st, k, job, it, models.JobItemStatusFailed, msg, nil)
+	return m.endItem(ctx, tx, st, k, job, it, models.JobItemStatusFailed, msg, nil)
 }
 
 // RecoveryArgs is the periodic River job that runs the recovery rule.

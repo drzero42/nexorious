@@ -209,7 +209,7 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, out, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "pool_show", Description: "Show a pool's full detail including its ordered queue and candidates. If the name matches multiple pools, returns candidates to disambiguate."},
+	addTool(s, &mcp.Tool{Name: "pool_show", Description: "Show a pool's full detail including its ordered queue and candidates. If the name matches multiple pools, returns the matching pools in `candidates` to choose from."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolShowInput) (*mcp.CallToolResult, poolShowOutput, error) {
 			key := apiKey(ctx)
 			pools, err := clientops.FindPoolsByRef(ctx, c, key, in.Ref)
@@ -259,7 +259,7 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, poolWriteOutput{Pool: brief, Message: fmt.Sprintf("Created pool %q (%s).", pool.Name, pool.ID)}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "pool_edit", Description: "Edit a pool's name, color, or saved filter. Ambiguous name matches return candidates — call again with the id."},
+	addTool(s, &mcp.Tool{Name: "pool_edit", Description: "Edit a pool's name, color, or saved filter. Ambiguous names return the matching pools in `candidates` — call again with the id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolEditInput) (*mcp.CallToolResult, poolWriteOutput, error) {
 			key := apiKey(ctx)
 			ref, cands, err := resolvePoolForWrite(ctx, c, key, in.Ref, "pool_edit")
@@ -295,7 +295,7 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, poolWriteOutput{Pool: brief, Message: fmt.Sprintf("Updated pool %q.", updated.Name)}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "pool_rm", Description: "Delete a pool. Ambiguous name matches return candidates — call again with the id."},
+	addTool(s, &mcp.Tool{Name: "pool_rm", Description: "Delete a pool. Ambiguous names return the matching pools in `candidates` — call again with the id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolRmInput) (*mcp.CallToolResult, poolWriteOutput, error) {
 			key := apiKey(ctx)
 			ref, cands, err := resolvePoolForWrite(ctx, c, key, in.Ref, "pool_rm")
@@ -311,7 +311,7 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, poolWriteOutput{Message: fmt.Sprintf("Deleted pool %q (%s).", ref.Name, ref.ID)}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "pool_add", Description: "Add games to a pool as candidates. Ambiguous pool/game refs return candidates — call again with ids."},
+	addTool(s, &mcp.Tool{Name: "pool_add", Description: "Add games to a pool as candidates. Ambiguous pool or game refs return the matching pools or games in `candidates` — call again with ids."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolAddInput) (*mcp.CallToolResult, poolGamesOutput, error) {
 			key := apiKey(ctx)
 			if len(in.Games) == 0 {
@@ -350,7 +350,7 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, poolGamesOutput{Pool: pb, Count: n, Message: fmt.Sprintf("Added %d game(s) to %q.", n, pool.Name)}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "pool_remove", Description: "Remove games from a pool. Ambiguous pool/game refs return candidates — call again with ids."},
+	addTool(s, &mcp.Tool{Name: "pool_remove", Description: "Remove games from a pool. Ambiguous pool or game refs return the matching pools or games in `candidates` — call again with ids."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolRemoveInput) (*mcp.CallToolResult, poolGamesOutput, error) {
 			key := apiKey(ctx)
 			if len(in.Games) == 0 {
@@ -383,7 +383,7 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, poolGamesOutput{Pool: pb, Count: int64(len(ids)), Message: fmt.Sprintf("Removed %d game(s) from %q.", len(ids), pool.Name)}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "pool_queue", Description: "Set a pool's ordered queue (declarative — BulkAdd then SetQueue). Ambiguous pool/game refs return candidates — call again with ids."},
+	addTool(s, &mcp.Tool{Name: "pool_queue", Description: "Set a pool's ordered queue (declarative — BulkAdd then SetQueue). Ambiguous pool or game refs return the matching pools or games in `candidates` — call again with ids."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolQueueInput) (*mcp.CallToolResult, poolGamesOutput, error) {
 			key := apiKey(ctx)
 			pool, cands, err := resolvePoolForWrite(ctx, c, key, in.Pool, "pool_queue")
@@ -419,7 +419,7 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, poolGamesOutput{Pool: pb, Count: int64(len(ids)), Message: fmt.Sprintf("Queued %d game(s) in %q.", len(ids), pool.Name)}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "pool_reorder", Description: "Reorder pools — positions follow argument order. Ambiguous pool refs return candidates — call again with ids."},
+	addTool(s, &mcp.Tool{Name: "pool_reorder", Description: "Reorder pools — positions follow argument order. Ambiguous pool refs return the matching pools in `candidates` — call again with ids."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolReorderInput) (*mcp.CallToolResult, poolWriteOutput, error) {
 			key := apiKey(ctx)
 			if len(in.Pools) == 0 {

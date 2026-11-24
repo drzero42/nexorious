@@ -7,10 +7,10 @@
 //
 // Every operation locks the Job row first, checks what it expects, writes,
 // and evaluates completion before it commits. River jobs for a Job's dispatch,
-// its items and its finishing effects are inserted in that same transaction,
+// its items and its ending effects are inserted in that same transaction,
 // through an insert-only River client on Bun's *sql.DB (ADR 0001), and the
-// River job that owns a pending item or an unfinished dispatch is recorded on
-// the row (river_job_id).
+// River job that owns a pending item or a dispatch that is not done is
+// recorded on the row (river_job_id).
 //
 // The module also writes river_job directly in two places: Cancel and Fail
 // cancel a Job's queued River jobs with one set-based UPDATE before signalling
@@ -38,7 +38,7 @@ import (
 	"github.com/drzero42/nexorious/internal/logging"
 )
 
-// Outcome is what a finishing-effects River job was queued for.
+// Outcome is what an ending-effects River job was queued for.
 type Outcome string
 
 const (
@@ -62,7 +62,7 @@ var (
 )
 
 // IsRefusal reports whether err means the caller no longer has anything to do:
-// it is not the owner, the Job is finished, the row is gone, or the dispatch
+// it is not the owner, the Job has ended, the row is gone, or the dispatch
 // is already done. A worker that gets one exits cleanly.
 func IsRefusal(err error) bool {
 	return errors.Is(err, ErrNotOwner) || errors.Is(err, ErrJobNotActive) ||
@@ -93,12 +93,12 @@ type DupKey struct {
 	UserID string
 }
 
-// Effect is what a kind's finishing effects are run with.
+// Effect is what a kind's ending effects are run with.
 type Effect struct {
-	Job         *models.Job
-	Outcome     Outcome
-	FirstFinish bool
-	KindData    json.RawMessage
+	Job      *models.Job
+	Outcome  Outcome
+	FirstEnd bool
+	KindData json.RawMessage
 	// Insert queues a River job that is not Job work, such as a dispatch
 	// that creates its own Job (the store-link refresh after a sync).
 	Insert func(ctx context.Context, args river.JobArgs) error
@@ -107,11 +107,11 @@ type Effect struct {
 // Observer records metrics in-process, right after the transaction of the
 // transition it counts has committed.
 type Observer interface {
-	// ItemFinished is called once per item that finishes (completed, failed
+	// ItemEnded is called once per item that ends (completed, failed
 	// or skipped; cancelled items are not counted).
-	ItemFinished(ctx context.Context, job models.Job, status string)
-	// JobFinished is called on a Job's first finish only.
-	JobFinished(ctx context.Context, job models.Job, outcome string, failedItems int)
+	ItemEnded(ctx context.Context, job models.Job, status string)
+	// JobEnded is called on a Job's first ending only.
+	JobEnded(ctx context.Context, job models.Job, outcome string, failedItems int)
 }
 
 // Kind is what a Job kind tells the module about itself.
@@ -139,7 +139,7 @@ type Kind struct {
 	// DuplicateKey returns the Job's duplicate key; ok=false means Jobs of
 	// the kind are never duplicates.
 	DuplicateKey func(job *models.Job) (key DupKey, ok bool)
-	// Effects runs the kind's finishing effects. HasEffects says for which
+	// Effects runs the kind's ending effects. HasEffects says for which
 	// outcomes there are any; no effects River job is queued for the others.
 	Effects    func(ctx context.Context, db *bun.DB, e Effect) error
 	HasEffects func(o Outcome) bool
@@ -219,7 +219,7 @@ func (m *Module) JobTypes() []string {
 }
 
 // RiverKinds returns every River kind the lifecycle uses: the kinds' dispatch
-// and item River kinds, and the finishing-effects River kind.
+// and item River kinds, and the ending-effects River kind.
 func (m *Module) RiverKinds() []string {
 	out := []string{EffectsArgs{}.Kind()}
 	for _, k := range m.kinds {

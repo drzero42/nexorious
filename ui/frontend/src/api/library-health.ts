@@ -5,13 +5,15 @@ import { api } from './client';
 const BASE = '/library/smells';
 const MAX_IDS = 200;
 
-export type SmellTier = 'inconsistency' | 'nudge';
+// A Check's tier. The wire value for the Smell tier is still 'nudge', its old
+// name, kept so existing API clients don't break.
+export type CheckTier = 'inconsistency' | 'nudge';
 
 export interface SmellSummaryItem {
   id: string;
   title: string;
   description: string;
-  tier: SmellTier;
+  tier: CheckTier;
   auto_fixable: boolean;
   count: number;
 }

@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSmellSummary, smellKeys } from '@/hooks';
 import { setGameReturn } from '@/lib/game-return';
-import type { SmellSummaryItem, SmellTier } from '@/api/library-health';
+import type { SmellSummaryItem, CheckTier } from '@/api/library-health';
 import { CheckSection } from '@/components/library-health/check-section';
 import { loadExpandedChecks, saveExpandedChecks } from '@/lib/library-health-prefs';
 
@@ -17,13 +17,13 @@ export const Route = createFileRoute('/_authenticated/library-health')({
   component: LibraryHealthPage,
 });
 
-const TIER_ORDER: { tier: SmellTier; label: string; blurb: string }[] = [
+const TIER_ORDER: { tier: CheckTier; label: string; blurb: string }[] = [
   {
     tier: 'inconsistency',
     label: 'Inconsistencies',
     blurb: 'Something looks wrong and probably needs fixing.',
   },
-  { tier: 'nudge', label: 'Suggestions', blurb: 'You might want to update these.' },
+  { tier: 'nudge', label: 'Smells', blurb: 'You might want to update these.' },
 ];
 
 function TierBlock({
@@ -92,7 +92,7 @@ export function LibraryHealthPage() {
     saveExpandedChecks(next);
   };
 
-  // Re-run every check (summary + per-check listings + dismissed) by invalidating
+  // Re-run every check (summary + per-check listings + ignored) by invalidating
   // the whole smells tree. Used by the Refresh button and the error retry.
   const handleRefresh = () => {
     void queryClient.invalidateQueries({ queryKey: smellKeys.all });

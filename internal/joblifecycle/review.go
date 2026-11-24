@@ -172,7 +172,7 @@ func (m *Module) Resolve(ctx context.Context, itemID string, igdbID int) error {
 	})
 }
 
-// Skip finishes an item in Pending review as skipped and evaluates completion.
+// Skip ends an item in Pending review as skipped and evaluates completion.
 func (m *Module) Skip(ctx context.Context, itemID string) error {
 	return m.run(ctx, "skip", func(ctx context.Context, tx bun.Tx, st *txState) error {
 		job, k, item, err := m.lockReviewItem(ctx, tx, itemID)
@@ -187,7 +187,7 @@ func (m *Module) Skip(ctx context.Context, itemID string) error {
 		}
 		if k.Observer != nil {
 			jobCopy := *job
-			st.onCommit(func(ctx context.Context) { k.Observer.ItemFinished(ctx, jobCopy, models.JobItemStatusSkipped) })
+			st.onCommit(func(ctx context.Context) { k.Observer.ItemEnded(ctx, jobCopy, models.JobItemStatusSkipped) })
 		}
 		if err := m.releaseWaiters(ctx, tx, k, job, []string{item.ID}); err != nil {
 			return err

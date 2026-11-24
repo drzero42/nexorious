@@ -208,7 +208,7 @@ func maintFailedNotice(riverJobID int64, action, msg string) notify.EmitParams {
 }
 
 // failMaintDispatch fails a refresh Job whose dispatch cannot go on, telling
-// the admin in the same transaction, so the Job is finished at once and the
+// the admin in the same transaction, so the Job has ended at once and the
 // admin is told once.
 func failMaintDispatch(ctx context.Context, lc *joblifecycle.Module, jobID string, rj *rivertype.JobRow, action, msg string) error {
 	return exitOrRetry(ctx, lc.Fail(ctx, jobID, joblifecycle.Failure{
@@ -296,7 +296,7 @@ func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[Met
 		return err
 	}
 
-	err = w.LC.FinishItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{
+	err = w.LC.EndItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{
 		Status: models.JobItemStatusCompleted,
 		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
 			n, err := writeGameMetadata(ctx, tx, sourceMeta.GameID, md)

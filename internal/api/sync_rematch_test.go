@@ -149,8 +149,8 @@ func (f *rmFixture) workerJobs() int {
 
 // ── Rematch ───────────────────────────────────────────────────────────────────
 
-func TestRematch_FinishedSync_WritesLibraryAndLeavesTheItem(t *testing.T) {
-	f := newRM(t, "rm-finished")
+func TestRematch_EndedSync_WritesLibraryAndLeavesTheItem(t *testing.T) {
+	f := newRM(t, "rm-ended")
 	f.game("eg", "", 100, false, "playstation-4")
 	f.link("ug-old", 100, "eg", "playstation-4")
 	f.link("ug-old", 100, "", "playstation-5") // another link keeps ug-old from being orphaned
@@ -223,8 +223,8 @@ func TestRematch_PendingReview_NoPlatformRows_CompletesItemWithoutChange(t *test
 	}
 }
 
-// Rematch is refused only while the game's own item is pending: the sync has
-// not finished with it. A child's unfinished item does not refuse it.
+// Rematch is refused only while the game's own item is pending: the sync is
+// not done with it. A child's open item does not refuse it.
 func TestRematch_RefusedWhileTheGamesOwnItemIsPending(t *testing.T) {
 	f := newRM(t, "rm-409")
 	f.game("eg", "", 100, false, "playstation-4")
@@ -352,7 +352,7 @@ func TestRematch_CompletesReviewItemInAnOlderReopenedJob(t *testing.T) {
 		t.Errorf("old job's review item: want completed, got %s", s)
 	}
 	if s := f.itemStatus("ji-new"); s != "failed" {
-		t.Errorf("finished job's item: want failed (untouched), got %s", s)
+		t.Errorf("ended job's item: want failed (untouched), got %s", s)
 	}
 }
 
@@ -475,7 +475,7 @@ func TestRematchUnskipSkip_ChildGame_Is400(t *testing.T) {
 	}
 }
 
-// Skipping a Child game with an unfinished item in an active Job is refused
+// Skipping a Child game with an open item in an active Job is refused
 // inside the module's transaction: the item stays pending and the child is
 // not skipped (#1419).
 func TestSkip_ChildGameWithActiveItem_Is400(t *testing.T) {
@@ -758,7 +758,7 @@ func TestListExternalGames_StatusComesFromTheNewestItem(t *testing.T) {
 			f.job("j1", "cancelled")
 			f.item("i1", "j1", "eg", "pending_review", time.Hour)
 		}, "needs_review", 1},
-		{"in review in an older reopened job, newest finished", func(f *rmFixture) {
+		{"in review in an older reopened job, newest ended", func(f *rmFixture) {
 			f.game("eg", "", 0, false, "playstation-4")
 			f.job("old", "processing")
 			f.item("i1", "old", "eg", "pending_review", 48*time.Hour)
@@ -775,10 +775,10 @@ func TestListExternalGames_StatusComesFromTheNewestItem(t *testing.T) {
 			f.job("j1", "processing")
 			f.item("i1", "j1", "eg", "pending", 0)
 		}, "(hidden)", 0},
-		// The view no longer asks River: no item is unfinished in a finished
+		// The view no longer asks River: no item is open in an ended
 		// Job any more (the module cancels them with it, the upgrade fails or
 		// cancels the old ones), so a live River job naming one is ignored.
-		{"newest pending in a finished job, live river job", func(f *rmFixture) {
+		{"newest pending in an ended job, live river job", func(f *rmFixture) {
 			f.game("eg", "", 0, false, "playstation-4")
 			f.job("j1", "completed")
 			f.item("i1", "j1", "eg", "pending", 0)

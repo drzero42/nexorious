@@ -295,5 +295,5 @@ func (w *StoreLinkRefreshItemWorker) Work(ctx context.Context, job *river.Job[St
 		return ctx.Err()
 	}
 
-	return exitOrRetry(ctx, w.LC.FinishItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{Status: models.JobItemStatusCompleted}))
+	return exitOrRetry(ctx, w.LC.EndItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{Status: models.JobItemStatusCompleted}))
 }

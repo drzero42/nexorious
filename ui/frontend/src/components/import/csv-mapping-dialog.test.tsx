@@ -99,7 +99,7 @@ describe('CsvMappingDialog', () => {
       />,
     );
 
-    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    await user.click(screen.getByRole('combobox', { name: 'Preset' }));
     await user.click(screen.getByRole('option', { name: 'Completionator' }));
 
     expect(screen.queryByText('1 · Map columns')).not.toBeInTheDocument();
@@ -124,12 +124,12 @@ describe('CsvMappingDialog', () => {
     );
 
     // Pick the preset -> mapping form hidden.
-    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    await user.click(screen.getByRole('combobox', { name: 'Preset' }));
     await user.click(screen.getByRole('option', { name: 'Completionator' }));
     expect(screen.queryByText('1 · Map columns')).not.toBeInTheDocument();
 
     // Switch back to Generic -> mapping form returns, Import disabled (no title yet).
-    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    await user.click(screen.getByRole('combobox', { name: 'Preset' }));
     await user.click(screen.getByRole('option', { name: 'Generic CSV' }));
 
     await waitFor(() => {
@@ -157,7 +157,7 @@ describe('CsvMappingDialog', () => {
 
     // Opened straight into the collapsed preset view (no manual mapping form).
     expect(screen.queryByText('1 · Map columns')).not.toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Format' })).toHaveTextContent('Completionator');
+    expect(screen.getByRole('combobox', { name: 'Preset' })).toHaveTextContent('Completionator');
     // The auto-detected hint copy is shown.
     expect(screen.getByText(/detected automatically/i)).toBeInTheDocument();
 
@@ -180,7 +180,7 @@ describe('CsvMappingDialog', () => {
       />,
     );
     expect(screen.getByText('1 · Map columns')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Format' })).toHaveTextContent('Generic CSV');
+    expect(screen.getByRole('combobox', { name: 'Preset' })).toHaveTextContent('Generic CSV');
   });
 
   it('pre-fills the form from inspect.suggested_mapping', () => {

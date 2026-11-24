@@ -506,11 +506,11 @@ func newSyncResolveCmd() *cobra.Command {
 		Short: "Manually match an external game to an IGDB id",
 		Long: `Manually match an external game to an IGDB id.
 
-Works on any game in the storefront's list: one that needs review, an
+Works on any game in the storefront's list: one in Pending review, an
 unmatched one (for example after unskipping it), or a matched one whose
 match is wrong. The game and its other editions are written to the library
 at once. The server refuses while a sync is still working on the game;
-run it again once the sync has finished.`,
+run it again once the sync is done.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()

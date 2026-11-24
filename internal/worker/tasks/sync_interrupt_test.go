@@ -200,7 +200,7 @@ func TestDispatchSync_RerunAfterInterrupt_NoDuplicates(t *testing.T) {
 	if err := testDB.NewRaw(`SELECT id FROM job_items WHERE job_id = ?`, jobID).Scan(bg, &itemID); err != nil {
 		t.Fatal(err)
 	}
-	if err := lc.FinishItem(bg, itemID, itemOwner(t, itemID), joblifecycle.ItemResult{Status: models.JobItemStatusCompleted}); err != nil {
+	if err := lc.EndItem(bg, itemID, itemOwner(t, itemID), joblifecycle.ItemResult{Status: models.JobItemStatusCompleted}); err != nil {
 		t.Fatalf("settle item: %v", err)
 	}
 	if status, _ := loadJobState(t, jobID); status != "completed" {

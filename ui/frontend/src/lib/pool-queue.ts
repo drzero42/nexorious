@@ -1,5 +1,5 @@
 /**
- * Pure helpers that map Up Next queue operations to the ordered `ids` list that
+ * Pure helpers that map Queue operations to the ordered `ids` list that
  * PUT /api/pools/:id/queue expects. The backend is declarative: the returned
  * list IS the new queue (position = index); any member not listed demotes to
  * Candidate. "Remove from pool" is NOT here — it calls removePoolGame, not

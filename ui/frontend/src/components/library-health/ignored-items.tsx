@@ -3,35 +3,35 @@ import { Button } from '@/components/ui/button';
 import { useIgnoredItems, useRestoreSmell } from '@/hooks';
 import type { IgnoredItem } from '@/api/library-health';
 
-export interface DismissedItemsProps {
+export interface IgnoredItemsProps {
   checkID: string;
 }
 
-export function DismissedItems({ checkID }: DismissedItemsProps) {
+export function IgnoredItems({ checkID }: IgnoredItemsProps) {
   const [page, setPage] = useState(1);
   const { data, isLoading, isFetching } = useIgnoredItems(checkID, page, true);
   const restore = useRestoreSmell();
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading dismissed…</p>;
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading ignored…</p>;
 
   const items = data?.items ?? [];
   const pages = data?.pages ?? 0;
   const total = data?.total ?? 0;
   if (items.length === 0) {
-    return <p className="text-sm text-muted-foreground">No dismissed items.</p>;
+    return <p className="text-sm text-muted-foreground">No ignored games.</p>;
   }
 
   const handleRestore = (userGameId: string) => {
     void restore.mutateAsync({ checkID, userGameIds: [userGameId] }).then(() => {
       // Restoring the last item on a page past the first would leave an empty
-      // page that reads as "No dismissed items"; step back instead.
+      // page that reads as "No ignored games"; step back instead.
       if (items.length === 1 && page > 1) setPage(page - 1);
     });
   };
 
   return (
     <div>
-      <p className="mb-2 text-sm text-muted-foreground">{total} dismissed</p>
+      <p className="mb-2 text-sm text-muted-foreground">{total} ignored</p>
       <ul className="divide-y rounded-md border">
         {items.map((it: IgnoredItem) => (
           <li key={it.user_game_id} className="flex items-center justify-between px-3 py-2">

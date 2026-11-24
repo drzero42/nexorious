@@ -363,7 +363,7 @@ function PoolDetailPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Up Next</CardTitle>
+              <CardTitle>Queue</CardTitle>
             </CardHeader>
             <CardContent>
               <UpNextQueue

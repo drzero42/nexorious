@@ -353,7 +353,7 @@ export function getJobItemStatusLabel(status: JobItemStatus): string {
     [JobItemStatus.PENDING]: 'Pending',
     [JobItemStatus.PROCESSING]: 'Processing',
     [JobItemStatus.COMPLETED]: 'Completed',
-    [JobItemStatus.PENDING_REVIEW]: 'Needs Review',
+    [JobItemStatus.PENDING_REVIEW]: 'Pending Review',
     [JobItemStatus.SKIPPED]: 'Skipped',
     [JobItemStatus.FAILED]: 'Failed',
     [JobItemStatus.CANCELLED]: 'Cancelled',

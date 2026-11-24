@@ -14,8 +14,10 @@ type Tier string
 const (
 	// TierInconsistency is "something is wrong" (epic Tier 1).
 	TierInconsistency Tier = "inconsistency"
-	// TierNudge is "you might want to update this" (epic Tier 2).
-	TierNudge Tier = "nudge"
+	// TierSmell is "you might want to update this" (epic Tier 2). Its wire
+	// value is still "nudge", the tier's old name: it is visible in the REST
+	// API and MCP output, so renaming it would break clients.
+	TierSmell Tier = "nudge"
 )
 
 // FlaggedItem is one flagged game for one check. Checks report one item per
@@ -61,7 +63,7 @@ func Registry() []Check {
 		invalidStorefrontCheck,
 		playedButNotStartedCheck,
 		inProgressUntouchedCheck,
-		unratedAfterFinishingCheck,
+		unratedAfterBeatingCheck,
 	}
 }
 

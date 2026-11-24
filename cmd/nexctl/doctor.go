@@ -58,9 +58,19 @@ func runDoctorSummary(cmd *cobra.Command) error {
 	fmt.Fprintln(tw, "ID\tCHECK\tTIER\tFIXABLE\tCOUNT")
 	for i := range checks {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n",
-			checks[i].ID, checks[i].Title, checks[i].Tier, yesNo(checks[i].AutoFixable), checks[i].Count)
+			checks[i].ID, checks[i].Title, tierLabel(checks[i].Tier), yesNo(checks[i].AutoFixable), checks[i].Count)
 	}
 	return tw.Flush()
+}
+
+// tierLabel is a tier's name in the table. The API still sends "nudge" for
+// the Smell tier (its old name, kept for clients), so the table maps it;
+// --json keeps the raw value.
+func tierLabel(tier string) string {
+	if tier == "nudge" {
+		return "smell"
+	}
+	return tier
 }
 
 func runDoctorDetail(cmd *cobra.Command, checkID string) error {
@@ -87,9 +97,9 @@ func runDoctorDetail(cmd *cobra.Command, checkID string) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "USER_GAME_ID\tTITLE\tSUGGESTION")
+	fmt.Fprintln(tw, "USER_GAME_ID\tTITLE\tDETAIL")
 	for i := range res.Items {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", res.Items[i].UserGameID, res.Items[i].Title, suggestionOf(res.Items[i]))
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", res.Items[i].UserGameID, res.Items[i].Title, detailOf(res.Items[i]))
 	}
 	if err := tw.Flush(); err != nil {
 		return err
@@ -100,9 +110,9 @@ func runDoctorDetail(cmd *cobra.Command, checkID string) error {
 	return nil
 }
 
-// suggestionOf renders the per-item hint: the suggested status (auto-fix
+// detailOf renders the per-item detail: the status Apply would set (auto-fix
 // checks) or the human-readable detail (e.g. impossible-acquired-date), else "-".
-func suggestionOf(it cliclient.FlaggedItem) string {
+func detailOf(it cliclient.FlaggedItem) string {
 	if it.SuggestedStatus != nil && *it.SuggestedStatus != "" {
 		return "→ " + *it.SuggestedStatus
 	}
@@ -115,7 +125,7 @@ func suggestionOf(it cliclient.FlaggedItem) string {
 func newDoctorApplyCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "apply <check> [refs...]",
-		Short: "Apply an auto-fix check's suggestion (all flagged games, or specific refs)",
+		Short: "Apply an auto-fixable check's fix (all flagged games, or specific refs)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
@@ -148,7 +158,7 @@ func newDoctorApplyCmd() *cobra.Command {
 			}
 
 			ok, err := cliui.Confirm(bufio.NewReader(cmd.InOrStdin()), out,
-				fmt.Sprintf("Apply %q suggestion to %d game(s)?", checkID, len(ids)), flagBool(cmd, "yes"))
+				fmt.Sprintf("Apply %q fix to %d game(s)?", checkID, len(ids)), flagBool(cmd, "yes"))
 			if err != nil {
 				return err
 			}
@@ -182,7 +192,7 @@ func resolveDoctorRefs(cmd *cobra.Command, c *cliclient.Client, key string, refs
 func newDoctorIgnoreCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ignore <check> <ref> [refs...]",
-		Short: "Dismiss flagged games for a check",
+		Short: "Ignore flagged games for a check so they stop appearing",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
@@ -199,7 +209,7 @@ func newDoctorIgnoreCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("ignore failed: %w", err)
 			}
-			fmt.Fprintf(out, "Dismissed %d game(s) for %q.\n", n, args[0])
+			fmt.Fprintf(out, "Ignored %d game(s) for %q.\n", n, args[0])
 			return nil
 		},
 	}
@@ -208,7 +218,7 @@ func newDoctorIgnoreCmd() *cobra.Command {
 func newDoctorRestoreCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restore <check> <ref> [refs...]",
-		Short: "Un-dismiss previously ignored games for a check",
+		Short: "Restore ignored games for a check so it flags them again",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
@@ -234,7 +244,7 @@ func newDoctorRestoreCmd() *cobra.Command {
 func newDoctorIgnoredCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ignored <check>",
-		Short: "List dismissed games for a check",
+		Short: "List ignored games for a check",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
@@ -244,7 +254,7 @@ func newDoctorIgnoredCmd() *cobra.Command {
 			}
 			res, err := cliclient.New(p.URL).ListIgnoredSmells(cmd.Context(), p.Key, args[0], 1, 200)
 			if err != nil {
-				return fmt.Errorf("list dismissed failed: %w", err)
+				return fmt.Errorf("list ignored failed: %w", err)
 			}
 			if flagBool(cmd, "json") {
 				return cliui.EncodeJSON(out, res)
@@ -256,11 +266,11 @@ func newDoctorIgnoredCmd() *cobra.Command {
 				return nil
 			}
 			if len(res.Items) == 0 {
-				fmt.Fprintln(out, "No dismissed games for this check.")
+				fmt.Fprintln(out, "No ignored games for this check.")
 				return nil
 			}
 			tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
-			fmt.Fprintln(tw, "USER_GAME_ID\tTITLE\tDISMISSED_AT")
+			fmt.Fprintln(tw, "USER_GAME_ID\tTITLE\tIGNORED_AT")
 			for i := range res.Items {
 				fmt.Fprintf(tw, "%s\t%s\t%s\n", res.Items[i].UserGameID, res.Items[i].Title, res.Items[i].CreatedAt)
 			}
@@ -268,7 +278,7 @@ func newDoctorIgnoredCmd() *cobra.Command {
 				return err
 			}
 			if res.Total > len(res.Items) {
-				fmt.Fprintf(out, "\nShowing first %d of %d dismissed games.\n", len(res.Items), res.Total)
+				fmt.Fprintf(out, "\nShowing first %d of %d ignored games.\n", len(res.Items), res.Total)
 			}
 			return nil
 		},

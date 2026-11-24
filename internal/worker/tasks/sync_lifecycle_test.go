@@ -76,7 +76,7 @@ func TestDispatchSync_BatchDBError_RetriesWithoutFailing(t *testing.T) {
 		t.Errorf("job = %q / dispatch done %v, want processing and not done", status, done)
 	}
 	if n := countRows(t, `SELECT count(*) FROM river_job WHERE kind = ?`, joblifecycle.EffectsArgs{}.Kind()); n != 0 {
-		t.Errorf("%d finishing effects queued, want none", n)
+		t.Errorf("%d ending effects queued, want none", n)
 	}
 }
 
@@ -160,7 +160,7 @@ func TestSyncEffects_CancelledSyncSendsNoNeedsReview(t *testing.T) {
 	truncateAllTables(t)
 	lc := newTestLC(t)
 	_, jobID, items := syncCompletionFixture(t, "steam", true, 1, models.JobItemStatusPendingReview)
-	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	endSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
 	if err := lc.Cancel(context.Background(), jobID); err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func TestSync_FailedParent_ChildFailsThenRetriedWithIt(t *testing.T) {
 	if famItemOwner(t, childItem) != nil {
 		t.Fatal("child is not waiting")
 	}
-	if err := lc.FinishItem(ctx, parentItem, itemOwner(t, parentItem), joblifecycle.ItemResult{Status: models.JobItemStatusFailed, Message: "boom"}); err != nil {
+	if err := lc.EndItem(ctx, parentItem, itemOwner(t, parentItem), joblifecycle.ItemResult{Status: models.JobItemStatusFailed, Message: "boom"}); err != nil {
 		t.Fatal(err)
 	}
 	if famItemOwner(t, childItem) == nil {
@@ -417,7 +417,7 @@ func initMetrics(t *testing.T) {
 	t.Cleanup(func() { _ = prov.Shutdown(context.Background()) })
 }
 
-// Items are counted as they finish, also in a sync that later fails; the
+// Items are counted as they end, also in a sync that later fails; the
 // failed sync counts once in the outcome counter.
 func TestSyncMetrics_ItemsOfASyncThatLaterFails(t *testing.T) {
 	initMetrics(t)
@@ -429,14 +429,14 @@ func TestSyncMetrics_ItemsOfASyncThatLaterFails(t *testing.T) {
 		batches: [][]tasks.ExternalGameEntry{{{ExternalID: "1", Title: "Game One", Platforms: []string{"pc-windows"}}}},
 		err:     errors.New("upstream exploded"),
 	}
-	// The item finishes while the dispatch is still fetching.
+	// The item ends while the dispatch is still fetching.
 	adapter.afterFetch = func() {
 		var itemID string
 		if err := testDB.NewRaw(`SELECT id FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemID); err != nil {
 			t.Errorf("load item: %v", err)
 			return
 		}
-		finishSyncItem(t, lc, itemID, models.JobItemStatusCompleted)
+		endSyncItem(t, lc, itemID, models.JobItemStatusCompleted)
 	}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), LC: lc}
 	runDispatch(t, ctx, w, jobID, userID)
@@ -460,14 +460,14 @@ func TestSyncMetrics_RetriedItemCountsOnceMore_OutcomeOnce(t *testing.T) {
 	ctx := context.Background()
 	lc := newTestLC(t)
 	_, jobID, items := syncCompletionFixture(t, "steam", true, 1)
-	finishSyncItem(t, lc, items[0], models.JobItemStatusFailed)
+	endSyncItem(t, lc, items[0], models.JobItemStatusFailed)
 	if scrapeMetric(t, "nexorious_sync_total", `source="steam"`) != 1 || scrapeMetric(t, "nexorious_sync_items_total", `source="steam"`) != 1 {
-		t.Fatal("first finish not counted once")
+		t.Fatal("first ending not counted once")
 	}
 	if _, err := lc.Retry(ctx, jobID, items); err != nil {
 		t.Fatal(err)
 	}
-	finishSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
+	endSyncItem(t, lc, items[0], models.JobItemStatusCompleted)
 	if got := jobStatus(t, jobID); got != models.JobStatusCompleted {
 		t.Fatalf("job = %q, want completed", got)
 	}

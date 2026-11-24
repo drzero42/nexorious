@@ -186,7 +186,7 @@ func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFi
 		tags = append(tags, usergame.TagInput{Name: name})
 	}
 
-	err = w.LC.FinishItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{
+	err = w.LC.EndItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{
 		Status: models.JobItemStatusCompleted,
 		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
 			res, err := usergame.Acquire(ctx, tx, usergame.AcquireParams{
@@ -211,7 +211,7 @@ func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFi
 			})
 		},
 	})
-	return finishImportItem(ctx, w.LC, job.JobRow, item.ID, err)
+	return endImportItem(ctx, w.LC, job.JobRow, item.ID, err)
 }
 
 // importChangeType is the changes row's change_type for an Acquire result.
@@ -244,18 +244,18 @@ func acquireError(err error) error {
 	return fmt.Errorf("acquire: %w", err)
 }
 
-// finishImportItem turns the result of an import item's FinishItem into what
+// endImportItem turns the result of an import item's EndItem into what
 // its worker returns: an Acquire validation error fails the item, in a new
 // transaction; another error is retried, or fails the item on the last
 // attempt.
-func finishImportItem(ctx context.Context, lc *joblifecycle.Module, rj *rivertype.JobRow, itemID string, err error) error {
+func endImportItem(ctx context.Context, lc *joblifecycle.Module, rj *rivertype.JobRow, itemID string, err error) error {
 	if err == nil || ctx.Err() != nil || joblifecycle.IsRefusal(err) {
 		return exitOrRetry(ctx, err)
 	}
 	if errors.Is(err, errAcquire) {
 		return failItem(ctx, lc, itemID, rj.ID, err.Error())
 	}
-	return retryOrFail(ctx, lc, rj, itemID, "finish", err)
+	return retryOrFail(ctx, lc, rj, itemID, "end item", err)
 }
 
 // retryOrFail returns an error that may pass to River, or fails the item with

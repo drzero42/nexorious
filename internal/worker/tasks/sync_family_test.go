@@ -781,7 +781,7 @@ func (a *cancellingAdapter) GetLibrary(ctx context.Context, _ int, onBatch func(
 }
 
 // Cancel during a running dispatch: the dispatch adds no further items, the
-// sweeps do not run, and nothing is left unfinished or queued.
+// sweeps do not run, and nothing is left open or queued.
 func TestDispatchSync_CancelledDuringDispatch(t *testing.T) {
 	userID := famSetup(t)
 	lc := newTestLC(t)
@@ -800,7 +800,7 @@ func TestDispatchSync_CancelledDuringDispatch(t *testing.T) {
 		t.Errorf("the dispatch went on after the cancel: B was written")
 	}
 	if n := famCount(t, `SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status IN ('pending', 'pending_review')`, jobID); n != 0 {
-		t.Errorf("%d unfinished items left", n)
+		t.Errorf("%d open items left", n)
 	}
 	if n := famCount(t, `SELECT COUNT(*) FROM river_job WHERE state IN ('available', 'scheduled', 'retryable', 'pending')`); n != 0 {
 		t.Errorf("%d River jobs left queued", n)

@@ -155,7 +155,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 
 	// A plain read, no lock: the active Job in which the game or a child has
-	// an unfinished item, preferring the game's own. Then everything runs in
+	// an open item, preferring the game's own. Then everything runs in
 	// the module's transaction for that Job: the Job row lock first, then the
 	// family, as a sync worker does, so the two cannot deadlock.
 	var jobID string
@@ -180,7 +180,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 			return rematchFamily(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, job.ID)
 		})
 		if errors.Is(err, joblifecycle.ErrJobNotActive) || errors.Is(err, joblifecycle.ErrGone) {
-			jobID, err = "", nil // finished meanwhile: no items to touch
+			jobID, err = "", nil // ended meanwhile: no items to touch
 		}
 	}
 	if jobID == "" && err == nil {
@@ -216,8 +216,8 @@ func abortHTTP(err error) error {
 // and writes them to the library. With jobID set it runs in the module's
 // transaction for that Job and returns the items to complete there, with
 // their diff rows written: the game's item when it is in Pending review, and
-// every unfinished item of its children, waiting or not. It refuses (409)
-// while the game's own item is pending: the sync has not finished with it.
+// every open item of its children, waiting or not. It refuses (409)
+// while the game's own item is pending: the sync is not done with it.
 func rematchFamily(ctx context.Context, tx bun.Tx, userID, id string, igdbID int, orphanAction, jobID string) ([]string, error) {
 	eg, children, err := lockFamily(ctx, tx, userID, id, "rematch")
 	if err != nil {

@@ -74,7 +74,7 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
                 </div>
               </div>
               <div>
-                <div className="text-muted-foreground">Needs Review</div>
+                <div className="text-muted-foreground">Pending Review</div>
                 <div className="text-lg font-semibold text-yellow-700 dark:text-yellow-400">
                   {job.progress.pendingReview}
                 </div>

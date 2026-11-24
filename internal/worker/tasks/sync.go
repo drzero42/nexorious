@@ -254,7 +254,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyn
 	// that receive this ctx) is correlated to the user-facing jobs.id.
 	ctx = logging.WithJobID(ctx, p.JobID)
 
-	// Refused when the Job is finished, when this River job is not its
+	// Refused when the Job has ended, when this River job is not its
 	// dispatch owner, or when the dispatch is already done: a dispatch
 	// hard-killed after marking done must not fetch the library again.
 	if _, err := w.LC.StartDispatch(ctx, p.JobID, rj.ID); err != nil {
@@ -418,8 +418,8 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyn
 	// Parents that left in this sync: promote their children (#1339).
 	promoteOrphanedChildren(ctx, w.DB, p.UserID, p.Storefront)
 
-	// The sweeps ran on ctx: if it was cancelled meanwhile they may be
-	// unfinished, so the dispatch must not be marked done.
+	// The sweeps ran on ctx: if it was cancelled meanwhile they may not
+	// have run to the end, so the dispatch must not be marked done.
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -642,7 +642,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, rj *river.Job[IGDBMatchArgs]
 			slog.DebugContext(ctx, "igdb_match: parent unmatched, waiting", logging.KeyJobItemID, item.ID, "parent_id", *eg.ParentID)
 			return nil
 		}
-		// Cannot wait: the parent's item has finished, or it has none and the
+		// Cannot wait: the parent's item has ended, or it has none and the
 		// dispatch is done, or the game is no longer a child. Decide on the
 		// game as it is now.
 		cannotWaitOn = *eg.ParentID
@@ -829,7 +829,7 @@ func (w *UserGameWorker) Work(ctx context.Context, rj *river.Job[UserGameArgs]) 
 		return fmt.Errorf("user_game_write: load external game: %w", err)
 	}
 	if eg.IsSkipped {
-		return w.finishSkipped(ctx, rj, item, &eg)
+		return w.endSkipped(ctx, rj, item, &eg)
 	}
 
 	// The write runs after the module checked ownership in the same
@@ -838,7 +838,7 @@ func (w *UserGameWorker) Work(ctx context.Context, rj *river.Job[UserGameArgs]) 
 	// re-reads the match and skip flag under the game's row lock, so a
 	// rematch that committed after eg was loaded wins.
 	var lw LibraryWrite
-	err = w.LC.FinishItem(ctx, item.ID, rj.ID, joblifecycle.ItemResult{
+	err = w.LC.EndItem(ctx, item.ID, rj.ID, joblifecycle.ItemResult{
 		Status: models.JobItemStatusCompleted,
 		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
 			var err error
@@ -858,7 +858,7 @@ func (w *UserGameWorker) Work(ctx context.Context, rj *river.Job[UserGameArgs]) 
 	case joblifecycle.IsRefusal(err):
 		return exitOrRetry(ctx, err)
 	case errors.Is(err, ErrExternalGameSkipped):
-		return w.finishSkipped(ctx, rj, item, &eg)
+		return w.endSkipped(ctx, rj, item, &eg)
 	case cannotWrite(err), lastAttempt(rj.JobRow):
 		return failItem(ctx, w.LC, item.ID, rj.ID, err.Error())
 	default:
@@ -874,10 +874,10 @@ func (w *UserGameWorker) Work(ctx context.Context, rj *river.Job[UserGameArgs]) 
 	return nil
 }
 
-// finishSkipped finishes the item of a skipped game as skipped, with its
+// endSkipped ends the item of a skipped game as skipped, with its
 // 'skipped' diff row as the transition's own write.
-func (w *UserGameWorker) finishSkipped(ctx context.Context, rj *river.Job[UserGameArgs], item *models.JobItem, eg *models.ExternalGame) error {
-	return exitOrRetry(ctx, w.LC.FinishItem(ctx, item.ID, rj.ID, joblifecycle.ItemResult{
+func (w *UserGameWorker) endSkipped(ctx context.Context, rj *river.Job[UserGameArgs], item *models.JobItem, eg *models.ExternalGame) error {
+	return exitOrRetry(ctx, w.LC.EndItem(ctx, item.ID, rj.ID, joblifecycle.ItemResult{
 		Status: models.JobItemStatusSkipped,
 		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
 			// NOT EXISTS: the dispatch may have written it for this Job.

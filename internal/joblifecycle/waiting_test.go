@@ -93,7 +93,7 @@ func mustWait(t *testing.T, m *Module, it models.JobItem, want bool) {
 
 // The whole path of a waiting child: it may wait for a parent that a later
 // batch adds, recovery leaves it alone, a dispatch run again adds nothing
-// twice, and the parent finishing queues it.
+// twice, and the parent ending queues it.
 func TestWaitForParentInLaterBatch(t *testing.T) {
 	m, _ := newWaitingModule(t)
 	ctx := context.Background()
@@ -128,18 +128,18 @@ func TestWaitForParentInLaterBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := itemByKey(t, jobID, "C"); got.RiverJobID != nil {
-		t.Fatalf("marking the dispatch done queued a child whose parent is unfinished")
+		t.Fatalf("marking the dispatch done queued a child whose parent is open")
 	}
 
-	finish(t, m, itemByKey(t, jobID, "P"), models.JobItemStatusCompleted)
+	end(t, m, itemByKey(t, jobID, "P"), models.JobItemStatusCompleted)
 	child = itemByKey(t, jobID, "C")
 	if child.RiverJobID == nil || riverState(t, *child.RiverJobID) != riverAvailable {
-		t.Fatalf("parent finishing did not queue the child: %+v", child)
+		t.Fatalf("parent ending did not queue the child: %+v", child)
 	}
 	if j := loadJob(t, jobID); j.Status != models.JobStatusProcessing {
 		t.Fatalf("job = %s, want processing", j.Status)
 	}
-	finish(t, m, child, models.JobItemStatusCompleted)
+	end(t, m, child, models.JobItemStatusCompleted)
 	if j := loadJob(t, jobID); j.Status != models.JobStatusCompleted {
 		t.Fatalf("job = %s, want completed", j.Status)
 	}
@@ -148,14 +148,14 @@ func TestWaitForParentInLaterBatch(t *testing.T) {
 func TestCannotWait(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("awaited item finished, dispatch running", func(t *testing.T) {
+	t.Run("awaited item ended, dispatch running", func(t *testing.T) {
 		m, _ := newWaitingModule(t)
 		user := insertUser(t)
 		jobID, rid := startDispatch(t, m, user)
 		if _, err := m.AddNewItems(ctx, jobID, rid, []NewItem{parentItem(user, "P"), childItem(user, "C", "P")}); err != nil {
 			t.Fatal(err)
 		}
-		finish(t, m, itemByKey(t, jobID, "P"), models.JobItemStatusFailed)
+		end(t, m, itemByKey(t, jobID, "P"), models.JobItemStatusFailed)
 		child := itemByKey(t, jobID, "C")
 		mustWait(t, m, child, false)
 		if got := itemByKey(t, jobID, "C"); got.RiverJobID == nil || *got.RiverJobID != *child.RiverJobID {
@@ -214,10 +214,10 @@ func TestMarkDispatchedQueuesItemsThatCannotWait(t *testing.T) {
 	}
 }
 
-// A parent finishing in the same instant its child asks to wait never leaves
-// the child waiting on a finished item: either the wait is refused, or the
-// parent's finish queues the child.
-func TestParentFinishesWhileChildAsksToWait(t *testing.T) {
+// A parent ending in the same instant its child asks to wait never leaves
+// the child waiting on an ended item: either the wait is refused, or the
+// parent's ending queues the child.
+func TestParentEndsWhileChildAsksToWait(t *testing.T) {
 	for range 10 {
 		m, _ := newWaitingModule(t)
 		ctx := context.Background()
@@ -228,7 +228,7 @@ func TestParentFinishesWhileChildAsksToWait(t *testing.T) {
 		}
 		parent, child := itemByKey(t, jobID, "P"), itemByKey(t, jobID, "C")
 		var wg sync.WaitGroup
-		var waitErr, finishErr error
+		var waitErr, endErr error
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
@@ -236,11 +236,11 @@ func TestParentFinishesWhileChildAsksToWait(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			finishErr = m.FinishItem(ctx, parent.ID, *parent.RiverJobID, ItemResult{Status: models.JobItemStatusCompleted})
+			endErr = m.EndItem(ctx, parent.ID, *parent.RiverJobID, ItemResult{Status: models.JobItemStatusCompleted})
 		}()
 		wg.Wait()
-		if waitErr != nil || finishErr != nil {
-			t.Fatalf("wait %v, finish %v", waitErr, finishErr)
+		if waitErr != nil || endErr != nil {
+			t.Fatalf("wait %v, end %v", waitErr, endErr)
 		}
 		if got := itemByKey(t, jobID, "C"); got.Status != models.JobItemStatusPending || got.RiverJobID == nil {
 			t.Fatalf("child left without an owner: %+v", got)
@@ -275,7 +275,7 @@ func TestSkipItemsCancelsOwnerAndQueuesWaiters(t *testing.T) {
 	if s := riverState(t, *parent.RiverJobID); s != riverCancelled {
 		t.Errorf("parent's river job = %s, want cancelled", s)
 	}
-	if err := m.FinishItem(ctx, parent.ID, *parent.RiverJobID, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrNotOwner) {
+	if err := m.EndItem(ctx, parent.ID, *parent.RiverJobID, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrNotOwner) {
 		t.Errorf("the cancelled owner's write = %v, want ErrNotOwner", err)
 	}
 	if got := itemByKey(t, jobID, "C"); got.RiverJobID == nil {
@@ -285,12 +285,12 @@ func TestSkipItemsCancelsOwnerAndQueuesWaiters(t *testing.T) {
 		t.Errorf("observer = %v", rec.itemCalls)
 	}
 
-	// A finished Job refuses before the selector runs.
+	// An ended Job refuses before the selector runs.
 	if err := m.Cancel(ctx, jobID); err != nil {
 		t.Fatal(err)
 	}
 	_, err = m.SkipItems(ctx, jobID, func(context.Context, bun.Tx, *models.Job) ([]string, error) {
-		t.Fatal("selector ran for a finished Job")
+		t.Fatal("selector ran for an ended Job")
 		return nil, nil
 	})
 	if !errors.Is(err, ErrJobNotActive) {
@@ -354,9 +354,9 @@ func TestRetryItemRetriesItsFailedWaiters(t *testing.T) {
 	}
 	parent := itemByKey(t, jobID, "P")
 	mustWait(t, m, itemByKey(t, jobID, "C"), true)
-	finish(t, m, parent, models.JobItemStatusFailed)
-	finish(t, m, itemByKey(t, jobID, "C"), models.JobItemStatusFailed)
-	finish(t, m, itemByKey(t, jobID, "Q"), models.JobItemStatusFailed)
+	end(t, m, parent, models.JobItemStatusFailed)
+	end(t, m, itemByKey(t, jobID, "C"), models.JobItemStatusFailed)
+	end(t, m, itemByKey(t, jobID, "Q"), models.JobItemStatusFailed)
 	if j := loadJob(t, jobID); j.Status != models.JobStatusCompleted {
 		t.Fatalf("job = %s", j.Status)
 	}

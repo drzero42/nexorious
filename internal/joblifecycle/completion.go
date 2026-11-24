@@ -78,18 +78,20 @@ func (m *Module) observeJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind
 		return fmt.Errorf("count failed items: %w", err)
 	}
 	jobCopy := *job
-	st.onCommit(func(ctx context.Context) { k.Observer.JobFinished(ctx, jobCopy, outcome, failed) })
+	st.onCommit(func(ctx context.Context) { k.Observer.JobEnded(ctx, jobCopy, outcome, failed) })
 	return nil
 }
 
-// EffectsArgs is the River job that runs a Job's finishing effects.
+// EffectsArgs is the River job that runs a Job's ending effects.
 type EffectsArgs struct {
-	JobID       string          `json:"job_id"`
-	Outcome     Outcome         `json:"outcome"`
-	FirstFinish bool            `json:"first_finish"`
-	KindData    json.RawMessage `json:"kind_data,omitempty"`
+	JobID    string          `json:"job_id"`
+	Outcome  Outcome         `json:"outcome"`
+	FirstEnd bool            `json:"first_finish"`
+	KindData json.RawMessage `json:"kind_data,omitempty"`
 }
 
+// Kind keeps the old "finishing" wording: the kind string is persisted in
+// river_job rows (as is the first_finish arg).
 func (EffectsArgs) Kind() string { return "job_finishing_effects" }
 
 // InsertOpts: several attempts, so a failing effect is retried; priority 1, so
@@ -99,11 +101,11 @@ func (EffectsArgs) InsertOpts() river.InsertOpts {
 }
 
 func (m *Module) queueEffects(ctx context.Context, tx bun.Tx, jobID string, o Outcome, first bool, kindData json.RawMessage) error {
-	_, err := m.insertOne(ctx, tx, EffectsArgs{JobID: jobID, Outcome: o, FirstFinish: first, KindData: kindData})
+	_, err := m.insertOne(ctx, tx, EffectsArgs{JobID: jobID, Outcome: o, FirstEnd: first, KindData: kindData})
 	return err
 }
 
-// EffectsWorker runs finishing effects.
+// EffectsWorker runs ending effects.
 type EffectsWorker struct {
 	river.WorkerDefaults[EffectsArgs]
 	Module *Module
@@ -133,7 +135,7 @@ func (w *EffectsWorker) Work(ctx context.Context, rj *river.Job[EffectsArgs]) er
 		_, err := m.rc.Insert(ctx, args, nil)
 		return err
 	}
-	err := k.Effects(ctx, m.db, Effect{Job: &job, Outcome: rj.Args.Outcome, FirstFinish: rj.Args.FirstFinish, KindData: rj.Args.KindData, Insert: insert})
+	err := k.Effects(ctx, m.db, Effect{Job: &job, Outcome: rj.Args.Outcome, FirstEnd: rj.Args.FirstEnd, KindData: rj.Args.KindData, Insert: insert})
 	if err == nil {
 		return nil
 	}
@@ -141,6 +143,8 @@ func (w *EffectsWorker) Work(ctx context.Context, rj *river.Job[EffectsArgs]) er
 		return ctx.Err()
 	}
 	if rj.Attempt >= rj.MaxAttempts {
+		// The message keeps the old "finishing" wording: alert rules in
+		// deploy/observability match it literally.
 		slog.ErrorContext(ctx, "job lifecycle: finishing effects failed", logging.KeyOutcome, string(rj.Args.Outcome), logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 	return err

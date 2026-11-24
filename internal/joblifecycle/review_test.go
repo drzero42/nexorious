@@ -64,11 +64,11 @@ func TestNextStageMovesOwnership(t *testing.T) {
 		t.Errorf("next-stage river jobs = %d, want 1", n)
 	}
 	// The old owner is refused from now on.
-	if err := m.FinishItem(ctx, it.ID, old, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrNotOwner) {
-		t.Errorf("old owner finish: err = %v, want ErrNotOwner", err)
+	if err := m.EndItem(ctx, it.ID, old, ItemResult{Status: models.JobItemStatusCompleted}); !errors.Is(err, ErrNotOwner) {
+		t.Errorf("old owner end: err = %v, want ErrNotOwner", err)
 	}
 	if loadJob(t, jobID).Status != models.JobStatusProcessing {
-		t.Error("job finished during a hand-over")
+		t.Error("job ended during a hand-over")
 	}
 }
 
@@ -80,7 +80,7 @@ func TestReviewResolveAndSkip(t *testing.T) {
 
 	// Item 0 completes; items 1 and 2 go to review. Still working until the
 	// last owned item leaves pending, then waiting on the user.
-	finish(t, m, its[0], models.JobItemStatusCompleted)
+	end(t, m, its[0], models.JobItemStatusCompleted)
 	conf := 0.4
 	if err := m.AwaitReview(ctx, its[1].ID, *its[1].RiverJobID, Review{Candidates: json.RawMessage(`[{"igdb_id":1}]`), MatchConfidence: &conf}); err != nil {
 		t.Fatal(err)
@@ -121,8 +121,8 @@ func TestReviewResolveAndSkip(t *testing.T) {
 	if riverState(t, *r.RiverJobID) != riverAvailable {
 		t.Error("resolve did not queue a river job")
 	}
-	finish(t, m, r, models.JobItemStatusCompleted)
-	// A worker finishing while another item is still in review queues the
+	end(t, m, r, models.JobItemStatusCompleted)
+	// A worker ending an item while another item is still in review queues the
 	// awaiting-review effect again (it is not a user action); the effect is
 	// idempotent through its dedup key.
 	if s := loadJob(t, jobID).Status; s != models.JobStatusProcessing {
@@ -154,7 +154,7 @@ func TestReviewResolveAndSkip(t *testing.T) {
 
 	// Job not active.
 	if err := m.Resolve(ctx, its[2].ID, 7); !errors.Is(err, ErrJobNotActive) {
-		t.Errorf("resolve in a finished job: err = %v, want ErrJobNotActive", err)
+		t.Errorf("resolve in an ended job: err = %v, want ErrJobNotActive", err)
 	}
 }
 
@@ -208,14 +208,14 @@ func TestCreateWithCompletedItemAndOrder(t *testing.T) {
 		t.Errorf("job = %+v", j)
 	}
 
-	// A Job whose only item is created finished completes at once.
+	// A Job whose only item is created ended completes at once.
 	nj2 := newJob(insertUser(t))
 	c2, err := m.CreateWithItems(ctx, nj2, []NewItem{{UserID: nj2.UserID, ItemKey: "data", Completed: true}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s := loadJob(t, c2.JobID).Status; s != models.JobStatusCompleted {
-		t.Errorf("job of finished items = %s, want completed", s)
+		t.Errorf("job of ended items = %s, want completed", s)
 	}
 }
 

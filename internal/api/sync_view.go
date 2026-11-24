@@ -43,6 +43,6 @@ const syncRetryable = `(` + syncFailed + ` AND NOT ` + syncNeedsReview + `
 	AND COALESCE(nj.status IN ('pending', 'processing', 'completed'), false))`
 
 // syncInFlight: the newest item is pending in an active Job, so a sync worker
-// still acts on it. No item is unfinished in a finished Job (the lifecycle
+// still acts on it. No item is open in an ended Job (the lifecycle
 // module cancels them with it).
 const syncInFlight = `COALESCE(ni.status IN ('pending', 'processing') AND nj.status IN ('pending', 'processing'), false)`

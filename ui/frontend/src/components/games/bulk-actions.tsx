@@ -91,7 +91,7 @@ export function BulkActions({
       onClearSelection();
       onSuccess?.();
     } catch (error) {
-      console.error('Failed to delete games:', error);
+      console.error('Failed to remove games:', error);
     }
   };
 
@@ -196,26 +196,27 @@ export function BulkActions({
             </Select>
           )}
 
-          {/* Delete button with confirmation */}
+          {/* Remove button with confirmation */}
           <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" size="sm" disabled={isLoading}>
                 <Trash2 className="h-4 w-4 mr-1" />
-                Delete
+                Remove
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete Games</AlertDialogTitle>
+                <AlertDialogTitle>Remove from collection?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Are you sure you want to delete {selectedCount} game
-                  {selectedCount !== 1 ? 's' : ''}? This action cannot be undone.
+                  Are you sure you want to remove {selectedCount} game
+                  {selectedCount !== 1 ? 's' : ''} from your collection? This action cannot be
+                  undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction onClick={handleDelete} disabled={bulkDelete.isPending}>
-                  Delete
+                  Remove
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

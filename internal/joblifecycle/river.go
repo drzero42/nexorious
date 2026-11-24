@@ -71,8 +71,8 @@ type NewItem struct {
 	// CreatedAt orders the item in listings (created_at, id); zero means
 	// the time of the insert. A creator that keeps an order sets it.
 	CreatedAt time.Time
-	// Completed creates the item already finished, with no River job: an
-	// item that only carries data for a finishing effect.
+	// Completed creates the item already ended, with no River job: an
+	// item that only carries data for an ending effect.
 	Completed bool
 }
 

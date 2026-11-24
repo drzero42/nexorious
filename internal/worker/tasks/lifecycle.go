@@ -131,9 +131,9 @@ func RegisterLifecycleKinds(m *joblifecycle.Module) {
 }
 
 // importEffects sends the import notification and, for a nexorious import on
-// its Job's first finish, applies the imported pools. The notification goes
+// its Job's first ending, applies the imported pools. The notification goes
 // first so a pools error that never goes away cannot hold it back. Pools are
-// applied on the first finish only: applying the file's pools again after a
+// applied on the first ending only: applying the file's pools again after a
 // Retry would recreate pools the user deleted since.
 func importEffects(ctx context.Context, db *bun.DB, e joblifecycle.Effect) error {
 	p := notify.EmitParams{Scope: notify.ScopeUser, ActorUserID: e.Job.UserID}
@@ -166,7 +166,7 @@ func importEffects(ctx context.Context, db *bun.DB, e joblifecycle.Effect) error
 	}); err != nil {
 		return fmt.Errorf("emit %s: %w", p.Type, err)
 	}
-	if e.Outcome == joblifecycle.OutcomeCompleted && e.FirstFinish && e.Job.Source == models.JobSourceNexorious {
+	if e.Outcome == joblifecycle.OutcomeCompleted && e.FirstEnd && e.Job.Source == models.JobSourceNexorious {
 		return applyImportedPools(ctx, db, e.Job.ID, e.Job.UserID)
 	}
 	return nil
@@ -241,7 +241,7 @@ func loadOwnedItem(ctx context.Context, db *bun.DB, lc *joblifecycle.Module, ite
 
 // failItem fails an item its worker owns, with msg.
 func failItem(ctx context.Context, lc *joblifecycle.Module, itemID string, riverJobID int64, msg string) error {
-	return exitOrRetry(ctx, lc.FinishItem(ctx, itemID, riverJobID, joblifecycle.ItemResult{
+	return exitOrRetry(ctx, lc.EndItem(ctx, itemID, riverJobID, joblifecycle.ItemResult{
 		Status: models.JobItemStatusFailed, Message: msg,
 	}))
 }

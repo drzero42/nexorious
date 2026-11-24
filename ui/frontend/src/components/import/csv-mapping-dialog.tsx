@@ -146,9 +146,9 @@ function CsvMappingForm({ inspect, isImporting, onImport, onCancel }: CsvMapping
 
       <div className="space-y-5">
         <div className="grid grid-cols-2 items-center gap-2">
-          <Label htmlFor="csv-format">Format</Label>
+          <Label htmlFor="csv-format">Preset</Label>
           <Select value={format} onValueChange={setFormat}>
-            <SelectTrigger id="csv-format" aria-label="Format">
+            <SelectTrigger id="csv-format" aria-label="Preset">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -167,7 +167,7 @@ function CsvMappingForm({ inspect, isImporting, onImport, onCancel }: CsvMapping
             {isAutoDetected && 'Detected automatically. '}
             Columns, play-status, platforms, ratings and dates are mapped automatically by the{' '}
             {presets.find((p) => p.slug === format)?.name ?? format} preset.
-            {isAutoDetected && ' Switch the Format above to map columns yourself.'}
+            {isAutoDetected && ' Switch the Preset above to Generic CSV to map columns yourself.'}
           </p>
         )}
 

@@ -72,7 +72,7 @@ func resolveSmellRefIDs(ctx context.Context, c *cliclient.Client, key string, re
 }
 
 func registerDoctorTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
-	addTool(s, &mcp.Tool{Name: "library_smells_list", Description: "List every library-health check with its tier, whether it is auto-fixable, and how many games it currently flags."},
+	addTool(s, &mcp.Tool{Name: "library_smells_list", Description: "List every library-health check with its tier (\"inconsistency\", or \"nudge\" for the Smell tier), whether it is auto-fixable, and how many games it currently flags."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, smellsListOutput, error) {
 			key := apiKey(ctx)
 			checks, err := c.ListSmells(ctx, key)
@@ -82,7 +82,7 @@ func registerDoctorTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, smellsListOutput{Checks: checks}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "library_smells_detail", Description: "List the flagged games for one check. suggested_status (auto-fix checks) or detail describes each finding."},
+	addTool(s, &mcp.Tool{Name: "library_smells_detail", Description: "List the flagged games for one check. suggested_status (the status Apply would set, auto-fix checks only) or detail says why each game is flagged."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in smellsDetailInput) (*mcp.CallToolResult, smellsDetailOutput, error) {
 			key := apiKey(ctx)
 			res, err := c.ListSmellItems(ctx, key, in.CheckID, in.Page, in.PerPage)
@@ -92,7 +92,7 @@ func registerDoctorTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, smellsDetailOutput{Items: res.Items, Total: res.Total, Page: res.Page, Pages: res.Pages}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "library_smells_apply", Description: "Apply an auto-fixable check's suggestion. With refs, fixes those games; with no refs, fixes every game the check flags. Ambiguous refs return candidates — call again with an id. Non-fixable checks return an error."},
+	addTool(s, &mcp.Tool{Name: "library_smells_apply", Description: "Apply an auto-fixable check's fix. With refs, fixes those games; with no refs, fixes every game the check flags. Ambiguous refs return the matching games in `candidates` — call again with an id. Non-fixable checks return an error."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in smellsRefsInput) (*mcp.CallToolResult, smellsApplyOutput, error) {
 			key := apiKey(ctx)
 			var ids []string
@@ -123,7 +123,7 @@ func registerDoctorTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 				Message: fmt.Sprintf("applied %d, skipped %d", res.Applied, res.Skipped)}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "library_smells_ignore", Description: "Dismiss flagged games for a check so they stop appearing. Ambiguous refs return candidates — call again with an id."},
+	addTool(s, &mcp.Tool{Name: "library_smells_ignore", Description: "Ignore flagged games for a check so they stop appearing. Ambiguous refs return the matching games in `candidates` — call again with an id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in smellsRefsInput) (*mcp.CallToolResult, smellsMutateOutput, error) {
 			key := apiKey(ctx)
 			ids, cands, msg, err := resolveSmellRefIDs(ctx, c, key, in.Refs)
@@ -137,10 +137,10 @@ func registerDoctorTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			if err != nil {
 				return nil, smellsMutateOutput{}, toolError("library_smells_ignore", err)
 			}
-			return nil, smellsMutateOutput{Ignored: n, Message: fmt.Sprintf("dismissed %d game(s)", n)}, nil
+			return nil, smellsMutateOutput{Ignored: n, Message: fmt.Sprintf("ignored %d game(s)", n)}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "library_smells_restore", Description: "Un-dismiss previously ignored games for a check. Ambiguous refs return candidates — call again with an id."},
+	addTool(s, &mcp.Tool{Name: "library_smells_restore", Description: "Restore ignored games for a check so it flags them again. Ambiguous refs return the matching games in `candidates` — call again with an id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in smellsRefsInput) (*mcp.CallToolResult, smellsMutateOutput, error) {
 			key := apiKey(ctx)
 			ids, cands, msg, err := resolveSmellRefIDs(ctx, c, key, in.Refs)
@@ -157,7 +157,7 @@ func registerDoctorTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, smellsMutateOutput{Restored: n, Message: fmt.Sprintf("restored %d game(s)", n)}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "library_smells_ignored", Description: "List the games currently dismissed for one check."},
+	addTool(s, &mcp.Tool{Name: "library_smells_ignored", Description: "List the games currently ignored for one check."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in smellsDetailInput) (*mcp.CallToolResult, smellsIgnoredOutput, error) {
 			key := apiKey(ctx)
 			res, err := c.ListIgnoredSmells(ctx, key, in.CheckID, in.Page, in.PerPage)
