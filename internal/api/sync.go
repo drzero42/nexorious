@@ -27,6 +27,7 @@ import (
 	"github.com/drzero42/nexorious/internal/logging"
 	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
+	"github.com/drzero42/nexorious/internal/usergame"
 )
 
 // SteamClient abstracts the Steam Web API call used during credential verification.
@@ -1477,12 +1478,7 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 	}
 
 	if err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// storefront = ? intentionally excludes NULL-storefront rows (manually-added entries); sync-created rows always carry an explicit storefront.
-		if _, err := tx.NewRaw(
-			`DELETE FROM user_game_platforms
-			 WHERE storefront = ? AND user_game_id IN (SELECT id FROM user_games WHERE user_id = ?)`,
-			sf, userID,
-		).Exec(ctx); err != nil {
+		if err := usergame.RemoveStorefrontPlatforms(ctx, tx, userID, sf); err != nil {
 			return err
 		}
 		if _, err := tx.NewRaw(
