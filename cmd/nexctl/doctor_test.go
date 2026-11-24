@@ -58,6 +58,10 @@ func TestDoctorSummaryTable(t *testing.T) {
 			t.Fatalf("summary missing %q:\n%s", want, out.String())
 		}
 	}
+	// The API's "nudge" tier value is shown as the Smell tier's name.
+	if !bytes.Contains(out.Bytes(), []byte("smell")) || bytes.Contains(out.Bytes(), []byte("nudge")) {
+		t.Fatalf("summary should show tier \"smell\", not \"nudge\":\n%s", out.String())
+	}
 }
 
 func TestDoctorSummaryQuietOnlyNonzero(t *testing.T) {

@@ -72,7 +72,7 @@ func resolveSmellRefIDs(ctx context.Context, c *cliclient.Client, key string, re
 }
 
 func registerDoctorTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
-	addTool(s, &mcp.Tool{Name: "library_smells_list", Description: "List every library-health check with its tier, whether it is auto-fixable, and how many games it currently flags."},
+	addTool(s, &mcp.Tool{Name: "library_smells_list", Description: "List every library-health check with its tier (\"inconsistency\", or \"nudge\" for the Smell tier), whether it is auto-fixable, and how many games it currently flags."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, smellsListOutput, error) {
 			key := apiKey(ctx)
 			checks, err := c.ListSmells(ctx, key)

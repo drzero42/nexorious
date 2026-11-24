@@ -58,9 +58,19 @@ func runDoctorSummary(cmd *cobra.Command) error {
 	fmt.Fprintln(tw, "ID\tCHECK\tTIER\tFIXABLE\tCOUNT")
 	for i := range checks {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n",
-			checks[i].ID, checks[i].Title, checks[i].Tier, yesNo(checks[i].AutoFixable), checks[i].Count)
+			checks[i].ID, checks[i].Title, tierLabel(checks[i].Tier), yesNo(checks[i].AutoFixable), checks[i].Count)
 	}
 	return tw.Flush()
+}
+
+// tierLabel is a tier's name in the table. The API still sends "nudge" for
+// the Smell tier (its old name, kept for clients), so the table maps it;
+// --json keeps the raw value.
+func tierLabel(tier string) string {
+	if tier == "nudge" {
+		return "smell"
+	}
+	return tier
 }
 
 func runDoctorDetail(cmd *cobra.Command, checkID string) error {
