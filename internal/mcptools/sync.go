@@ -11,7 +11,7 @@ import (
 )
 
 type syncStatusInput struct {
-	Storefront string `json:"storefront,omitempty" jsonschema:"storefront slug (e.g. steam, psn, gog, epic); omit to list all configured storefronts"`
+	Storefront string `json:"storefront,omitempty" jsonschema:"storefront slug; omit to list all configured storefronts and their slugs"`
 }
 
 type syncStatusOutput struct {
@@ -70,7 +70,7 @@ func mcpResolveExternalRef(ctx context.Context, c *cliclient.Client, key, sf, re
 }
 
 type syncRunInput struct {
-	Storefront string `json:"storefront" jsonschema:"storefront slug to sync (e.g. steam, psn, gog, epic)"`
+	Storefront string `json:"storefront" jsonschema:"storefront slug to sync (call sync_status with no storefront to list valid slugs)"`
 }
 
 type syncJobOutput struct {
