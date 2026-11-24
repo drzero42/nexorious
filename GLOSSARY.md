@@ -5,7 +5,7 @@ A self-hosted tracker for a personal video-game collection: the games a user own
 ## Background work
 
 **Job**:
-One run of background work started by a user or the system (a sync, an import, an export, or a maintenance refresh), tracked from creation until it is finished.
+One run of background work started by a user or the system (a sync, an import, an export, or a maintenance refresh), tracked from creation until it has Ended.
 _Avoid_: task, run, River job (the queue's unit of execution, of which one Job may have many)
 
 **Job item**:
@@ -13,39 +13,39 @@ One unit of work inside a Job: one external game in a sync, one game in an impor
 _Avoid_: task, row, entry
 
 **Job kind**:
-The sort of a Job (sync, import from a given source, export, metadata refresh, store-link refresh), which decides how its items are worked and what happens when it finishes.
+The sort of a Job (sync, import from a given source, export, metadata refresh, store-link refresh), which decides how its items are worked and what happens when it ends.
 _Avoid_: job type (one input to the kind, not the whole of it)
 
 **Dispatch**:
-The first phase of a Job, in which its items are created. A Job cannot complete until its dispatch is done, even if every item created so far is finished. An export has no items: its dispatch is all of its work.
+The first phase of a Job, in which its items are created. A Job cannot complete until its dispatch is done, even if every item created so far has Ended. An export has no items: its dispatch is all of its work.
 
 **Item status**:
-While a Job item is unfinished, its status says who acts next: a worker (`pending`) or the user (`pending_review`). It never records a decision: a Resolution is kept apart from it.
+While a Job item is Open, its status says who acts next: a worker (`pending`) or the user (`pending_review`). It never records a decision: a Resolution is kept apart from it.
 
 **Pending review**:
 A Job item a worker could not match to an IGDB game with confidence, waiting for the user to Resolve or Skip it. It keeps its Job from completing.
 _Avoid_: unmatched, needs review
 
 **Resolution**:
-The IGDB game the user chose for an item in Pending review. Resolving lets the item be finished. In a sync the choice is made by a Rematch.
+The IGDB game the user chose for an item in Pending review. Resolving lets the item end. In a sync the choice is made by a Rematch.
 
 **Skip**:
-The user's decision not to add a game to the library. It finishes the game's unfinished item; in a sync it also stands for later syncs, until the user removes it.
+The user's decision not to add a game to the library. It ends the game's Open item; in a sync it also stands for later syncs, until the user removes it.
 
-**Finished**:
-A Job or Job item whose work has ended: completed, failed, skipped (items only), or cancelled. Nothing acts on it again unless the user asks for a Retry.
-_Avoid_: terminal, done
+**Ended**:
+A Job or Job item whose work is over: completed, failed, skipped (items only), or cancelled. Nothing acts on it again unless the user asks for a Retry. A Job item that has not ended is **Open**.
+_Avoid_: finished (a game's play status), terminal, done, unfinished
 
 **Completion**:
 The moment a Job becomes completed: its dispatch is done and none of its items wait on a worker or on the user.
 
 **Cancel**:
-A user stopping a Job before completion. Its unfinished items are cancelled with it.
+A user stopping a Job before completion. Its Open items are cancelled with it.
 
 **Fail**:
-A Job ending because of an error. Its unfinished items are cancelled, as with Cancel.
+A Job ending because of an error. Its Open items are cancelled, as with Cancel.
 
-**Finishing effects**:
+**Ending effects**:
 What follows from a Job being completed or failed, or coming to wait on the user: its notifications, a sync's diff, an import's pools. They happen because the Job reached that point, never as part of an item's work.
 
 **Retry**:
@@ -98,7 +98,29 @@ _Avoid_: fix all, apply suggestion (a Suggestion belongs to a pool)
 Telling one Check to stop flagging one game. Other Checks still apply to the game. **Restore** undoes it.
 _Avoid_: dismiss, un-dismiss
 
-## Pools
+## Play status
+
+**Finished**:
+A game whose play status means the user has no further plans to play it: Completed, Mastered, Dominated, or Dropped. A Finished game leaves every pool.
+_Avoid_: ended (a Job's state), terminal, done
+
+**Beaten**:
+A Finished game the user played through: Completed, Mastered, or Dominated, but not Dropped.
+_Avoid_: finished (also includes Dropped), completed (one of the three statuses)
+
+## Planning
+
+**Pool**:
+A named collection of games the user plans to play, in their library or wishlist. A game can be in several pools at once.
+_Avoid_: list, backlog
+
+**Queue**:
+The ordered part of a pool: the games the user has placed in the order they mean to play them. Its first game is **Play Next**.
+_Avoid_: up next
+
+**Candidate**:
+A game in a pool that is not in its Queue yet. Promoting it places it in the Queue; demoting it takes it back out.
+_Avoid_: candidate for any other meaning (an ambiguous name's possible matches, IGDB games offered in match review)
 
 **Suggestion**:
 A game from the user's library or wishlist that matches a pool's filter but is not in the pool yet. Finished games are never Suggestions.

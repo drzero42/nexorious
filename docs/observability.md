@@ -148,7 +148,7 @@ severity (`critical` / `warning`):
 | `NexoriousCredentialFailures` | credentials | warning | > 3 auth failures per source in 15m |
 | `NexoriousSyncErrors` | sync/job | warning | > 3 external-API failures per source in 15m |
 | `NexoriousStuckJobs` | sync/job | warning | any Job recovery failing an item or a Job whose worker gave up (`job recovery: failed interrupted work`) in 15m |
-| `NexoriousJobDispatchFailures` | sync/job | warning | any failed Job transition (`job lifecycle: transition failed`) or finishing effect that used its last attempt (`job lifecycle: finishing effects failed`) in 10m |
+| `NexoriousJobDispatchFailures` | sync/job | warning | any failed Job transition (`job lifecycle: transition failed`) or ending effect that used its last attempt (`job lifecycle: finishing effects failed`) in 10m |
 | `NexoriousHighErrorRate` | generic | warning | > 10 ERROR lines in 10m |
 
 Thresholds and windows are conservative starting points — **tune to your volume.**
