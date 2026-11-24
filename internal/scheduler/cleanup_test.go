@@ -2,6 +2,7 @@ package scheduler_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/riverqueue/river"
+	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/scheduler"
@@ -288,6 +290,97 @@ func TestCleanupUnreferencedGames_DeletesOrphans(t *testing.T) {
 	}
 	if !exists {
 		t.Error("expected referenced game to remain")
+	}
+}
+
+// A game that only an External game's match points to (a rematch with no
+// platform rows, a skipped family, a game removed from the library, or the gap
+// between a sync's match and write stages) is referenced: the cleanup keeps it
+// and the match survives (#1423).
+func TestCleanupUnreferencedGames_KeepsMatchedGames(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := insertUser(t, ctx, nil)
+
+	// The orphan shows the statement ran: a query that tried to delete the
+	// matched game too would fail on the foreign key and delete nothing.
+	const matchedID, orphanID = 99903, 99906
+	for _, id := range []int{matchedID, orphanID} {
+		if _, err := testDB.NewRaw(
+			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'G', now(), now())`, id,
+		).Exec(ctx); err != nil {
+			t.Fatalf("insert game %d: %v", id, err)
+		}
+	}
+	egID := uuid.NewString()
+	if _, err := testDB.NewRaw(
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id, created_at, updated_at)
+		 VALUES (?, ?, 'steam', '123', 'Matched Game', false, true, false, ?, now(), now())`,
+		egID, userID, matchedID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert external game: %v", err)
+	}
+
+	scheduler.CleanupUnreferencedGames(ctx, testDB)
+
+	var exists bool
+	if err := testDB.NewRaw(`SELECT EXISTS(SELECT 1 FROM games WHERE id = ?)`, matchedID).Scan(ctx, &exists); err != nil {
+		t.Fatalf("check game: %v", err)
+	}
+	if !exists {
+		t.Error("expected the matched game to remain")
+	}
+	if err := testDB.NewRaw(`SELECT EXISTS(SELECT 1 FROM games WHERE id = ?)`, orphanID).Scan(ctx, &exists); err != nil {
+		t.Fatalf("check orphan: %v", err)
+	}
+	if exists {
+		t.Error("expected the orphan game to be deleted")
+	}
+	var resolved *int32
+	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = ?`, egID).Scan(ctx, &resolved); err != nil {
+		t.Fatalf("read match: %v", err)
+	}
+	if resolved == nil || *resolved != matchedID {
+		t.Errorf("match = %v, want %d", resolved, matchedID)
+	}
+}
+
+// Deleting a referenced game fails rather than clearing the External game's
+// match or deleting the user game. This is what keeps a cleanup that races a
+// sync from losing what the sync just committed (#1423).
+func TestGamesForeignKeys_RefuseDeletingReferencedGames(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := insertUser(t, ctx, nil)
+
+	const matchedID, ownedID = 99904, 99905
+	for _, id := range []int{matchedID, ownedID} {
+		if _, err := testDB.NewRaw(
+			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'G', now(), now())`, id,
+		).Exec(ctx); err != nil {
+			t.Fatalf("insert game %d: %v", id, err)
+		}
+	}
+	if _, err := testDB.NewRaw(
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id, created_at, updated_at)
+		 VALUES (?, ?, 'steam', '123', 'G', false, true, false, ?, now(), now())`,
+		uuid.NewString(), userID, matchedID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert external game: %v", err)
+	}
+	if _, err := testDB.NewRaw(
+		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at) VALUES (?, ?, ?, now(), now())`,
+		uuid.NewString(), userID, ownedID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert user_game: %v", err)
+	}
+
+	for _, id := range []int{matchedID, ownedID} {
+		_, err := testDB.NewRaw(`DELETE FROM games WHERE id = ?`, id).Exec(ctx)
+		var pgErr pgdriver.Error
+		if !errors.As(err, &pgErr) || pgErr.Field('C') != "23503" {
+			t.Errorf("delete game %d: err = %v, want a foreign-key violation", id, err)
+		}
 	}
 }
 
