@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/robfig/cron/v3"
 	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
@@ -405,12 +407,21 @@ func sweepExportsDir(ctx context.Context, db *bun.DB, dir string) {
 	}
 }
 
-// CleanupUnreferencedGames deletes games with no user_games rows.
+// CleanupUnreferencedGames deletes games that neither a user game nor an
+// External game's match points to. Both foreign keys to games are NO ACTION
+// (#1423): a game that gains a reference while the statement runs makes it
+// fail with a foreign-key violation rather than lose that reference, and the
+// next run deletes whatever is still unreferenced.
 func CleanupUnreferencedGames(ctx context.Context, db *bun.DB) {
 	result, err := db.NewRaw(
-		`DELETE FROM games
-		 WHERE id NOT IN (SELECT DISTINCT game_id FROM user_games)`,
+		`DELETE FROM games g
+		 WHERE NOT EXISTS (SELECT 1 FROM user_games ug WHERE ug.game_id = g.id)
+		   AND NOT EXISTS (SELECT 1 FROM external_games eg WHERE eg.resolved_igdb_id = g.id)`,
 	).Exec(ctx)
+	if isForeignKeyViolation(err) {
+		slog.InfoContext(ctx, "cleanup: a game gained a reference during the unreferenced-games cleanup; retrying on the next run", logging.KeyErr, err)
+		return
+	}
 	if err != nil {
 		slog.ErrorContext(ctx, "cleanup: failed to delete unreferenced games", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		return
@@ -419,6 +430,11 @@ func CleanupUnreferencedGames(ctx context.Context, db *bun.DB) {
 	if rows > 0 {
 		slog.InfoContext(ctx, "cleanup: deleted unreferenced games", "count", rows)
 	}
+}
+
+func isForeignKeyViolation(err error) bool {
+	var pgErr pgdriver.Error
+	return errors.As(err, &pgErr) && pgErr.Field('C') == "23503"
 }
 
 // CleanupExpiredSessions deletes expired user_sessions rows.
