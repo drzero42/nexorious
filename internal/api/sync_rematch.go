@@ -13,6 +13,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/usergame"
@@ -117,11 +118,11 @@ func rematchUnlinkFamily(ctx context.Context, tx bun.Tx, userID string, ids []st
 
 // writeFamily writes each family member to the library. A member with no
 // platform rows cannot be written; it is logged and left out of the result.
-func writeFamily(ctx context.Context, tx bun.Tx, userID string, ids []string) (map[string]tasks.LibraryWrite, error) {
-	writes := make(map[string]tasks.LibraryWrite, len(ids))
+func writeFamily(ctx context.Context, tx bun.Tx, userID string, ids []string) (map[string]externalgame.LibraryWrite, error) {
+	writes := make(map[string]externalgame.LibraryWrite, len(ids))
 	for _, id := range ids {
-		lw, err := tasks.WriteExternalGameToLibrary(ctx, tx, userID, id)
-		if errors.Is(err, tasks.ErrExternalGameNoPlatforms) {
+		lw, err := externalgame.WriteToLibrary(ctx, tx, userID, id)
+		if errors.Is(err, externalgame.ErrNoPlatforms) {
 			slog.WarnContext(ctx, "sync: external game has no platform rows; match recorded, nothing written to the library",
 				logging.KeyExternalGameID, id)
 			continue
@@ -246,7 +247,7 @@ func rematchFamily(ctx context.Context, tx bun.Tx, userID, id string, igdbID int
 		}
 	}
 
-	if err := tasks.EnsureGameRow(ctx, tx, int32(igdbID), eg.Title); err != nil { //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
+	if err := externalgame.EnsureGameRow(ctx, tx, int32(igdbID), eg.Title); err != nil { //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 		return nil, err
 	}
 	if err := rematchUnlinkFamily(ctx, tx, userID, ids, igdbID, orphanAction); err != nil {

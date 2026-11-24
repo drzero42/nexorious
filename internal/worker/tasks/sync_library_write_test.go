@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/uptrace/bun"
-
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -180,24 +178,5 @@ func TestIGDBMatchWorker_LowConfidenceAfterRematch_GoesToTheWriteStage(t *testin
 	}
 	if n := famCount(t, `SELECT COUNT(*) FROM river_job WHERE kind = 'user_game_write' AND args->>'job_item_id' = ?`, itemID); n != 1 {
 		t.Errorf("user_game_write jobs: want 1, got %d", n)
-	}
-}
-
-func TestWriteExternalGameToLibrary_FailureRollsBackWithTheCaller(t *testing.T) {
-	userID := famSetup(t)
-	egID := famInsertGame(t, userID, famGame{extID: "1", available: true, resolved: 100})
-	ctx := context.Background()
-
-	err := testDB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if _, err := tasks.WriteExternalGameToLibrary(ctx, tx, userID, egID); err != nil {
-			return err
-		}
-		return context.Canceled // the caller fails after the write
-	})
-	if err == nil {
-		t.Fatal("expected the transaction to fail")
-	}
-	if n := ugCountFor(t, userID, 100); n != 0 {
-		t.Errorf("user games after rollback: want 0, got %d", n)
 	}
 }
