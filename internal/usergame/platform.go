@@ -181,3 +181,21 @@ func RemovePlatformBulk(ctx context.Context, db *bun.DB, p BulkRemovePlatformPar
 	})
 	return removed, err
 }
+
+// RemoveStorefrontPlatforms deletes every user_game_platforms row on the given
+// storefront across all of the user's games: the platform half of a storefront
+// sync reset. It matches by storefront, not by external-game link, so it also
+// removes rows on that storefront the user added by hand; rows with a NULL
+// storefront are never matched. Accepts bun.IDB so the reset runs it inside the
+// same transaction that deletes the storefront's external_games.
+func RemoveStorefrontPlatforms(ctx context.Context, db bun.IDB, userID, storefront string) error {
+	_, err := db.NewDelete().
+		TableExpr("user_game_platforms").
+		Where("storefront = ?", storefront).
+		Where("user_game_id IN (SELECT id FROM user_games WHERE user_id = ?)", userID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("remove storefront platforms: %w", err)
+	}
+	return nil
+}

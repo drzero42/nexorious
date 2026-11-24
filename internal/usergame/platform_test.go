@@ -30,3 +30,44 @@ func TestRemovePlatform_NotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestRemoveStorefrontPlatforms_ScopedToUserAndStorefront(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+	other := seedUser(t)
+	ugID := seedUserGame(t, u, 610)
+	otherUG := seedUserGame(t, other, 611)
+
+	insert := func(id, ug string, storefront *string) {
+		t.Helper()
+		if _, err := testDB.NewRaw(
+			`INSERT INTO user_game_platforms (id, user_game_id, platform, storefront) VALUES (?, ?, 'pc-windows', ?)`,
+			id, ug, storefront,
+		).Exec(ctx); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+	insert("ugp-steam", ugID, strptr("steam"))
+	insert("ugp-gog", ugID, strptr("gog"))
+	insert("ugp-none", ugID, nil)
+	insert("ugp-other-steam", otherUG, strptr("steam"))
+
+	if err := RemoveStorefrontPlatforms(ctx, testDB, u, "steam"); err != nil {
+		t.Fatal(err)
+	}
+
+	var left []string
+	if err := testDB.NewRaw(`SELECT id FROM user_game_platforms ORDER BY id`).Scan(ctx, &left); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ugp-gog", "ugp-none", "ugp-other-steam"}
+	if len(left) != len(want) {
+		t.Fatalf("remaining rows = %v, want %v", left, want)
+	}
+	for i := range want {
+		if left[i] != want[i] {
+			t.Fatalf("remaining rows = %v, want %v", left, want)
+		}
+	}
+}
