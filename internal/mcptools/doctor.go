@@ -115,7 +115,7 @@ func registerDoctorTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 				}
 				ids = resolved
 			}
-			res, err := c.ApplySmell(ctx, key, in.CheckID, ids)
+			res, err := clientops.ApplySmell(ctx, c, key, in.CheckID, ids)
 			if err != nil {
 				return nil, smellsApplyOutput{}, toolError("library_smells_apply", err)
 			}
@@ -133,7 +133,7 @@ func registerDoctorTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			if cands != nil || msg != "" {
 				return nil, smellsMutateOutput{Candidates: cands, Message: msg}, nil
 			}
-			n, err := c.IgnoreSmell(ctx, key, in.CheckID, ids)
+			n, err := clientops.IgnoreSmell(ctx, c, key, in.CheckID, ids)
 			if err != nil {
 				return nil, smellsMutateOutput{}, toolError("library_smells_ignore", err)
 			}
@@ -150,7 +150,7 @@ func registerDoctorTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			if cands != nil || msg != "" {
 				return nil, smellsMutateOutput{Candidates: cands, Message: msg}, nil
 			}
-			n, err := c.RestoreSmell(ctx, key, in.CheckID, ids)
+			n, err := clientops.RestoreSmell(ctx, c, key, in.CheckID, ids)
 			if err != nil {
 				return nil, smellsMutateOutput{}, toolError("library_smells_restore", err)
 			}
