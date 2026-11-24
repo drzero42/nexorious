@@ -460,12 +460,39 @@ func TestRematch_SkippedFamily_IsUnskippedAndMatched(t *testing.T) {
 	}
 }
 
-func TestRematchAndUnskip_ChildGame_Is400(t *testing.T) {
+func TestRematchUnskipSkip_ChildGame_Is400(t *testing.T) {
 	f := newRM(t, "rm-child-400")
 	f.game("eg", "", 0, false, "playstation-4")
 	f.game("ch", "eg", 0, true, "playstation-5")
 	wantCode(t, f.rematch("ch", 200, ""), http.StatusBadRequest)
 	wantCode(t, f.unskip("ch"), http.StatusBadRequest)
+
+	f.game("eg2", "", 0, false, "playstation-4")
+	f.game("ch2", "eg2", 0, false, "playstation-5")
+	wantCode(t, f.skip("ch2"), http.StatusBadRequest)
+	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id = 'ch2' AND is_skipped`); n != 0 {
+		t.Error("child skipped despite 400")
+	}
+}
+
+// Skipping a Child game with an unfinished item in an active Job is refused
+// inside the module's transaction: the item stays pending and the child is
+// not skipped (#1419).
+func TestSkip_ChildGameWithActiveItem_Is400(t *testing.T) {
+	f := newRM(t, "rm-child-skip-item")
+	f.game("eg", "", 0, false, "playstation-4")
+	f.game("ch", "eg", 0, false, "playstation-5")
+	f.job("job", "processing")
+	f.item("ji", "job", "ch", "pending", 0)
+
+	wantCode(t, f.skip("ch"), http.StatusBadRequest)
+
+	if s := f.itemStatus("ji"); s != "pending" {
+		t.Errorf("item: want pending, got %s", s)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE is_skipped`); n != 0 {
+		t.Errorf("skipped games: want 0, got %d", n)
+	}
 }
 
 func TestRematch_RollsBackOnMidSequenceFailure(t *testing.T) {
