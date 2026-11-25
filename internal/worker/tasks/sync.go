@@ -584,10 +584,11 @@ type IGDBMatchWorker struct {
 	IGDBClient *igdbsvc.Client
 }
 
-// maxChildWaitTries bounds how often a child that was told "cannot wait"
-// starts again from loading its game (it may have been re-pointed to another
-// parent meanwhile); after that the error goes to River.
-const maxChildWaitTries = 3
+// maxChildWaitTries bounds how often a child starts again from loading its
+// game: after it was told "cannot wait", or when its inherit found that the
+// game had changed since it was loaded (re-pointed to another parent, or
+// matched meanwhile). After that the error goes to River.
+const maxChildWaitTries = 4
 
 func (w *IGDBMatchWorker) Work(ctx context.Context, rj *river.Job[IGDBMatchArgs]) error {
 	item, done, err := loadOwnedItem(ctx, w.DB, w.LC, rj.Args.JobItemID, rj.ID)
@@ -622,6 +623,13 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, rj *river.Job[IGDBMatchArgs]
 
 		// A child of a parent that is matched now takes its match.
 		err := w.toWrite(ctx, rj, item.ID, inheritParentMatch(&eg))
+		if errors.Is(err, errChildChanged) {
+			// Loaded outside the transition: the game is no longer what
+			// was loaded. Decide again on the game as it is now (#1437).
+			slog.DebugContext(ctx, "igdb_match: child changed since it was loaded, loading it again",
+				logging.KeyJobItemID, item.ID, "parent_id", *eg.ParentID)
+			continue
+		}
 		if !errors.Is(err, errParentUnmatched) {
 			return err
 		}
@@ -651,10 +659,18 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, rj *river.Job[IGDBMatchArgs]
 // errParentUnmatched rolls back an inherit whose parent has no match.
 var errParentUnmatched = errors.New("igdb_match: parent game is unmatched")
 
+// errChildChanged rolls back an inherit whose child is no longer what the
+// worker loaded: it has another parent, or it was matched meanwhile.
+var errChildChanged = errors.New("igdb_match: child game changed since it was loaded")
+
 // inheritParentMatch is the own write that gives a child its parent's match:
 // the parent is read FOR SHARE in the transition, so a child never takes a
 // match a rematch in progress is replacing, and the child only takes it while
-// it has none (#1338).
+// it has none (#1338) and while that game is still its parent (#1437). The
+// child was loaded outside the transition, so a promotion may have re-pointed
+// it before the parent's lock was taken; once the parent is held FOR SHARE,
+// promotion cannot re-point it any more, so the update's parent_id check holds
+// until commit.
 func inheritParentMatch(eg *models.ExternalGame) joblifecycle.OwnWrite {
 	return func(ctx context.Context, tx bun.Tx) error {
 		var parentMatch *int32
@@ -669,21 +685,30 @@ func inheritParentMatch(eg *models.ExternalGame) joblifecycle.OwnWrite {
 		if err := externalgame.EnsureGameRow(ctx, tx, *parentMatch, eg.Title); err != nil {
 			return err
 		}
-		if _, err := tx.NewRaw(
-			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL`,
-			*parentMatch, eg.ID,
-		).Exec(ctx); err != nil {
+		res, err := tx.NewRaw(
+			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL AND parent_id = ?`,
+			*parentMatch, eg.ID, *eg.ParentID,
+		).Exec(ctx)
+		if err != nil {
 			return fmt.Errorf("apply child inherit: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("apply child inherit: rows affected: %w", err)
+		}
+		if n == 0 {
+			return joblifecycle.Abort(errChildChanged)
 		}
 		return nil
 	}
 }
 
 // toWrite hands the item to the write stage, with own as the transition's
-// own write. errParentUnmatched is returned as is, for the caller to decide.
+// own write. errParentUnmatched and errChildChanged are returned as is, for
+// the caller to decide.
 func (w *IGDBMatchWorker) toWrite(ctx context.Context, rj *river.Job[IGDBMatchArgs], itemID string, own joblifecycle.OwnWrite) error {
 	err := w.LC.NextStage(ctx, itemID, rj.ID, joblifecycle.Stage{Args: UserGameArgs{JobItemID: itemID}, Own: own})
-	if errors.Is(err, errParentUnmatched) {
+	if errors.Is(err, errParentUnmatched) || errors.Is(err, errChildChanged) {
 		return err
 	}
 	return exitOrRetry(ctx, err)

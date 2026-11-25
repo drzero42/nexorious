@@ -676,6 +676,83 @@ func TestIGDBMatchWorker_PromotedWhileAskingToWait_IsSearched(t *testing.T) {
 	}
 }
 
+// A child only takes the match of the game that is its parent when it writes
+// (#1437). The worker loaded the child with parent P; before its inherit reads
+// P, the promotion re-points the child and the user Rematches P. The child
+// must not copy P's new match: it decides again on the game as it is now.
+func TestIGDBMatchWorker_ParentChangedBeforeInherit_DoesNotTakeOldParentsMatch(t *testing.T) {
+	cases := []struct {
+		name string
+		// newParent re-points the child to another unmatched game; false
+		// promotes it to top-level.
+		newParent  bool
+		wantStatus string
+		wantMsg    string
+	}{
+		// The new parent has no item and the dispatch is done: the child
+		// cannot wait for it and fails.
+		{name: "re-pointed", newParent: true, wantStatus: "failed", wantMsg: "parent game is unmatched and is not part of this sync"},
+		// Top-level now: searched (no IGDB client → Pending review).
+		{name: "promoted", newParent: false, wantStatus: "pending_review"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			userID := famSetup(t)
+			ctx := context.Background()
+			oldParentID := famInsertGame(t, userID, famGame{extID: "P", available: false, age: 2 * time.Hour})
+			childID := famInsertGame(t, userID, famGame{extID: "C", parent: oldParentID, available: true})
+			var newParentID any
+			if tc.newParent {
+				newParentID = famInsertGame(t, userID, famGame{extID: "Q", available: true, age: time.Hour})
+			}
+			famEnsureGame(t, 902)
+			jobID := famInsertJob(t, userID, "processing", true)
+			itemID := famInsertItem(t, jobID, userID, childID, "pending")
+			job := matchJob(t, tasks.IGDBMatchArgs{JobItemID: itemID})
+
+			// Hold the old parent: the worker's inherit reads it FOR SHARE and waits.
+			tx, err := testDB.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = tx.Rollback() }()
+			if _, err := tx.ExecContext(ctx, `SELECT 1 FROM external_games WHERE id = ? FOR UPDATE`, oldParentID); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() {
+				w := &tasks.IGDBMatchWorker{DB: testDB, LC: newTestLC(t)}
+				done <- w.Work(ctx, job)
+			}()
+			waitForLockWait(t)
+			// The promotion re-points the child, and a Rematch matches the old parent.
+			if _, err := tx.ExecContext(ctx, `UPDATE external_games SET parent_id = ? WHERE id = ?`, newParentID, childID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE external_games SET resolved_igdb_id = 902 WHERE id = ?`, oldParentID); err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-done; err != nil {
+				t.Fatalf("igdb_match: %v", err)
+			}
+
+			if _, got := famGet(t, userID, "C"); got.Resolved != nil {
+				t.Errorf("child must not take the old parent's match, got %d", *got.Resolved)
+			}
+			status, msg := famItemStatus(t, itemID)
+			if status != tc.wantStatus {
+				t.Errorf("item status: want %q, got %q %v", tc.wantStatus, status, msg)
+			}
+			if tc.wantMsg != "" && (msg == nil || *msg != tc.wantMsg) {
+				t.Errorf("item message: want %q, got %v", tc.wantMsg, msg)
+			}
+		})
+	}
+}
+
 // waitForLockWait waits until some backend is blocked on a lock.
 func waitForLockWait(t *testing.T) {
 	t.Helper()
