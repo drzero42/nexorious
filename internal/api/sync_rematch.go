@@ -318,8 +318,9 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		// A child skipped with its parent may carry an older match, and one
 		// created while the parent was skipped has none: it takes the parent's,
 		// leaving its old user game (unskip has no orphan_action; it is kept).
-		// An unmatched parent's matched child (data from before #1424) loses
-		// its match the same way, as repairChildSkips does (#1425).
+		// An unmatched parent's matched child (older data: the backfill that
+		// introduced parent_id, or the inherit race fixed in #1437) loses its
+		// match the same way, as repairChildSkips does (#1425).
 		for _, ch := range children {
 			if sameMatch(ch.ResolvedIGDBID, eg.ResolvedIGDBID) {
 				continue
