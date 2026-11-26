@@ -147,18 +147,8 @@ func upsertGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p Dispatch
 		if !isSkipped {
 			return nil
 		}
-		// NOT EXISTS: a dispatch run again sees the same skipped games;
-		// changes has no unique constraint.
-		if _, err := tx.NewRaw(
-			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-			 SELECT ?, ?, ?, ?, 'skipped', ?, now()
-			 WHERE NOT EXISTS (
-			   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
-			uuid.NewString(), p.JobID, p.UserID, egID, e.Title, p.JobID, egID,
-		).Exec(ctx); err != nil {
-			return fmt.Errorf("insert sync_change (skipped): %w", err)
-		}
-		return nil
+		// A dispatch run again sees the same skipped games: one row per Job.
+		return InsertSkippedChange(ctx, tx, p.JobID, p.UserID, egID, e.Title)
 	})
 	return egID, isSkipped, err
 }
@@ -731,7 +721,7 @@ func (w *IGDBMatchWorker) completeSameTitleReviews(ctx context.Context, item *mo
 				if !took {
 					return errNoMatchToTake
 				}
-				lw, wrote, err := WriteMatchedToLibrary(ctx, sp, job.UserID, wg.GameID)
+				lw, wrote, err := externalgame.WriteMatched(ctx, sp, job.UserID, wg.GameID)
 				if err != nil || !wrote {
 					return err // not written (no platform rows): completed without diff rows
 				}
@@ -902,17 +892,8 @@ func (w *UserGameWorker) endSkipped(ctx context.Context, rj *river.Job[UserGameA
 	return exitOrRetry(ctx, w.LC.EndItem(ctx, item.ID, rj.ID, joblifecycle.ItemResult{
 		Status: models.JobItemStatusSkipped,
 		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
-			// NOT EXISTS: the dispatch may have written it for this Job.
-			if _, err := tx.NewRaw(
-				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-				 SELECT ?, ?, ?, ?, 'skipped', ?, now()
-				 WHERE NOT EXISTS (
-				   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
-				uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title, item.JobID, eg.ID,
-			).Exec(ctx); err != nil {
-				return nil, fmt.Errorf("insert sync_change (skipped): %w", err)
-			}
-			return nil, nil
+			// The dispatch may have written it for this Job: one row per Job.
+			return nil, InsertSkippedChange(ctx, tx, item.JobID, item.UserID, eg.ID, eg.Title)
 		},
 	}))
 }

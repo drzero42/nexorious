@@ -16,7 +16,6 @@ import (
 	"github.com/riverqueue/river/rivertype"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -1059,22 +1058,25 @@ func TestEditions_ListBadgeAndLockAgree(t *testing.T) {
 	}
 	seen := map[string]string{}
 	for _, id := range all {
-		var set []models.ExternalGame
+		var set []string
 		err := testDB.RunInTx(context.Background(), nil, func(ctx context.Context, tx bun.Tx) error {
-			var err error
-			_, set, err = externalgame.LockEditions(ctx, tx, f.userID, id)
-			return err
+			editions, err := externalgame.LockEditions(ctx, tx, f.userID, id)
+			if err != nil {
+				return err
+			}
+			set = editions.IDs()
+			return nil
 		})
 		if err != nil {
 			t.Fatalf("lock %s: %v", id, err)
 		}
 		var entry string
-		for _, eg := range set {
-			if _, ok := list[eg.ID]; ok {
+		for _, egID := range set {
+			if _, ok := list[egID]; ok {
 				if entry != "" {
-					t.Errorf("set of %s has two entries: %s and %s", id, entry, eg.ID)
+					t.Errorf("set of %s has two entries: %s and %s", id, entry, egID)
 				}
-				entry = eg.ID
+				entry = egID
 			}
 		}
 		if entry == "" {

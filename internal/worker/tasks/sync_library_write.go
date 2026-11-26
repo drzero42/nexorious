@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -15,22 +14,21 @@ import (
 	"github.com/drzero42/nexorious/internal/logging"
 )
 
-// WriteMatchedToLibrary writes the matched External game id to the library,
-// as Rematch, Unskip and the match worker's completion of same-title reviews
-// do. A game with no platform rows has nothing to write: that is logged and
-// reported as wrote=false without an error, since its match stands and its
-// item can still complete (without diff rows).
-func WriteMatchedToLibrary(ctx context.Context, db bun.IDB, userID, id string) (lw externalgame.LibraryWrite, wrote bool, err error) {
-	lw, err = externalgame.WriteToLibrary(ctx, db, userID, id)
-	if errors.Is(err, externalgame.ErrNoPlatforms) {
-		slog.WarnContext(ctx, "sync: external game has no platform rows; match recorded, nothing written to the library",
-			logging.KeyExternalGameID, id, logging.Cat(logging.CategoryValidation))
-		return lw, false, nil
+// InsertSkippedChange records a skipped External game in a sync Job's diff:
+// one 'skipped' row, unless the Job already has one for the game. changes has
+// no unique constraint, and the dispatch (which may run again), the write stage
+// and a Skip can each record the same game in one Job.
+func InsertSkippedChange(ctx context.Context, db bun.IDB, jobID, userID, externalGameID, title string) error {
+	if _, err := db.NewRaw(
+		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+		 SELECT ?, ?, ?, ?, 'skipped', ?, now()
+		 WHERE NOT EXISTS (
+		   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
+		uuid.NewString(), jobID, userID, externalGameID, title, jobID, externalGameID,
+	).Exec(ctx); err != nil {
+		return fmt.Errorf("insert sync_change (skipped): %w", err)
 	}
-	if err != nil {
-		return lw, false, fmt.Errorf("write %s to the library: %w", id, err)
-	}
-	return lw, true, nil
+	return nil
 }
 
 // InsertLibraryWriteChanges records a library write in a sync Job's diff:
