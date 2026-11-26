@@ -114,3 +114,57 @@ func ExternalDecisionTarget(matches []ExternalGameMatch, onlyThisEdition bool) (
 	}
 	return matches[0].Game.ID, false, nil
 }
+
+// ErrNoExternalGame: a title ref matched no entry of the storefront's list.
+var ErrNoExternalGame = errors.New("no external game")
+
+// ExternalTarget is what a Rematch or Skip is sent to: the External game id,
+// with the entry's title for prompts and messages.
+type ExternalTarget struct {
+	ID    string
+	Title string
+}
+
+// ExternalCandidate is one choice of an ambiguous ref: an entry, or with
+// onlyThisEdition one edition of an entry. ID, ExternalID, Platforms and
+// StoreURL are the edition's when it is one; Game is its entry.
+type ExternalCandidate struct {
+	ID         string
+	ExternalID string
+	Platforms  []string
+	StoreURL   *string
+	Game       cliclient.ExternalGame
+}
+
+// ResolveExternalDecision resolves ref within a storefront to the target of a
+// Rematch or Skip (ExternalDecisionTarget). When the ref is ambiguous it
+// returns the candidates instead, for the caller to let the user choose: with
+// onlyThisEdition every edition of every matching entry, else the entries. A
+// title matching nothing is ErrNoExternalGame.
+func ResolveExternalDecision(ctx context.Context, c *cliclient.Client, key, sf, ref string, onlyThisEdition bool) (ExternalTarget, []ExternalCandidate, error) {
+	matches, err := FindExternalGamesByRef(ctx, c, key, sf, ref)
+	if err != nil {
+		return ExternalTarget{}, nil, err
+	}
+	if len(matches) == 0 {
+		return ExternalTarget{}, nil, fmt.Errorf("%w matching %q", ErrNoExternalGame, ref)
+	}
+	id, ambiguous, err := ExternalDecisionTarget(matches, onlyThisEdition)
+	if err != nil {
+		return ExternalTarget{}, nil, err
+	}
+	if !ambiguous {
+		return ExternalTarget{ID: id, Title: matches[0].Game.Title}, nil, nil
+	}
+	var cands []ExternalCandidate
+	for _, m := range matches {
+		if !onlyThisEdition {
+			cands = append(cands, ExternalCandidate{ID: m.Game.ID, ExternalID: m.Game.ExternalID, Platforms: m.Game.Platforms, StoreURL: m.Game.StoreURL, Game: m.Game})
+			continue
+		}
+		for _, e := range m.Game.Editions {
+			cands = append(cands, ExternalCandidate{ID: e.ID, ExternalID: e.ExternalID, Platforms: e.Platforms, StoreURL: e.StoreURL, Game: m.Game})
+		}
+	}
+	return ExternalTarget{}, cands, nil
+}

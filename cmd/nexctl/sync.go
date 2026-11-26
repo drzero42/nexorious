@@ -450,36 +450,19 @@ func newSyncResetCmd() *cobra.Command {
 	}
 }
 
-// externalTarget is what a Rematch or Skip from nexctl is sent to: the
-// External game id, and a title for the messages.
-type externalTarget struct {
-	ID    string
-	Title string
-}
-
 // resolveExternalRef resolves an external-game ref from the given storefront's
-// list to the id a decision is sent to (clientops.ExternalDecisionTarget).
+// list to the id a decision is sent to (clientops.ResolveExternalDecision).
 // UUID matching is exact, against entries and their editions; title matching is
 // case-insensitive. When the ref is ambiguous, on a non-interactive session it
 // returns an error listing the choices; on an interactive session it presents
 // a numbered picker. With onlyThisEdition the choices are editions, else
 // entries; each line tells them apart by id, storefront id and platforms.
-func resolveExternalRef(cmd *cobra.Command, c *cliclient.Client, key, sf, ref string, onlyThisEdition bool) (externalTarget, error) {
-	matches, err := clientops.FindExternalGamesByRef(cmd.Context(), c, key, sf, ref)
-	if err != nil {
-		return externalTarget{}, err
+func resolveExternalRef(cmd *cobra.Command, c *cliclient.Client, key, sf, ref string, onlyThisEdition bool) (clientops.ExternalTarget, error) {
+	target, cands, err := clientops.ResolveExternalDecision(cmd.Context(), c, key, sf, ref, onlyThisEdition)
+	if err != nil || cands == nil {
+		return target, err
 	}
-	if len(matches) == 0 {
-		return externalTarget{}, fmt.Errorf("no external game matching %q", ref)
-	}
-	id, ambiguous, err := clientops.ExternalDecisionTarget(matches, onlyThisEdition)
-	if err != nil {
-		return externalTarget{}, err
-	}
-	if !ambiguous {
-		return externalTarget{ID: id, Title: matches[0].Game.Title}, nil
-	}
-	choices := externalChoices(matches, onlyThisEdition)
+	choices := externalChoices(cands)
 	if interactive(cmd) {
 		return pickExternalChoice(cmd, choices)
 	}
@@ -492,37 +475,27 @@ func resolveExternalRef(cmd *cobra.Command, c *cliclient.Client, key, sf, ref st
 	for _, ch := range choices {
 		fmt.Fprintf(&b, "\n  %s", ch.line)
 	}
-	return externalTarget{}, fmt.Errorf("%s", b.String())
+	return clientops.ExternalTarget{}, fmt.Errorf("%s", b.String())
 }
 
 // externalChoice is one line of a choice between entries or editions.
 type externalChoice struct {
-	target externalTarget
+	target clientops.ExternalTarget
 	line   string
 }
 
-// externalChoices lists the choices of an ambiguous ref: with onlyThisEdition
-// every edition of every matching entry, else the entries. A line has the id,
-// the storefront's id, the platforms and the title (with the IGDB title).
-func externalChoices(matches []clientops.ExternalGameMatch, onlyThisEdition bool) []externalChoice {
-	var out []externalChoice
-	for _, m := range matches {
-		title := m.Game.Title
-		if m.Game.IgdbTitle != nil {
-			title += " -> " + *m.Game.IgdbTitle
+// externalChoices formats the candidates of an ambiguous ref: a line has the
+// id, the storefront's id, the platforms and the title (with the IGDB title).
+func externalChoices(cands []clientops.ExternalCandidate) []externalChoice {
+	out := make([]externalChoice, len(cands))
+	for i, cand := range cands {
+		title := cand.Game.Title
+		if cand.Game.IgdbTitle != nil {
+			title += " -> " + *cand.Game.IgdbTitle
 		}
-		if !onlyThisEdition {
-			out = append(out, externalChoice{
-				target: externalTarget{ID: m.Game.ID, Title: m.Game.Title},
-				line:   externalChoiceLine(m.Game.ID, m.Game.ExternalID, m.Game.Platforms, title),
-			})
-			continue
-		}
-		for _, e := range m.Game.Editions {
-			out = append(out, externalChoice{
-				target: externalTarget{ID: e.ID, Title: m.Game.Title},
-				line:   externalChoiceLine(e.ID, e.ExternalID, e.Platforms, title),
-			})
+		out[i] = externalChoice{
+			target: clientops.ExternalTarget{ID: cand.ID, Title: cand.Game.Title},
+			line:   externalChoiceLine(cand.ID, cand.ExternalID, cand.Platforms, title),
 		}
 	}
 	return out
@@ -536,7 +509,7 @@ func externalChoiceLine(id, externalID string, platforms []string, title string)
 	return fmt.Sprintf("%s  %s  %s  %s", id, externalID, plats, title)
 }
 
-func pickExternalChoice(cmd *cobra.Command, choices []externalChoice) (externalTarget, error) {
+func pickExternalChoice(cmd *cobra.Command, choices []externalChoice) (clientops.ExternalTarget, error) {
 	out := cmd.OutOrStdout()
 	for i, ch := range choices {
 		fmt.Fprintf(out, "%2d) %s\n", i+1, ch.line)
@@ -549,7 +522,7 @@ func pickExternalChoice(cmd *cobra.Command, choices []externalChoice) (externalT
 	}
 	n, err := strconv.Atoi(choice)
 	if err != nil || n < 1 || n > len(choices) {
-		return externalTarget{}, fmt.Errorf("invalid selection %q", choice)
+		return clientops.ExternalTarget{}, fmt.Errorf("invalid selection %q", choice)
 	}
 	return choices[n-1].target, nil
 }

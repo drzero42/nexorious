@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
@@ -119,5 +120,33 @@ func TestExternalDecisionTarget_OlderServer(t *testing.T) {
 	}
 	if id, _, err := ExternalDecisionTarget(m, false); err != nil || id != repID {
 		t.Errorf("without the option: (%q, %v), want %q", id, err, repID)
+	}
+}
+
+// An ambiguous ref gives the candidates the front-ends format: with the option
+// every edition of every matching entry, with its entry; a title matching
+// nothing is ErrNoExternalGame.
+func TestResolveExternalDecision(t *testing.T) {
+	c := externalListServer(t, true)
+	target, cands, err := ResolveExternalDecision(t.Context(), c, "k", "steam", "spider-man", true)
+	if err != nil || target.ID != "" {
+		t.Fatalf("target %+v, err %v; want candidates", target, err)
+	}
+	var ids []string
+	for _, cand := range cands {
+		ids = append(ids, cand.ID+"/"+cand.ExternalID+"/"+cand.Game.ID)
+	}
+	want := []string{repID + "/1/" + repID, editionID + "/2/" + repID, soloID + "/3/" + soloID}
+	if strings.Join(ids, " ") != strings.Join(want, " ") {
+		t.Errorf("candidates %v, want %v", ids, want)
+	}
+
+	target, cands, err = ResolveExternalDecision(t.Context(), c, "k", "steam", editionID, true)
+	if err != nil || cands != nil || target != (ExternalTarget{ID: editionID, Title: "Spider-Man"}) {
+		t.Errorf("edition id: (%+v, %v, %v)", target, cands, err)
+	}
+
+	if _, _, err := ResolveExternalDecision(t.Context(), c, "k", "steam", "nothing", false); !errors.Is(err, ErrNoExternalGame) {
+		t.Errorf("no match: err %v, want ErrNoExternalGame", err)
 	}
 }

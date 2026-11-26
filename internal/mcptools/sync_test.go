@@ -128,6 +128,10 @@ func TestMCPSyncReview_EntriesCarryTheirEditions(t *testing.T) {
 	if len(out.PendingReview) != 1 || len(out.PendingReview[0].Editions) != 2 || out.PendingReview[0].Editions[1].ID != syncEditionID {
 		t.Fatalf("sync_review: %s", b)
 	}
+	// An edition without a store link still has the field.
+	if !strings.Contains(string(b), `"store_url":null`) {
+		t.Errorf("edition store_url missing: %s", b)
+	}
 }
 
 // Without the option, a title of one entry goes to the entry's id and acts on

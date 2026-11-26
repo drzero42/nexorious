@@ -2,6 +2,7 @@ package mcptools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -47,7 +48,7 @@ type externalEditionBrief struct {
 	ID         string   `json:"id"`
 	ExternalID string   `json:"external_id"`
 	Platforms  []string `json:"platforms"`
-	StoreURL   *string  `json:"store_url,omitempty"`
+	StoreURL   *string  `json:"store_url"`
 }
 
 // platformsOrEmpty keeps platforms in the output as an array, also when a
@@ -82,49 +83,41 @@ func reviewBriefOf(eg *cliclient.ExternalGame) externalGameBrief {
 	return b
 }
 
-// editionCandidateOf is the candidate of one edition of an entry: the
-// edition's id, storefront id, platforms and store link, with the entry's
-// title and IGDB title.
-func editionCandidateOf(eg *cliclient.ExternalGame, e cliclient.ExternalGameEdition) externalGameBrief {
-	b := externalBriefOf(eg)
-	b.ID, b.ExternalID, b.Platforms, b.StoreURL = e.ID, e.ExternalID, platformsOrEmpty(e.Platforms), e.StoreURL
+// candidateBriefOf is the brief of a candidate of an ambiguous ref: its id,
+// storefront id, platforms and store link (the edition's when it is one), with
+// its entry's title and IGDB title.
+func candidateBriefOf(cand clientops.ExternalCandidate) externalGameBrief {
+	b := externalBriefOf(&cand.Game)
+	b.ID, b.ExternalID, b.Platforms, b.StoreURL = cand.ID, cand.ExternalID, platformsOrEmpty(cand.Platforms), cand.StoreURL
 	return b
 }
 
 // mcpResolveExternalRef resolves an external-game ref within a storefront to
-// the id a decision is sent to (clientops.ExternalDecisionTarget), and the
-// entry's title. On ambiguity or no match it returns candidates/message for
-// the agent to disambiguate, without mutating anything: one candidate per
-// matching entry, or with onlyThisEdition one per edition of the matching
-// entries.
+// the id a decision is sent to, and the entry's title
+// (clientops.ResolveExternalDecision). On ambiguity or no match it returns
+// candidates/message for the agent to disambiguate, without mutating anything:
+// one candidate per matching entry, or with onlyThisEdition one per edition of
+// the matching entries.
 func mcpResolveExternalRef(ctx context.Context, c *cliclient.Client, key, sf, ref string, onlyThisEdition bool) (id, title string, cands []externalGameBrief, msg string, err error) {
-	matches, err := clientops.FindExternalGamesByRef(ctx, c, key, sf, ref)
-	if err != nil {
-		return "", "", nil, "", err
-	}
-	if len(matches) == 0 {
+	target, found, err := clientops.ResolveExternalDecision(ctx, c, key, sf, ref, onlyThisEdition)
+	if errors.Is(err, clientops.ErrNoExternalGame) {
 		return "", "", nil, fmt.Sprintf("no external game matching %q in %s", ref, sf), nil
 	}
-	id, ambiguous, err := clientops.ExternalDecisionTarget(matches, onlyThisEdition)
 	if err != nil {
 		return "", "", nil, "", err
 	}
-	if !ambiguous {
-		return id, matches[0].Game.Title, nil, "", nil
+	if found == nil {
+		return target.ID, target.Title, nil, "", nil
 	}
+	cands = make([]externalGameBrief, len(found))
+	for i := range found {
+		cands[i] = candidateBriefOf(found[i])
+	}
+	what := "external games"
 	if onlyThisEdition {
-		for i := range matches {
-			for _, e := range matches[i].Game.Editions {
-				cands = append(cands, editionCandidateOf(&matches[i].Game, e))
-			}
-		}
-		return "", "", cands, fmt.Sprintf("%q matches %d editions; call again with one of these ids", ref, len(cands)), nil
+		what = "editions"
 	}
-	cands = make([]externalGameBrief, len(matches))
-	for i := range matches {
-		cands[i] = externalBriefOf(&matches[i].Game)
-	}
-	return "", "", cands, fmt.Sprintf("%q matches %d external games; call again with one of these ids", ref, len(matches)), nil
+	return "", "", cands, fmt.Sprintf("%q matches %d %s; call again with one of these ids", ref, len(cands), what), nil
 }
 
 type syncRunInput struct {
