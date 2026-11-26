@@ -285,7 +285,7 @@ Rematch and unskip are edits to one game and its editions, not sync work ([ADR 0
 
 ### Matching or rematching a game
 
-The user searches IGDB and picks a match, for a game in review, an unmatched game, or a matched game whose match is wrong. `HandleRematchExternalGame` first looks, without a lock, for an active Job in which the game or one of its editions has an open item, preferring the Job of the game's own item. If there is one, everything below runs in the Job lifecycle module's transaction for that Job, with the Job row locked first, as a sync worker does. In one transaction:
+The user searches IGDB and picks a match, for a game in review, an unmatched game, or a matched game whose match is wrong. `HandleRematchExternalGame` first looks, without a lock, for an active Job in which the game or one of its editions has an open item, preferring the Job of the game's own item. If there is one, everything below runs in the Job lifecycle module's transaction for that Job, with the Job row locked first, as a sync worker does. Steps 1 and 3 to 5 are the External game module's (`externalgame.LockEditions` and `Rematch` on the locked set); the handler does steps 2 and 6. In one transaction:
 
 1. Locks the game's editions, in id order.
 2. Refuses with 409 `a sync is still working on this game` while the game's **own** item is `pending` in that Job: the sync has not finished with it.
@@ -312,11 +312,11 @@ An edition skipped alone keeps its own library links (another platform of the sa
 
 ### Skipping a game
 
-The user Skips a game. `is_skipped` is set to `true` on every edition. When the game or an edition has an open item in an active Job, this runs in the Job lifecycle module's transaction for each such Job: those items become `skipped`, a River job working on one is cancelled, and the game's `skipped` change is written when its own item was skipped. Otherwise only the flags are set. On future syncs the dispatch creates no job item for a skipped game and records a `skipped` change instead. A new edition of a skipped game that appears later gets an item, which takes the skip in Stage 2 and ends `skipped` (see [Editions](#editions)).
+The user Skips a game. `is_skipped` is set to `true` on every edition, by the External game module (`Skip` on the locked set). When the game or an edition has an open item in an active Job, this runs in the Job lifecycle module's transaction for each such Job: those items become `skipped`, a River job working on one is cancelled, and the game's `skipped` change is written when its own item was skipped. Otherwise only the flags are set. On future syncs the dispatch creates no job item for a skipped game and records a `skipped` change instead. A new edition of a skipped game that appears later gets an item, which takes the skip in Stage 2 and ends `skipped` (see [Editions](#editions)).
 
 ### Unskipping a game
 
-The user removes the skip. In one transaction `HandleUnskipGame` locks the game's editions, clears `is_skipped` on them and, if they are matched, writes each to the library. Editions have one match by definition. Unmatched ones are not written: the set shows as **Unmatched**, where the user can match it; the next sync matches it if it is still in the storefront library. Unskip has no Job lookup and touches no items.
+The user removes the skip. In one transaction `HandleUnskipGame` locks the game's editions and the External game module (`Unskip` on the locked set) clears `is_skipped` on them and, if they are matched, writes each to the library. Editions have one match by definition. Unmatched ones are not written: the set shows as **Unmatched**, where the user can match it; the next sync matches it if it is still in the storefront library. Unskip has no Job lookup and touches no items.
 
 ### Retrying failed games
 

@@ -126,9 +126,9 @@ var editionsOfStateFrom = func() string {
 var errRelock = errors.New("editions changed; lock again")
 
 // LockEditions locks the user's External game id and its editions FOR UPDATE,
-// in id order, and returns the game and the whole set (the game included,
-// ordered by id). A missing game, or another user's, is ErrNotFound; a set
-// that kept changing is ErrEditionsChanged.
+// in id order, and returns the locked set, on which a decision is made
+// (Rematch, Skip, Unskip). A missing game, or another user's, is ErrNotFound;
+// a set that kept changing is ErrEditionsChanged.
 //
 // It reads the game's state without a lock, locks the set by that state, then
 // reads the set's ids again in a new statement. The lock holds when the game
@@ -137,14 +137,14 @@ var errRelock = errors.New("editions changed; lock again")
 // worker that was taking precedent from a locked game added an edition the
 // locking statement could not see. Each try runs in a savepoint and is rolled
 // back before the next, so locks are always taken in id order.
-func LockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.ExternalGame, []models.ExternalGame, error) {
+func LockEditions(ctx context.Context, tx bun.Tx, userID, id string) (*Editions, error) {
 	for range lockEditionsTries {
 		st, err := readEditionState(ctx, tx, userID, id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return models.ExternalGame{}, nil, ErrNotFound
+				return nil, ErrNotFound
 			}
-			return models.ExternalGame{}, nil, fmt.Errorf("read external game: %w", err)
+			return nil, fmt.Errorf("read external game: %w", err)
 		}
 
 		var set []models.ExternalGame
@@ -176,15 +176,15 @@ func LockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.Ext
 			continue
 		}
 		if err != nil {
-			return models.ExternalGame{}, nil, err
+			return nil, err
 		}
 		for _, eg := range set {
 			if eg.ID == id {
-				return eg, set, nil
+				return &Editions{tx: tx, userID: userID, game: eg, set: set}, nil
 			}
 		}
 	}
-	return models.ExternalGame{}, nil, ErrEditionsChanged
+	return nil, ErrEditionsChanged
 }
 
 // GameIDs returns the ids of the External games games, in order.

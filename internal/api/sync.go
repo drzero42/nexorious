@@ -29,6 +29,7 @@ import (
 	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/usergame"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // SteamClient abstracts the Steam Web API call used during credential verification.
@@ -1300,34 +1301,25 @@ func skipHTTPError(c *echo.Context, err error, id string) error {
 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 }
 
-// skipEditions skips an External game and its editions: it locks the set
-// and sets their skip flags. With jobID set it runs in the module's
-// transaction for that Job and returns the set's open items in it, for the
-// module to skip; the game's 'skipped' row is written only when the game's own
-// item is among them (its editions get none).
+// skipEditions skips an External game and its editions
+// (externalgame.Editions.Skip). With jobID set it runs in the module's
+// transaction for that Job and returns the changed games' open items in it,
+// for the module to skip; the game's 'skipped' row is written only when the
+// game's own item is among them (its editions get none).
 //
 // With onlyThis it skips the given game alone and returns only its own items.
-// Nothing is unlinked, but the editions that stay first take over the links
-// they share with it (handOverSharedLinks), so their entry keeps showing the
-// library game (#1452).
 func skipEditions(ctx context.Context, tx bun.Tx, userID, id, jobID string, onlyThis bool) ([]string, error) {
-	eg, set, err := lockEditions(ctx, tx, userID, id)
+	set, err := lockEditions(ctx, tx, userID, id)
 	if err != nil {
-		return nil, abortHTTP(err)
-	}
-	editions, staying := decisionScope(eg, set, onlyThis)
-	if err := handOverSharedLinks(ctx, tx, userID, eg, staying); err != nil {
 		return nil, err
 	}
-	if _, err := tx.NewRaw(
-		`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id IN (?)`, bun.List(editions),
-	).Exec(ctx); err != nil {
-		return nil, fmt.Errorf("skip: %w", err)
+	if err := set.Skip(ctx, onlyThis); err != nil {
+		return nil, err
 	}
 	if jobID == "" {
 		return nil, nil
 	}
-	items, err := externalgame.EditionsOpenItems(ctx, tx, jobID, editions)
+	items, err := externalgame.EditionsOpenItems(ctx, tx, jobID, set.Changed(onlyThis))
 	if err != nil {
 		return nil, err
 	}
@@ -1337,14 +1329,8 @@ func skipEditions(ctx context.Context, tx bun.Tx, userID, id, jobID string, only
 		if it.ExternalGameID != id {
 			continue
 		}
-		if _, err := tx.NewRaw(
-			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-			 SELECT ?, ?, ?, ?, 'skipped', ?, now()
-			 WHERE NOT EXISTS (
-			   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
-			uuid.NewString(), jobID, userID, id, eg.Title, jobID, id,
-		).Exec(ctx); err != nil {
-			return nil, fmt.Errorf("insert sync_change (skipped): %w", err)
+		if err := tasks.InsertSkippedChange(ctx, tx, jobID, userID, id, set.Game().Title); err != nil {
+			return nil, err
 		}
 	}
 	return ids, nil
