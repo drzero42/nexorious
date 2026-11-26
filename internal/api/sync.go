@@ -262,14 +262,14 @@ type SyncHandler struct {
 	gogClient              GOGClient
 	humbleClient           HumbleClient
 	amazonGamesClient      AmazonGamesClient
-	igdbClient             *igdb.Client     // nil or unconfigured: a Rematch stubs with the storefront title
+	igdbClient             *igdb.Client
 	amazonLoginClock       func() time.Time // nil: time.Now
 	amazonSignOutTimeout   time.Duration    // 0: amazonSignOutLimit
 	amazonSignOuts         sync.WaitGroup   // device sign-outs still running after a disconnect
 }
 
-// SyncDeps holds the dependencies of a SyncHandler. A storefront client left
-// nil is fine for a handler whose routes never reach that storefront (tests).
+// SyncDeps holds the dependencies of a SyncHandler. A storefront client may be
+// left nil as long as no route that reaches that storefront is called.
 type SyncDeps struct {
 	Encrypter *crypto.Encrypter
 	DB        *bun.DB
