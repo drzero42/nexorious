@@ -74,7 +74,7 @@ func WriteToLibrary(ctx context.Context, db bun.IDB, userID, externalGameID stri
 	}
 	out.IGDBID = *eg.ResolvedIGDBID
 
-	if err := EnsureGameRow(ctx, db, out.IGDBID, eg.Title); err != nil {
+	if err := EnsureGameRow(ctx, db, out.IGDBID, "", eg.Title); err != nil {
 		return out, err
 	}
 
@@ -127,8 +127,13 @@ func WriteToLibrary(ctx context.Context, db bun.IDB, userID, externalGameID stri
 
 // EnsureGameRow inserts a stub games row for igdbID when none exists; the
 // metadata fetch fills it in later. external_games.resolved_igdb_id and
-// user_games.game_id reference it.
-func EnsureGameRow(ctx context.Context, db bun.IDB, igdbID int32, title string) error {
+// user_games.game_id reference it. The stub takes igdbTitle, the IGDB game's
+// title, or storefrontTitle when the caller has no IGDB title ("") (#1455).
+func EnsureGameRow(ctx context.Context, db bun.IDB, igdbID int32, igdbTitle, storefrontTitle string) error {
+	title := igdbTitle
+	if title == "" {
+		title = storefrontTitle
+	}
 	if _, err := db.NewRaw(
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 		igdbID, title,
@@ -136,4 +141,20 @@ func EnsureGameRow(ctx context.Context, db bun.IDB, igdbID int32, title string) 
 		return fmt.Errorf("ensure game row %d: %w", igdbID, err)
 	}
 	return nil
+}
+
+// NeedsGameRow reports whether a Rematch of the user's External game id onto
+// igdbID would create the games row: the game is the user's and igdbID has no
+// games row yet. Only then is the IGDB title worth looking up. A plain read
+// with no lock: the Rematch checks the game again under its lock.
+func NeedsGameRow(ctx context.Context, db bun.IDB, userID, id string, igdbID int) (bool, error) {
+	var needs bool
+	if err := db.NewRaw(
+		`SELECT EXISTS (SELECT 1 FROM external_games WHERE id = ? AND user_id = ?)
+		    AND NOT EXISTS (SELECT 1 FROM games WHERE id = ?)`,
+		id, userID, igdbID,
+	).Scan(ctx, &needs); err != nil {
+		return false, fmt.Errorf("check games row %d: %w", igdbID, err)
+	}
+	return needs, nil
 }

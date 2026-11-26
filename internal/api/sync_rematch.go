@@ -91,10 +91,14 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	if len(jobIDs) > 0 {
 		jobID = jobIDs[0]
 	}
+	req := externalgame.RematchRequest{
+		IGDBID: body.IGDBID, IGDBTitle: h.igdbTitleForNewGame(reqCtx, userID, id, body.IGDBID),
+		OrphanAction: body.OrphanAction, OnlyThisEdition: onlyThis,
+	}
 
 	if jobID != "" {
 		_, err = h.lc.CompleteItems(ctx, jobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
-			return rematchEditions(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, job.ID, onlyThis)
+			return rematchEditions(ctx, tx, userID, id, req, job.ID)
 		})
 		if errors.Is(err, joblifecycle.ErrJobNotActive) || errors.Is(err, joblifecycle.ErrGone) {
 			jobID, err = "", nil // ended meanwhile: no items to touch
@@ -102,7 +106,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 	if jobID == "" && err == nil {
 		err = h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-			_, err := rematchEditions(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, "", onlyThis)
+			_, err := rematchEditions(ctx, tx, userID, id, req, "")
 			return err
 		})
 	}
@@ -119,6 +123,35 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// igdbTitleForNewGame looks up the IGDB title of igdbID when a Rematch of
+// the user's External game id would create its games row, so the row takes
+// the IGDB title rather than the storefront's (#1455). It returns "" (the row
+// takes the storefront title until the metadata fetch replaces it) when the
+// game is not the user's, the row exists, IGDB is not configured or a step
+// fails. It runs before the transaction, so no lock is held while IGDB
+// answers.
+func (h *SyncHandler) igdbTitleForNewGame(ctx context.Context, userID, id string, igdbID int) string {
+	if h.igdbClient == nil || !h.igdbClient.Configured() {
+		return ""
+	}
+	needs, err := externalgame.NeedsGameRow(ctx, h.db, userID, id, igdbID)
+	if err != nil {
+		slog.WarnContext(ctx, "sync: rematch: check games row, using the storefront title",
+			logging.KeyErr, err, logging.KeyExternalGameID, id, "game_id", igdbID, logging.Cat(logging.CategoryDB))
+		return ""
+	}
+	if !needs {
+		return ""
+	}
+	md, err := h.igdbClient.GetGameByID(ctx, igdbID)
+	if err != nil {
+		slog.WarnContext(ctx, "sync: rematch: look up IGDB title, using the storefront title",
+			logging.KeyErr, err, "game_id", igdbID, logging.Cat(logging.CategoryExternalAPI))
+		return ""
+	}
+	return md.Title
+}
+
 // rematchEditions re-resolves an External game and its editions to igdbID and
 // writes them to the library (externalgame.Editions.Rematch). With jobID set it
 // runs in the module's transaction for that Job and returns the items to
@@ -128,7 +161,8 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 //
 // With onlyThis it re-resolves the given game alone and completes only its
 // own items.
-func rematchEditions(ctx context.Context, tx bun.Tx, userID, id string, igdbID int, orphanAction, jobID string, onlyThis bool) ([]string, error) {
+func rematchEditions(ctx context.Context, tx bun.Tx, userID, id string, req externalgame.RematchRequest, jobID string) ([]string, error) {
+	onlyThis := req.OnlyThisEdition
 	set, err := lockEditions(ctx, tx, userID, id)
 	if err != nil {
 		return nil, err
@@ -146,9 +180,7 @@ func rematchEditions(ctx context.Context, tx bun.Tx, userID, id string, igdbID i
 		}
 	}
 
-	writes, err := set.Rematch(ctx, externalgame.RematchRequest{
-		IGDBID: igdbID, OrphanAction: orphanAction, OnlyThisEdition: onlyThis,
-	})
+	writes, err := set.Rematch(ctx, req)
 	if errors.Is(err, externalgame.ErrOrphanActionRequired) {
 		return nil, joblifecycle.Abort(echo.NewHTTPError(http.StatusConflict, externalgame.ErrOrphanActionRequired.Error()))
 	}

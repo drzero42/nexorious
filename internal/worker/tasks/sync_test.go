@@ -1231,7 +1231,7 @@ func TestIGDBMatchWorker_AutoResolve(t *testing.T) {
 	egID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
-		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', false, true, false)`,
+		 VALUES (?, ?, 'steam', '730', 'Counter-Strike™ 2', false, true, false)`,
 		egID, userID,
 	)
 	_, _ = testDB.NewRaw(
@@ -1241,7 +1241,7 @@ func TestIGDBMatchWorker_AutoResolve(t *testing.T) {
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '730', 'Counter-Strike 2', ?, '{}', 'pending', '{}', '[]')`,
+		 VALUES (?, ?, ?, '730', 'Counter-Strike™ 2', ?, '{}', 'pending', '{}', '[]')`,
 		itemID, jobID, userID, egID,
 	)
 
@@ -1257,11 +1257,12 @@ func TestIGDBMatchWorker_AutoResolve(t *testing.T) {
 	if resolvedID == nil || *resolvedID != igdbID {
 		t.Errorf("resolved_igdb_id: want %d, got %v", igdbID, resolvedID)
 	}
-	// games row must exist.
+	// The games row exists and has the matched IGDB title, not the
+	// storefront's (#1455).
 	var gameTitle string
 	_ = testDB.NewRaw(`SELECT title FROM games WHERE id = ?`, igdbID).Scan(ctx, &gameTitle)
-	if gameTitle == "" {
-		t.Error("games row should have been inserted by IGDBMatchWorker")
+	if gameTitle != "Counter-Strike 2" {
+		t.Errorf("games.title: want the IGDB title %q, got %q", "Counter-Strike 2", gameTitle)
 	}
 	// Item stays pending (UserGameWorker handles the transition).
 	var status string

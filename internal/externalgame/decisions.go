@@ -73,8 +73,13 @@ func (e *Editions) scope(onlyThis bool) (changed, staying []string) {
 // IGDBID is the id as the request gave it. Only the games row takes it as
 // int32; the match is written as given, so an id outside int32 is refused by
 // the database instead of wrapping to another game.
+//
+// IGDBTitle is the IGDB game's title, for the games row when the IGDB game is
+// new to the database (#1455). The caller looks it up in IGDB; "" falls back
+// to the External game's title until the metadata fetch replaces it.
 type RematchRequest struct {
 	IGDBID          int
+	IGDBTitle       string
 	OrphanAction    string
 	OnlyThisEdition bool
 }
@@ -89,7 +94,7 @@ type RematchRequest struct {
 // outside.
 func (e *Editions) Rematch(ctx context.Context, req RematchRequest) (map[string]LibraryWrite, error) {
 	changed, staying := e.scope(req.OnlyThisEdition)
-	if err := EnsureGameRow(ctx, e.tx, int32(req.IGDBID), e.game.Title); err != nil { //nolint:gosec // an id outside int32 is refused by the match UPDATE below, which takes it unconverted
+	if err := EnsureGameRow(ctx, e.tx, int32(req.IGDBID), req.IGDBTitle, e.game.Title); err != nil { //nolint:gosec // an id outside int32 is refused by the match UPDATE below, which takes it unconverted
 		return nil, err
 	}
 	if err := e.handOverSharedLinks(ctx, staying); err != nil {
