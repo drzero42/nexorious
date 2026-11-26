@@ -549,7 +549,19 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		epicSvc := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 		gogSvc := gogsvc.NewClient()
 		humbleSvc := humblesvc.NewClient()
-		synch := NewSyncHandler(encrypter, db, riverClient, lifecycle, &steamClientAdapter{c: steamSvc}, &playstationStoreClientAdapter{c: psnSvc}, &epicGamesStoreClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc}, &humbleClientAdapter{c: humbleSvc}, &amazonGamesClientAdapter{c: amazongamessvc.NewClient()}, igdbClient)
+		synch := NewSyncHandler(SyncDeps{
+			Encrypter:        encrypter,
+			DB:               db,
+			River:            riverClient,
+			Lifecycle:        lifecycle,
+			Steam:            &steamClientAdapter{c: steamSvc},
+			PlaystationStore: &playstationStoreClientAdapter{c: psnSvc},
+			EpicGamesStore:   &epicGamesStoreClientAdapter{c: epicSvc},
+			GOG:              &gogClientAdapter{c: gogSvc},
+			Humble:           &humbleClientAdapter{c: humbleSvc},
+			AmazonGames:      &amazonGamesClientAdapter{c: amazongamessvc.NewClient()},
+			IGDB:             igdbClient,
+		})
 		syncGroup := e.Group("/api/sync", auth.AuthMiddleware(db))
 		synch.RegisterRoutes(syncGroup)
 

@@ -47,7 +47,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.Pla
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), newTestLifecycle(t), steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil), nil)
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Steam: steam, PlaystationStore: psn})
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1750,7 +1750,7 @@ func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam api.SteamC
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), newTestLifecycle(t), steam, psn, epic, (api.GOGClient)(nil), (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil), nil)
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Steam: steam, PlaystationStore: psn, EpicGamesStore: epic})
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1824,7 +1824,7 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), newTestLifecycle(t), steam, psn, (api.EpicGamesStoreClient)(nil), gog, (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil), nil)
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Steam: steam, PlaystationStore: psn, GOG: gog})
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -2131,7 +2131,7 @@ func newSyncTestAppWithAmazonGames(t *testing.T, amazon *stubAmazonGamesClient) 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, testCfg())
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, testDB, newTestRiverClient(t), newTestLifecycle(t), &stubSteamClient{}, &stubPlaystationStoreClient{}, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil), amazon, nil)
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: testDB, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Steam: &stubSteamClient{}, PlaystationStore: &stubPlaystationStoreClient{}, AmazonGames: amazon})
 	g := e.Group("/api/sync", auth.AuthMiddleware(testDB))
 	synch.RegisterRoutes(g)
 	return e, synch
