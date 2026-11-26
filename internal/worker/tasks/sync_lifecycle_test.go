@@ -1,8 +1,8 @@
 package tasks_test
 
 // Sync on the Job lifecycle module (#1268): dispatch ownership, failures and
-// interruptions, the write stage's single transaction (#1329), waiting
-// children, recovery, effects and metrics.
+// interruptions, the write stage's single transaction (#1329), editions in
+// review, recovery, effects and metrics.
 
 import (
 	"context"
@@ -174,10 +174,10 @@ func TestSyncEffects_CancelledSyncSendsNoNeedsReview(t *testing.T) {
 // stage.
 func writeFixture(t *testing.T) (userID, jobID, egID, itemID string) {
 	t.Helper()
-	userID = famSetup(t)
-	egID = famInsertGame(t, userID, famGame{extID: "W", available: true, resolved: 4242})
-	jobID = famInsertJob(t, userID, "processing", true)
-	itemID = famInsertItem(t, jobID, userID, egID, "pending")
+	userID = edSetup(t)
+	egID = edInsertGame(t, userID, edGame{extID: "W", available: true, resolved: 4242})
+	jobID = edInsertJob(t, userID, "processing", true)
+	itemID = edInsertItem(t, jobID, userID, egID, "pending")
 	return userID, jobID, egID, itemID
 }
 
@@ -210,10 +210,10 @@ func TestUserGameWorker_InterruptedWrite_LeavesNothing_RerunWritesOnce(t *testin
 	if n := ugCountFor(t, userID, 4242); n != 0 {
 		t.Errorf("user games after the interrupted write: %d, want 0", n)
 	}
-	if n := famCount(t, `SELECT count(*) FROM changes WHERE job_id = ?`, jobID); n != 0 {
+	if n := edCount(t, `SELECT count(*) FROM changes WHERE job_id = ?`, jobID); n != 0 {
 		t.Errorf("changes after the interrupted write: %d, want 0", n)
 	}
-	if s, _ := famItemStatus(t, itemID); s != models.JobItemStatusPending {
+	if s, _ := edItemStatus(t, itemID); s != models.JobItemStatusPending {
 		t.Errorf("item = %q, want pending", s)
 	}
 
@@ -223,7 +223,7 @@ func TestUserGameWorker_InterruptedWrite_LeavesNothing_RerunWritesOnce(t *testin
 	if n := ugCountFor(t, userID, 4242); n != 1 {
 		t.Errorf("user games after the re-run: %d, want 1", n)
 	}
-	if n := famCount(t, `SELECT count(*) FROM changes WHERE job_id = ? AND change_type = 'added'`, jobID); n != 1 {
+	if n := edCount(t, `SELECT count(*) FROM changes WHERE job_id = ? AND change_type = 'added'`, jobID); n != 1 {
 		t.Errorf("'added' rows after the re-run: %d, want 1", n)
 	}
 }
@@ -248,10 +248,10 @@ func TestUserGameWorker_RunAgainOrDuplicate_WritesNothing(t *testing.T) {
 	if n := ugCountFor(t, userID, 4242); n != 1 {
 		t.Errorf("user games: %d, want 1", n)
 	}
-	if n := famCount(t, `SELECT count(*) FROM changes WHERE job_id = ?`, jobID); n != 1 {
+	if n := edCount(t, `SELECT count(*) FROM changes WHERE job_id = ?`, jobID); n != 1 {
 		t.Errorf("changes rows: %d, want 1", n)
 	}
-	if n := famCount(t, `SELECT count(*) FROM user_game_platforms`); n != 1 {
+	if n := edCount(t, `SELECT count(*) FROM user_game_platforms`); n != 1 {
 		t.Errorf("user game platforms: %d, want 1", n)
 	}
 }
@@ -282,35 +282,23 @@ func TestDispatchSync_RemovedGameSweep_Twice_WritesOneRow(t *testing.T) {
 	}
 }
 
-// familySync runs a dispatch that fetches a parent P and a new edition C of
-// it (a child), and returns the item ids.
-func familySync(t *testing.T) (userID, jobID, parentItem, childItem string) {
-	t.Helper()
-	userID = famSetup(t)
-	jobID = famInsertJob(t, userID, "pending", true)
-	famDispatch(t, nil, jobID, userID, []tasks.ExternalGameEntry{famEntry("P")}, []tasks.ExternalGameEntry{famEntry("C")})
-	pID, _ := famGet(t, userID, "P")
-	cID, c := famGet(t, userID, "C")
-	if c.ParentID == nil || *c.ParentID != pID {
-		t.Fatalf("C is not P's child")
-	}
-	return userID, jobID, famItemsFor(t, jobID, pID)[0], famItemsFor(t, jobID, cID)[0]
-}
-
-// A parent in Pending review with a waiting child: the sync waits on the user
-// and says so once.
-func TestSync_ParentInReviewWithWaitingChild_NeedsReviewOnce(t *testing.T) {
-	_, jobID, parentItem, childItem := familySync(t)
+// Two editions without a decision in one sync are both searched (no IGDB here)
+// and both end in Pending review; the sync waits on the user and says so once.
+func TestSync_TwoUndecidedEditions_BothInReview_NeedsReviewOnce(t *testing.T) {
+	userID := edSetup(t)
+	jobID := edInsertJob(t, userID, "pending", true)
+	edDispatch(t, nil, jobID, userID, []tasks.ExternalGameEntry{edEntry("A")}, []tasks.ExternalGameEntry{edEntry("B")})
 	lc := newTestLC(t)
-	match := &tasks.IGDBMatchWorker{DB: testDB, LC: lc}
-	write := &tasks.UserGameWorker{DB: testDB, LC: lc}
-	drainSync(t, match, write)
+	drainSync(t, &tasks.IGDBMatchWorker{DB: testDB, LC: lc}, &tasks.UserGameWorker{DB: testDB, LC: lc})
 
-	if s, _ := famItemStatus(t, parentItem); s != models.JobItemStatusPendingReview {
-		t.Fatalf("parent item = %q, want pending_review (no IGDB)", s)
-	}
-	if s, _ := famItemStatus(t, childItem); s != models.JobItemStatusPending || famItemOwner(t, childItem) != nil {
-		t.Fatalf("child item = %q, want waiting", s)
+	for _, ext := range []string{"A", "B"} {
+		id, eg := edGet(t, userID, ext)
+		if eg.Resolved != nil || eg.IsSkipped {
+			t.Errorf("%s = %+v, want no decision", ext, eg)
+		}
+		if s, _ := edItemStatus(t, edItemsFor(t, jobID, id)[0]); s != models.JobItemStatusPendingReview {
+			t.Errorf("%s's item = %q, want pending_review", ext, s)
+		}
 	}
 	if got := jobStatus(t, jobID); got != models.JobStatusProcessing {
 		t.Fatalf("job = %q, want processing", got)
@@ -319,62 +307,6 @@ func TestSync_ParentInReviewWithWaitingChild_NeedsReviewOnce(t *testing.T) {
 	runSyncEffects(t, lc)
 	if n := eventCount(t, jobID+":"+notify.TypeSyncNeedsReview); n != 1 {
 		t.Errorf("sync.needs_review events = %d, want 1", n)
-	}
-}
-
-// A failed parent's waiting child is queued at once and ends failed (its
-// parent is unmatched); retrying the parent retries the child too, and once
-// the parent is matched both are written.
-func TestSync_FailedParent_ChildFailsThenRetriedWithIt(t *testing.T) {
-	ctx := context.Background()
-	userID, jobID, parentItem, childItem := familySync(t)
-	lc := newTestLC(t)
-	match := &tasks.IGDBMatchWorker{DB: testDB, LC: lc}
-	write := &tasks.UserGameWorker{DB: testDB, LC: lc}
-
-	// The child's igdb_match runs first and waits; then the parent fails.
-	if err := match.Work(ctx, matchJob(t, tasks.IGDBMatchArgs{JobItemID: childItem})); err != nil {
-		t.Fatal(err)
-	}
-	if famItemOwner(t, childItem) != nil {
-		t.Fatal("child is not waiting")
-	}
-	if err := lc.EndItem(ctx, parentItem, itemOwner(t, parentItem), joblifecycle.ItemResult{Status: models.JobItemStatusFailed, Message: "boom"}); err != nil {
-		t.Fatal(err)
-	}
-	if famItemOwner(t, childItem) == nil {
-		t.Fatal("the parent failing did not queue its waiting child")
-	}
-	drainSync(t, match, write)
-	if s, msg := famItemStatus(t, childItem); s != models.JobItemStatusFailed || msg == nil || *msg != "parent game is unmatched and is not part of this sync" {
-		t.Fatalf("child = %q %v, want failed with the unmatched-parent message", s, msg)
-	}
-	if got := jobStatus(t, jobID); got != models.JobStatusCompleted {
-		t.Fatalf("job = %q, want completed (with errors)", got)
-	}
-
-	// Retrying the parent retries its child; with the parent matched meanwhile
-	// (the user fixed the match), both are written.
-	n, err := lc.Retry(ctx, jobID, []string{parentItem})
-	if err != nil || n != 2 {
-		t.Fatalf("retry = %d %v, want 2 items", n, err)
-	}
-	pID, _ := famGet(t, userID, "P")
-	famEnsureGame(t, 3131)
-	if _, err := testDB.ExecContext(ctx, `UPDATE external_games SET resolved_igdb_id = 3131 WHERE id = ?`, pID); err != nil {
-		t.Fatal(err)
-	}
-	drainSync(t, match, write)
-	for _, id := range []string{parentItem, childItem} {
-		if s, msg := famItemStatus(t, id); s != models.JobItemStatusCompleted {
-			t.Errorf("item %s = %q %v, want completed", id, s, msg)
-		}
-	}
-	if n := ugCountFor(t, userID, 3131); n != 1 {
-		t.Errorf("user games on the parent's match = %d, want 1", n)
-	}
-	if got := jobStatus(t, jobID); got != models.JobStatusCompleted {
-		t.Errorf("job = %q, want completed", got)
 	}
 }
 

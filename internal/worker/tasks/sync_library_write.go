@@ -17,7 +17,7 @@ import (
 // InsertLibraryWriteChanges records a library write in a sync Job's diff:
 // one status_changed row per ownership upgrade, otherwise one added row (when
 // added) or one already_in_library row. The sync worker passes
-// w.Result.Created; a rematch passes whether any write in the family created
+// w.Result.Created; a rematch passes whether any write of the editions created
 // the user game and this is the first item it completes in that Job.
 func InsertLibraryWriteChanges(ctx context.Context, db bun.IDB, jobID, userID string, w externalgame.LibraryWrite, added bool) error {
 	ugID := w.Result.UserGameID

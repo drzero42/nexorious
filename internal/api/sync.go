@@ -23,6 +23,7 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
@@ -1235,21 +1236,11 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	id := c.Param("id")
 	ctx := context.Background()
 
-	// A plain read, no lock: the Jobs in which the game or a child has an
-	// open item. Each is entered through the module, which locks the
-	// Job row before the family (one lock order everywhere).
+	// A plain read, no lock: the Jobs in which the game or one of its
+	// editions has an open item. Each is entered through the module, which
+	// locks the Job row before the editions (one lock order everywhere).
 	var jobIDs []string
-	if err := h.db.NewRaw(`
-		SELECT ji.job_id FROM job_items ji
-		JOIN jobs j ON j.id = ji.job_id
-		JOIN external_games eg ON eg.id = ji.external_game_id
-		WHERE (eg.id = ? OR eg.parent_id = ?) AND eg.user_id = ?
-		  AND ji.status IN ('pending', 'pending_review')
-		  AND j.status IN ('pending', 'processing')
-		GROUP BY ji.job_id
-		ORDER BY max(j.created_at) DESC`,
-		id, id, userID,
-	).Scan(ctx, &jobIDs); err != nil {
+	if err := h.db.NewRaw(editionsOpenItemJobs, id, userID, id).Scan(ctx, &jobIDs); err != nil {
 		slog.ErrorContext(c.Request().Context(), "sync: skip game: find items", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 	}
@@ -1257,7 +1248,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	flagged := false
 	for _, jobID := range jobIDs {
 		_, err := h.lc.SkipItems(ctx, jobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
-			return skipFamily(ctx, tx, userID, id, job.ID)
+			return skipEditions(ctx, tx, userID, id, job.ID)
 		})
 		switch {
 		case err == nil:
@@ -1270,7 +1261,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	}
 	if !flagged {
 		if err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-			_, err := skipFamily(ctx, tx, userID, id, "")
+			_, err := skipEditions(ctx, tx, userID, id, "")
 			return err
 		}); err != nil {
 			return skipHTTPError(c, err, id)
@@ -1288,20 +1279,19 @@ func skipHTTPError(c *echo.Context, err error, id string) error {
 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 }
 
-// skipFamily skips a game and its Child games: it locks the family through
-// lockFamily, which refuses a Child game with 400, and sets their skip flags.
-// With jobID set it runs in the module's transaction for that Job and returns
-// the family's open items in it, for the module to skip; the game's
-// 'skipped' row is written only when the game's own item is among them
-// (children get none).
-func skipFamily(ctx context.Context, tx bun.Tx, userID, id, jobID string) ([]string, error) {
-	eg, children, err := lockFamily(ctx, tx, userID, id, "skip")
+// skipEditions skips an External game and its editions: it locks the set
+// and sets their skip flags. With jobID set it runs in the module's
+// transaction for that Job and returns the set's open items in it, for the
+// module to skip; the game's 'skipped' row is written only when the game's own
+// item is among them (its editions get none).
+func skipEditions(ctx context.Context, tx bun.Tx, userID, id, jobID string) ([]string, error) {
+	eg, set, err := lockEditions(ctx, tx, userID, id)
 	if err != nil {
 		return nil, abortHTTP(err)
 	}
-	family := familyIDs(eg, children)
+	editions := externalgame.IDs(set)
 	if _, err := tx.NewRaw(
-		`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id IN (?)`, bun.List(family),
+		`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id IN (?)`, bun.List(editions),
 	).Exec(ctx); err != nil {
 		return nil, fmt.Errorf("skip: %w", err)
 	}
@@ -1315,9 +1305,9 @@ func skipFamily(ctx context.Context, tx bun.Tx, userID, id, jobID string) ([]str
 	if err := tx.NewRaw(`
 		SELECT id, external_game_id FROM job_items
 		WHERE job_id = ? AND external_game_id IN (?) AND status IN ('pending', 'pending_review')`,
-		jobID, bun.List(family),
+		jobID, bun.List(editions),
 	).Scan(ctx, &items); err != nil {
-		return nil, fmt.Errorf("load family items: %w", err)
+		return nil, fmt.Errorf("load the editions' items: %w", err)
 	}
 	ids := make([]string, 0, len(items))
 	for _, it := range items {
@@ -1349,77 +1339,9 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 	}
 	ctx := context.Background()
 
-	// One row per top-level game. Status comes from the newest item (see
-	// sync_view.go). The orphan fields are per family, matching rematch's
-	// orphan check: links of the game or its Child games, "other" meaning
-	// outside the family; with the family on several user games, the smallest
-	// count among them (zero: at least one would be orphaned), and the user game
-	// the game's own links are on, else the lowest id.
+	// One entry per set of editions (#1449), from externalGameListQuery.
 	var games []externalGameResponse
-	err := h.db.NewRaw(`
-		SELECT id, storefront, external_id, title, resolved_igdb_id, is_skipped, is_available, is_subscription,
-		       has_user_game, user_game_id, igdb_title, user_game_other_platform_count,
-		       CASE
-		           WHEN needs_review THEN 'needs_review'
-		           WHEN is_skipped THEN 'skipped'
-		           WHEN failed THEN 'failed'
-		           WHEN resolved_igdb_id IS NOT NULL THEN 'matched'
-		           ELSE 'unmatched'
-		       END AS sync_status,
-		       CASE WHEN retryable AND NOT is_skipped THEN newest_item_id END AS failed_job_item_id,
-		       platforms_csv, store_link
-		FROM (
-			SELECT
-				eg.id, eg.storefront, eg.external_id, eg.title, eg.resolved_igdb_id,
-				eg.is_skipped, eg.is_available, eg.is_subscription, eg.store_link,
-				g.title AS igdb_title,
-				COALESCE(fl.has_user_game, false) AS has_user_game,
-				fl.user_game_id,
-				COALESCE(fl.other_count, 0) AS user_game_other_platform_count,
-				ni.id AS newest_item_id,
-				`+syncNeedsReview+` AS needs_review,
-				`+syncFailed+` AS failed,
-				`+syncRetryable+` AS retryable,
-				`+syncInFlight+` AS in_flight,
-				COALESCE(
-					(SELECT string_agg(DISTINCT egp.platform, ',' ORDER BY egp.platform)
-					 FROM external_game_platforms egp
-					 WHERE egp.external_game_id = eg.id
-					    OR egp.external_game_id IN (
-					        SELECT id FROM external_games WHERE parent_id = eg.id
-					    )
-					),
-					''
-				) AS platforms_csv
-			FROM external_games eg
-			LEFT JOIN games g ON g.id = eg.resolved_igdb_id
-			`+syncNewestItemJoin+`
-			LEFT JOIN LATERAL (
-				SELECT true AS has_user_game,
-				       COALESCE(MIN(ug_id) FILTER (WHERE own), MIN(ug_id)) AS user_game_id,
-				       MIN(others) AS other_count
-				FROM (
-					SELECT l.user_game_id AS ug_id,
-					       bool_or(l.external_game_id = eg.id) AS own,
-					       (SELECT COUNT(*) FROM user_game_platforms o
-					        WHERE o.user_game_id = l.user_game_id
-					          AND (o.external_game_id IS NULL
-					               OR (o.external_game_id <> eg.id
-					                   AND o.external_game_id NOT IN (
-					                       SELECT c.id FROM external_games c WHERE c.parent_id = eg.id)))
-					       ) AS others
-					FROM user_game_platforms l
-					WHERE l.external_game_id = eg.id
-					   OR l.external_game_id IN (SELECT c.id FROM external_games c WHERE c.parent_id = eg.id)
-					GROUP BY l.user_game_id
-				) per_user_game
-				HAVING COUNT(*) > 0
-			) fl ON true
-			WHERE eg.user_id = ? AND eg.storefront = ?
-			  AND eg.parent_id IS NULL
-		) v
-		WHERE NOT in_flight
-		ORDER BY title ASC`,
+	err := h.db.NewRaw(externalGameListQuery,
 		userID, sf,
 	).Scan(ctx, &games)
 	if err != nil {
@@ -1442,6 +1364,87 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, games)
 }
+
+// externalGameListQuery lists a storefront's External games, one entry per set
+// of editions (externalgame.EditionKey). Parameters: user id, storefront.
+//
+// The entry is its representative: the oldest edition still in the storefront
+// library, else the oldest. Each edition's status comes from its own newest
+// item (sync_view.go); the entry needs review, has failed, or is in flight
+// (and hidden) when any edition does. It is available when any edition is, and
+// its platforms are those of all editions. failed_job_item_id is the newest
+// item of the first retryable edition, only while the entry shows as failed.
+//
+// The orphan fields are per set, matching rematch's orphan check: links of any
+// edition, "other" meaning outside the set; with the set on several user
+// games, the smallest count among them (zero: at least one would be orphaned),
+// and the user game the representative's own links are on, else the lowest id.
+var externalGameListQuery = `
+	WITH m AS (
+		SELECT eg.id, eg.storefront, eg.external_id, eg.title, eg.resolved_igdb_id,
+		       eg.is_skipped, eg.is_available, eg.is_subscription, eg.store_link,
+		       first_value(eg.id) OVER w AS rep_id,
+		       row_number() OVER w AS rn,
+		       ni.id AS newest_item_id,
+		       ` + syncNeedsReview + ` AS needs_review,
+		       ` + syncFailed + ` AS failed,
+		       ` + syncRetryable + ` AS retryable,
+		       ` + syncInFlight + ` AS in_flight
+		FROM external_games eg
+		` + syncNewestItemJoin + `
+		WHERE eg.user_id = ? AND eg.storefront = ?
+		WINDOW w AS (PARTITION BY ` + externalgame.EditionKey("eg") + `
+		             ORDER BY NOT eg.is_available, eg.created_at, eg.id)
+	), s AS (
+		SELECT rep_id, array_agg(id) AS ids,
+		       bool_or(is_available) AS is_available,
+		       bool_or(needs_review) AS needs_review,
+		       bool_or(failed) AS failed,
+		       bool_or(in_flight) AS in_flight,
+		       (array_agg(newest_item_id ORDER BY rn) FILTER (WHERE retryable))[1] AS retry_item_id
+		FROM m GROUP BY rep_id
+	)
+	SELECT r.id, r.storefront, r.external_id, r.title, r.resolved_igdb_id, r.is_skipped,
+	       s.is_available, r.is_subscription,
+	       COALESCE(fl.has_user_game, false) AS has_user_game, fl.user_game_id,
+	       g.title AS igdb_title,
+	       COALESCE(fl.other_count, 0) AS user_game_other_platform_count,
+	       CASE
+	           WHEN s.needs_review THEN 'needs_review'
+	           WHEN r.is_skipped THEN 'skipped'
+	           WHEN s.failed THEN 'failed'
+	           WHEN r.resolved_igdb_id IS NOT NULL THEN 'matched'
+	           ELSE 'unmatched'
+	       END AS sync_status,
+	       CASE WHEN NOT s.needs_review AND NOT r.is_skipped THEN s.retry_item_id END AS failed_job_item_id,
+	       COALESCE(
+	           (SELECT string_agg(DISTINCT egp.platform, ',' ORDER BY egp.platform)
+	            FROM external_game_platforms egp
+	            WHERE egp.external_game_id = ANY(s.ids)),
+	           '') AS platforms_csv,
+	       r.store_link
+	FROM s
+	JOIN m r ON r.id = s.rep_id
+	LEFT JOIN games g ON g.id = r.resolved_igdb_id
+	LEFT JOIN LATERAL (
+		SELECT true AS has_user_game,
+		       COALESCE(MIN(ug_id) FILTER (WHERE own), MIN(ug_id)) AS user_game_id,
+		       MIN(others) AS other_count
+		FROM (
+			SELECT l.user_game_id AS ug_id,
+			       bool_or(l.external_game_id = r.id) AS own,
+			       (SELECT COUNT(*) FROM user_game_platforms o
+			        WHERE o.user_game_id = l.user_game_id
+			          AND (o.external_game_id IS NULL OR o.external_game_id <> ALL(s.ids))
+			       ) AS others
+			FROM user_game_platforms l
+			WHERE l.external_game_id = ANY(s.ids)
+			GROUP BY l.user_game_id
+		) per_user_game
+		HAVING COUNT(*) > 0
+	) fl ON true
+	WHERE NOT s.in_flight
+	ORDER BY r.title ASC, r.id`
 
 // HandleResetSyncData handles DELETE /api/sync/:storefront/data.
 // It cancels any active sync job for the storefront, then deletes all
@@ -1500,10 +1503,10 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-// HandleRetryFailedExternalGames retries the storefront's games the view
-// shows as failed (their newest item failed, nothing wrote them since, and
-// their Job is active or completed), with the Child games whose own newest
-// item failed by the same rule. Items are retried through the module per Job,
+// HandleRetryFailedExternalGames retries every External game of the
+// storefront whose newest item failed by the view's rule (it failed, nothing
+// wrote the game since, and its Job is active or completed), each edition of a
+// set on its own. Items are retried through the module per Job,
 // newest Job first: a Job that cannot be retried (failed or cancelled, or
 // refused because another sync is active, including one this request has just
 // reopened) is left as it is. It answers 204 either way.

@@ -17,6 +17,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -257,9 +258,11 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 	}
 
 	// Import items in Pending review are counted per item, whatever their
-	// Job's status. Sync review is counted per top-level External game by the
-	// storefront list's needs_review rule (sync_view.go), so the badge and the
-	// list agree (#1338); a sync item whose game is gone is not counted.
+	// Job's status. Sync review is counted per set of editions
+	// (externalgame.EditionKey) by the storefront list's rules (sync_view.go),
+	// so the badge and the list agree (#1338, #1449): a set counts when any
+	// edition needs review and none is in flight. A sync item whose game is
+	// gone is not counted.
 	var rows []sourceCount
 	err := h.db.NewRaw(`
 		SELECT j.source, COUNT(*) AS count
@@ -268,13 +271,15 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 		WHERE ji.user_id = ? AND ji.status = ? AND j.job_type <> 'sync'
 		GROUP BY j.source
 		UNION ALL
-		SELECT eg.storefront AS source, COUNT(*) AS count
-		FROM external_games eg
-		`+syncNewestItemJoin+`
-		WHERE eg.user_id = ? AND eg.parent_id IS NULL
-		  AND `+syncNeedsReview+`
-		  AND NOT `+syncInFlight+`
-		GROUP BY eg.storefront`,
+		SELECT source, COUNT(*) AS count FROM (
+			SELECT eg.storefront AS source
+			FROM external_games eg
+			`+syncNewestItemJoin+`
+			WHERE eg.user_id = ?
+			GROUP BY `+externalgame.EditionKey("eg")+`
+			HAVING bool_or(`+syncNeedsReview+`) AND NOT bool_or(`+syncInFlight+`)
+		) sets
+		GROUP BY source`,
 		userID, models.JobItemStatusPendingReview, userID,
 	).Scan(context.Background(), &rows)
 	if err != nil {

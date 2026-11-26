@@ -294,7 +294,7 @@ func TestCleanupUnreferencedGames_DeletesOrphans(t *testing.T) {
 }
 
 // A game that only an External game's match points to (a rematch with no
-// platform rows, a skipped family, a game removed from the library, or the gap
+// platform rows, skipped editions, a game removed from the library, or the gap
 // between a sync's match and write stages) is referenced: the cleanup keeps it
 // and the match survives (#1423).
 func TestCleanupUnreferencedGames_KeepsMatchedGames(t *testing.T) {

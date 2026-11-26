@@ -47,8 +47,7 @@ still queued or running from work whose River job was lost (it is queued again)
 or gave up after its last attempt (it is failed). At startup it first settles
 the River jobs a stopped process left running, and deletes queued River jobs of
 the periodic kinds older versions used for this (the orphaned-item rescue and
-the stale-job cleanup). A sync child that is allowed to wait on its parent's
-item is left alone. A periodic run that fails or re-queues something sends one
+the stale-job cleanup). A periodic run that fails or re-queues something sends one
 admin maintenance notification (`job_recovery`); startup sends none.
 
 ## Metadata refresh

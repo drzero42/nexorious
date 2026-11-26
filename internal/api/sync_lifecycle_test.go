@@ -50,8 +50,8 @@ func (f *rmFixture) retryStorefront() *httptest.ResponseRecorder {
 // latter.
 func TestStorefrontRetry_OnlyJobsThatCanReopen(t *testing.T) {
 	f := newRM(t, "sf-retry-kinds")
-	f.game("a", "", 0, false, "playstation-4")
-	f.game("b", "", 0, false, "playstation-4")
+	f.game("a", 0, false, "playstation-4")
+	f.titled("b", "Other", 0, false, "playstation-4")
 	lc := newTestLifecycle(t)
 
 	jobA, itemA := completedSyncWithFailedItem(t, f, lc, "a")
@@ -89,7 +89,7 @@ func TestStorefrontRetry_OnlyJobsThatCanReopen(t *testing.T) {
 // Retry of the Job itself is refused.
 func TestStorefrontRetry_AnotherSyncActive(t *testing.T) {
 	f := newRM(t, "sf-retry-active")
-	f.game("a", "", 0, false, "playstation-4")
+	f.game("a", 0, false, "playstation-4")
 	lc := newTestLifecycle(t)
 	oldJob, item := completedSyncWithFailedItem(t, f, lc, "a")
 	newSyncJob(t, lc, f.userID, rmStore) // the active sync
@@ -117,9 +117,9 @@ func (f *rmFixture) skip(id string) *httptest.ResponseRecorder {
 // the flags: no item changes and no diff row.
 func TestSkip_NoOpenItem_SetsOnlyTheFlags(t *testing.T) {
 	f := newRM(t, "skip-flags")
-	f.game("eg", "", 100, false, "playstation-4")
-	f.game("ch", "eg", 100, false, "playstation-5")
-	f.game("other", "", 0, false, "playstation-4")
+	f.game("eg", 100, false, "playstation-4")
+	f.game("ed", 100, false, "playstation-5")
+	f.titled("other", "Other", 0, false, "playstation-4")
 	lc := newTestLifecycle(t)
 	job := newSyncJob(t, lc, f.userID, rmStore)
 	ids := job.add(t, f.userID, "eg", "other")
@@ -130,8 +130,8 @@ func TestSkip_NoOpenItem_SetsOnlyTheFlags(t *testing.T) {
 
 	wantCode(t, f.skip("eg"), http.StatusNoContent)
 
-	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id IN ('eg', 'ch') AND is_skipped`); n != 2 {
-		t.Errorf("skipped family members: want 2, got %d", n)
+	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id IN ('eg', 'ed') AND is_skipped`); n != 2 {
+		t.Errorf("skipped editions: want 2, got %d", n)
 	}
 	if s := f.itemStatus(ids[0]); s != "completed" {
 		t.Errorf("ended item: want completed, got %s", s)
@@ -147,38 +147,37 @@ func TestSkip_NoOpenItem_SetsOnlyTheFlags(t *testing.T) {
 	}
 }
 
-// Skip of a game whose item is pending skips it and its waiting child's item,
-// cancels the item's River job, and the cancelled worker, run anyway, writes
-// nothing.
+// Skip of a game whose item is pending skips it and the other edition's
+// item, cancels their River jobs, and the cancelled worker, run anyway, writes
+// nothing. Only the given game gets a 'skipped' row.
 func TestSkip_PendingItem_CancelsItsRiverJob(t *testing.T) {
 	f := newRM(t, "skip-pending")
-	f.game("eg", "", 100, false, "playstation-4")
-	f.game("ch", "eg", 0, false, "playstation-5")
+	f.game("eg", 100, false, "playstation-4")
+	f.game("ed", 100, false, "playstation-5")
 	lc := newTestLifecycle(t)
 	job := newSyncJob(t, lc, f.userID, rmStore)
-	ids := job.add(t, f.userID, "eg", "ch")
+	ids := job.add(t, f.userID, "eg", "ed")
 	job.done(t)
-	parent, child := ids[0], ids[1]
-	if waiting, err := lc.Wait(context.Background(), child, itemOwnerID(t, child)); err != nil || !waiting {
-		t.Fatalf("child wait = %v %v", waiting, err)
-	}
-	parentOwner := itemOwnerID(t, parent)
+	own, other := ids[0], ids[1]
+	ownOwner, otherOwner := itemOwnerID(t, own), itemOwnerID(t, other)
 
 	wantCode(t, f.skip("eg"), http.StatusNoContent)
 
-	for _, id := range []string{parent, child} {
+	for _, id := range []string{own, other} {
 		if s := f.itemStatus(id); s != "skipped" {
 			t.Errorf("item %s: want skipped, got %s", id, s)
 		}
 	}
-	if s := riverJobState(t, testDB, parentOwner); s != "cancelled" {
-		t.Errorf("parent's River job: want cancelled, got %s", s)
+	for _, rid := range []int64{ownOwner, otherOwner} {
+		if s := riverJobState(t, testDB, rid); s != "cancelled" {
+			t.Errorf("River job %d: want cancelled, got %s", rid, s)
+		}
 	}
 	if n := f.count(`SELECT COUNT(*) FROM changes WHERE job_id = ? AND change_type = 'skipped' AND external_game_id = 'eg'`, job.ID); n != 1 {
-		t.Errorf("parent's skipped row: want 1, got %d", n)
+		t.Errorf("the game's skipped row: want 1, got %d", n)
 	}
-	if n := f.count(`SELECT COUNT(*) FROM changes WHERE external_game_id = 'ch'`); n != 0 {
-		t.Errorf("child's changes: want 0, got %d", n)
+	if n := f.count(`SELECT COUNT(*) FROM changes WHERE external_game_id = 'ed'`); n != 0 {
+		t.Errorf("the other edition's changes: want 0, got %d", n)
 	}
 	if s := f.str(`SELECT status FROM jobs WHERE id = ?`, job.ID); s != "completed" {
 		t.Errorf("job: want completed, got %s", s)
@@ -186,8 +185,8 @@ func TestSkip_PendingItem_CancelsItsRiverJob(t *testing.T) {
 
 	w := &tasks.UserGameWorker{DB: testDB, LC: lc}
 	if err := w.Work(context.Background(), &river.Job[tasks.UserGameArgs]{
-		JobRow: &rivertype.JobRow{ID: parentOwner, Attempt: 1, MaxAttempts: 5},
-		Args:   tasks.UserGameArgs{JobItemID: parent},
+		JobRow: &rivertype.JobRow{ID: ownOwner, Attempt: 1, MaxAttempts: 5},
+		Args:   tasks.UserGameArgs{JobItemID: own},
 	}); err != nil {
 		t.Fatalf("late worker: %v", err)
 	}
@@ -201,7 +200,7 @@ func TestSkip_PendingItem_CancelsItsRiverJob(t *testing.T) {
 func TestSkip_ConcurrentWrite_NoDeadlock(t *testing.T) {
 	for range 5 {
 		f := newRM(t, "skip-race")
-		f.game("eg", "", 100, false, "playstation-4")
+		f.game("eg", 100, false, "playstation-4")
 		lc := newTestLifecycle(t)
 		job := newSyncJob(t, lc, f.userID, rmStore)
 		item := job.add(t, f.userID, "eg")[0]
@@ -236,7 +235,7 @@ func TestSkip_ConcurrentWrite_NoDeadlock(t *testing.T) {
 // item, no queued River job) and deletes the storefront's games.
 func TestResetSyncData_DuringASync(t *testing.T) {
 	f := newRM(t, "reset-during")
-	f.game("eg", "", 0, false, "playstation-4")
+	f.game("eg", 0, false, "playstation-4")
 	lc := newTestLifecycle(t)
 	job := newSyncJob(t, lc, f.userID, rmStore)
 	job.add(t, f.userID, "eg")
