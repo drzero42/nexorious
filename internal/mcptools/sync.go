@@ -25,16 +25,20 @@ type syncReviewInput struct {
 	Storefront string `json:"storefront" jsonschema:"storefront slug to list pending-review external games for"`
 }
 
+// externalGameBrief is one entry of a storefront's External game list, or one
+// candidate of an ambiguous ref: an entry, or (with only_this_edition) one
+// edition, carrying its game's title and IGDB title so same-title games can be
+// told apart.
 type externalGameBrief struct {
 	ID             string   `json:"id"`
 	Title          string   `json:"title"`
 	ExternalID     string   `json:"external_id"`
-	Platforms      []string `json:"platforms,omitempty"`
+	Platforms      []string `json:"platforms"`
 	IgdbTitle      *string  `json:"igdb_title,omitempty"`
 	ResolvedIgdbID *int     `json:"resolved_igdb_id,omitempty"`
 	StoreURL       *string  `json:"store_url,omitempty"`
-	// Editions are the entry's editions: the ids a decision on one edition
-	// alone (only_this_edition) is sent to.
+	// Editions are the entry's editions, in sync_review only: the ids a
+	// decision on one edition alone (only_this_edition) is sent to.
 	Editions []externalEditionBrief `json:"editions,omitempty"`
 }
 
@@ -42,33 +46,57 @@ type externalGameBrief struct {
 type externalEditionBrief struct {
 	ID         string   `json:"id"`
 	ExternalID string   `json:"external_id"`
-	Platforms  []string `json:"platforms,omitempty"`
+	Platforms  []string `json:"platforms"`
 	StoreURL   *string  `json:"store_url,omitempty"`
 }
 
-func externalBriefOf(eg *cliclient.ExternalGame) externalGameBrief {
-	editions := make([]externalEditionBrief, len(eg.Editions))
-	for i, e := range eg.Editions {
-		editions[i] = externalEditionBrief{ID: e.ID, ExternalID: e.ExternalID, Platforms: e.Platforms, StoreURL: e.StoreURL}
+// platformsOrEmpty keeps platforms in the output as an array, also when a
+// game has none: the field is always present, and never null.
+func platformsOrEmpty(p []string) []string {
+	if p == nil {
+		return []string{}
 	}
+	return p
+}
+
+// externalBriefOf is the brief of an entry, without its editions.
+func externalBriefOf(eg *cliclient.ExternalGame) externalGameBrief {
 	return externalGameBrief{
-		Editions:       editions,
 		ID:             eg.ID,
 		Title:          eg.Title,
 		ExternalID:     eg.ExternalID,
-		Platforms:      eg.Platforms,
+		Platforms:      platformsOrEmpty(eg.Platforms),
 		IgdbTitle:      eg.IgdbTitle,
 		ResolvedIgdbID: eg.ResolvedIgdbID,
 		StoreURL:       eg.StoreURL,
 	}
 }
 
+// reviewBriefOf is the brief of an entry with its editions, for sync_review.
+func reviewBriefOf(eg *cliclient.ExternalGame) externalGameBrief {
+	b := externalBriefOf(eg)
+	b.Editions = make([]externalEditionBrief, len(eg.Editions))
+	for i, e := range eg.Editions {
+		b.Editions[i] = externalEditionBrief{ID: e.ID, ExternalID: e.ExternalID, Platforms: platformsOrEmpty(e.Platforms), StoreURL: e.StoreURL}
+	}
+	return b
+}
+
+// editionCandidateOf is the candidate of one edition of an entry: the
+// edition's id, storefront id, platforms and store link, with the entry's
+// title and IGDB title.
+func editionCandidateOf(eg *cliclient.ExternalGame, e cliclient.ExternalGameEdition) externalGameBrief {
+	b := externalBriefOf(eg)
+	b.ID, b.ExternalID, b.Platforms, b.StoreURL = e.ID, e.ExternalID, platformsOrEmpty(e.Platforms), e.StoreURL
+	return b
+}
+
 // mcpResolveExternalRef resolves an external-game ref within a storefront to
 // the id a decision is sent to (clientops.ExternalDecisionTarget), and the
 // entry's title. On ambiguity or no match it returns candidates/message for
-// the agent to disambiguate, without mutating anything: the matching entries,
-// each with its editions, so the agent can pick an entry's or (with
-// onlyThisEdition) an edition's id.
+// the agent to disambiguate, without mutating anything: one candidate per
+// matching entry, or with onlyThisEdition one per edition of the matching
+// entries.
 func mcpResolveExternalRef(ctx context.Context, c *cliclient.Client, key, sf, ref string, onlyThisEdition bool) (id, title string, cands []externalGameBrief, msg string, err error) {
 	matches, err := clientops.FindExternalGamesByRef(ctx, c, key, sf, ref)
 	if err != nil {
@@ -84,12 +112,17 @@ func mcpResolveExternalRef(ctx context.Context, c *cliclient.Client, key, sf, re
 	if !ambiguous {
 		return id, matches[0].Game.Title, nil, "", nil
 	}
+	if onlyThisEdition {
+		for i := range matches {
+			for _, e := range matches[i].Game.Editions {
+				cands = append(cands, editionCandidateOf(&matches[i].Game, e))
+			}
+		}
+		return "", "", cands, fmt.Sprintf("%q matches %d editions; call again with one of these ids", ref, len(cands)), nil
+	}
 	cands = make([]externalGameBrief, len(matches))
 	for i := range matches {
 		cands[i] = externalBriefOf(&matches[i].Game)
-	}
-	if onlyThisEdition {
-		return "", "", cands, fmt.Sprintf("%q matches %d external games with several editions; call again with the id of one of the candidates' editions", ref, len(matches)), nil
 	}
 	return "", "", cands, fmt.Sprintf("%q matches %d external games; call again with one of these ids", ref, len(matches)), nil
 }
@@ -175,7 +208,7 @@ func registerSyncTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			var pending []externalGameBrief
 			for i := range all {
 				if all[i].SyncStatus == "needs_review" {
-					pending = append(pending, externalBriefOf(&all[i]))
+					pending = append(pending, reviewBriefOf(&all[i]))
 				}
 			}
 			return nil, syncReviewOutput{PendingReview: pending, Total: len(pending)}, nil
@@ -195,7 +228,7 @@ func registerSyncTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, syncJobOutput{JobID: res.JobID, Storefront: res.Storefront, Status: res.Status, Message: res.Message}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "sync_resolve", Description: "Match an external game to an IGDB id: one in review, an unmatched one (e.g. after an unskip), or a matched one to correct it. Writes it and its other editions to the library at once; with only_this_edition, only the edition the ref names, which takes two same-title games apart (rematching it back onto the others' match puts them together again). Refused while a sync is still working on the game; retry once the sync is done. Ambiguous refs return the matching external games, each with its editions, in `candidates` — call again with an id."},
+	addTool(s, &mcp.Tool{Name: "sync_resolve", Description: "Match an external game to an IGDB id: one in review, an unmatched one (e.g. after an unskip), or a matched one to correct it. Writes it and its other editions to the library at once; with only_this_edition, only the edition the ref names, which takes two same-title games apart (rematching it back onto the others' match puts them together again). Refused while a sync is still working on the game; retry once the sync is done. Ambiguous refs return the matching external games (with only_this_edition: their editions, each with its game's title) in `candidates` — call again with an id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in syncResolveInput) (*mcp.CallToolResult, syncMatchOutput, error) {
 			key := apiKey(ctx)
 			sf, err := clientops.ResolveStorefront(ctx, c, key, in.Storefront)
@@ -215,7 +248,7 @@ func registerSyncTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, syncMatchOutput{Message: fmt.Sprintf("resolved %q to IGDB id %d", title, in.IgdbID)}, nil
 		})
 
-	addTool(s, &mcp.Tool{Name: "sync_skip", Description: "Skip an external game and its other editions: the sync leaves them as they are and their open review items end; the library is not changed. With only_this_edition, skip only the edition the ref names (e.g. one platform of a package). Ambiguous refs return the matching external games, each with its editions, in `candidates` — call again with an id."},
+	addTool(s, &mcp.Tool{Name: "sync_skip", Description: "Skip an external game and its other editions: the sync leaves them as they are and their open review items end; the library is not changed. With only_this_edition, skip only the edition the ref names (e.g. one platform of a package). Ambiguous refs return the matching external games (with only_this_edition: their editions, each with its game's title) in `candidates` — call again with an id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in syncSkipInput) (*mcp.CallToolResult, syncMatchOutput, error) {
 			key := apiKey(ctx)
 			sf, err := clientops.ResolveStorefront(ctx, c, key, in.Storefront)

@@ -182,6 +182,64 @@ describe('ExternalGamesSection', () => {
     await waitFor(() => expect(requests).toEqual(['DELETE /api/sync/ignored/eg-rep']));
   });
 
+  it('unskips one chosen edition with the option', async () => {
+    server.use(
+      http.get(`${API_URL}/sync/steam/external-games`, () =>
+        HttpResponse.json([
+          twoEditions({ sync_status: 'skipped', is_skipped: true, resolved_igdb_id: 7 }),
+        ]),
+      ),
+    );
+    const requests = recordDecisions();
+    render(<ExternalGamesSection storefront={SyncStorefront.STEAM} />);
+
+    await userEvent.click(await screen.findByText('Skipped (1)'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Unskip' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.click(within(dialog).getByLabelText(/Only pc-linux · ID 200/));
+    // A matched edition unskipped alone stays apart: no warning.
+    expect(within(dialog).queryByText(/skips it again/)).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Unskip' }));
+
+    await waitFor(() =>
+      expect(requests).toEqual(['DELETE /api/sync/ignored/eg-ed?only_this_edition=true']),
+    );
+  });
+
+  it('warns that an unmatched edition unskipped alone is skipped again at the next sync', async () => {
+    server.use(
+      http.get(`${API_URL}/sync/steam/external-games`, () =>
+        HttpResponse.json([twoEditions({ sync_status: 'skipped', is_skipped: true })]),
+      ),
+    );
+    recordDecisions();
+    render(<ExternalGamesSection storefront={SyncStorefront.STEAM} />);
+
+    await userEvent.click(await screen.findByText('Skipped (1)'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Unskip' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).queryByText(/skips it again/)).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByLabelText(/Only pc-linux · ID 200/));
+    expect(within(dialog).getByText(/skips it again/)).toBeInTheDocument();
+  });
+
+  it('unskips an entry of one edition at once, with no choice', async () => {
+    server.use(
+      http.get(`${API_URL}/sync/steam/external-games`, () =>
+        HttpResponse.json([
+          game({ id: 'eg-1', title: 'Solo', sync_status: 'skipped', is_skipped: true }),
+        ]),
+      ),
+    );
+    const requests = recordDecisions();
+    render(<ExternalGamesSection storefront={SyncStorefront.STEAM} />);
+
+    await userEvent.click(await screen.findByText('Skipped (1)'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Unskip' }));
+    await waitFor(() => expect(requests).toEqual(['DELETE /api/sync/ignored/eg-1']));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
   it('gives matched entries of more than one edition a Skip button, and only those', async () => {
     server.use(
       http.get(`${API_URL}/sync/steam/external-games`, () =>

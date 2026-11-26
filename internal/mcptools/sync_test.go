@@ -26,7 +26,7 @@ func syncDecisionServer(t *testing.T, requests *[]string) *mcp.ClientSession {
 	})
 	mux.HandleFunc("/api/sync/steam/external-games", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode([]map[string]any{{
-			"id": syncRepID, "title": "Spider-Man", "external_id": "100", "sync_status": "matched",
+			"id": syncRepID, "title": "Spider-Man", "igdb_title": "Marvel's Spider-Man", "external_id": "100", "sync_status": "needs_review",
 			"platforms": []string{"pc-linux", "pc-windows"},
 			"editions": []map[string]any{
 				{"id": syncRepID, "external_id": "100", "platforms": []string{"pc-windows"}},
@@ -81,8 +81,8 @@ func TestMCPSyncOnlyThisEdition_SendsTheEditionsID(t *testing.T) {
 	}
 }
 
-// A title of an entry with more than one edition returns the entry with its
-// editions as candidates and changes nothing.
+// A title of an entry with more than one edition returns one candidate per
+// edition, each with its game's title, and changes nothing.
 func TestMCPSyncOnlyThisEdition_AmbiguousTitle_ReturnsEditions(t *testing.T) {
 	for _, tool := range []string{"sync_resolve", "sync_skip"} {
 		t.Run(tool, func(t *testing.T) {
@@ -100,14 +100,33 @@ func TestMCPSyncOnlyThisEdition_AmbiguousTitle_ReturnsEditions(t *testing.T) {
 			if err := json.Unmarshal(b, &out); err != nil {
 				t.Fatal(err)
 			}
-			if len(out.Candidates) != 1 || len(out.Candidates[0].Editions) != 2 {
-				t.Fatalf("candidates: want one entry with two editions, got %s", b)
+			if len(out.Candidates) != 2 {
+				t.Fatalf("candidates: want one per edition (2), got %s", b)
 			}
-			e := out.Candidates[0].Editions[1]
-			if e.ID != syncEditionID || e.ExternalID != "200" || strings.Join(e.Platforms, ",") != "pc-linux" {
-				t.Errorf("edition candidate: %+v", e)
+			c := out.Candidates[1]
+			if c.ID != syncEditionID || c.ExternalID != "200" || strings.Join(c.Platforms, ",") != "pc-linux" ||
+				c.Title != "Spider-Man" || c.IgdbTitle == nil || *c.IgdbTitle != "Marvel's Spider-Man" || len(c.Editions) != 0 {
+				t.Errorf("edition candidate: %s", b)
 			}
 		})
+	}
+}
+
+// sync_review gives each entry its editions.
+func TestMCPSyncReview_EntriesCarryTheirEditions(t *testing.T) {
+	var reqs []string
+	cs := syncDecisionServer(t, &reqs)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "sync_review", Arguments: map[string]any{"storefront": "steam"}})
+	if err != nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	var out syncReviewOutput
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.PendingReview) != 1 || len(out.PendingReview[0].Editions) != 2 || out.PendingReview[0].Editions[1].ID != syncEditionID {
+		t.Fatalf("sync_review: %s", b)
 	}
 }
 

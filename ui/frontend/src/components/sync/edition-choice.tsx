@@ -13,14 +13,14 @@ interface EditionChoiceProps {
   onChange: (editionId: string | null) => void;
 }
 
+// ALL is the RadioGroup value of "All editions"; edition ids are UUIDs.
+const ALL = 'all';
+
 /**
  * EditionChoice lets the user decide all editions of an entry (the default) or
  * one of them alone (#1452). Each edition is listed with its platforms, the
  * storefront's id for it and its store link.
  */
-// ALL is the RadioGroup value of "All editions"; edition ids are UUIDs.
-const ALL = 'all';
-
 export function EditionChoice({ name, editions, value, onChange }: EditionChoiceProps) {
   return (
     <div className="space-y-2">
