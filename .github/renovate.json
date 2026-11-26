@@ -44,6 +44,16 @@
         "fileFilters": ["flake.nix"],
         "executionMode": "branch"
       }
+    },
+    {
+      "description": "Regenerate ui/frontend/src/routeTree.gen.ts on TanStack Router updates, whose generator output can change with a router-plugin bump (the 'Route tree is up to date' CI step fails otherwise). Only router packages: the generator is a router-plugin dependency, and npm lockfile maintenance is off. Requires the self-hosted allowedCommands to permit this script and node in the Renovate runner (#1459).",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@tanstack/react-router", "@tanstack/router-*"],
+      "postUpgradeTasks": {
+        "commands": ["./ui/frontend/scripts/regen-route-tree.sh"],
+        "fileFilters": ["ui/frontend/src/routeTree.gen.ts"],
+        "executionMode": "branch"
+      }
     }
   ]
 }
