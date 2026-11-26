@@ -542,6 +542,11 @@ type IGDBMatchWorker struct {
 // it ran (the other game's decision changed in between).
 var errNoPrecedent = errors.New("igdb_match: no same-title game has a decision any more")
 
+// errNoMatchToTake rolls back the completion of one same-title review: the
+// game's precedent is not a match (it is a skip, or the match is gone), so the
+// game keeps its item in review.
+var errNoMatchToTake = errors.New("igdb_match: no same-title match to take")
+
 func (w *IGDBMatchWorker) Work(ctx context.Context, rj *river.Job[IGDBMatchArgs]) error {
 	item, done, err := loadOwnedItem(ctx, w.DB, w.LC, rj.Args.JobItemID, rj.ID)
 	if done || err != nil {
@@ -648,34 +653,11 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 
 	if decision.Confident {
 		bestID := decision.ResolvedID
-		// The transition's own write: an edition decided during the search
-		// wins over the search result (precedent first). Otherwise the
-		// games row and the match, IS NULL so a rematch that committed during
-		// the search wins (#1338); either way the write stage writes whatever
-		// the game has.
-		wroteMatch := false
-		err := w.toWrite(ctx, rj, item.ID, func(ctx context.Context, tx bun.Tx) error {
-			wroteMatch = false
-			took, err := externalgame.TakePrecedent(ctx, tx, eg.ID)
-			if err != nil || took {
-				return err
-			}
-			if err := externalgame.EnsureGameRow(ctx, tx, bestID, eg.Title); err != nil {
-				return err
-			}
-			res, err := tx.NewRaw(
-				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL AND NOT is_skipped`,
-				bestID, eg.ID,
-			).Exec(ctx)
-			if err != nil {
-				return fmt.Errorf("auto-resolve external_game: %w", err)
-			}
-			n, err := res.RowsAffected()
-			if err != nil {
-				return fmt.Errorf("auto-resolve external_game: rows affected: %w", err)
-			}
-			wroteMatch = n > 0
-			return nil
+		// The write stage writes whatever the game has after the own write.
+		var wroteMatch bool
+		err := w.toWrite(ctx, rj, item.ID, func(ctx context.Context, tx bun.Tx) (err error) {
+			wroteMatch, err = writeConfidentMatch(ctx, tx, eg, bestID)
+			return err
 		})
 		if err != nil {
 			return err
@@ -693,6 +675,33 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 	return w.toReview(ctx, rj, item.ID, eg.ID, candidatesJSON, &bs)
 }
 
+// writeConfidentMatch is the own write of a confident match: the game takes
+// an edition's decision made during the search if there is one (precedent
+// first), otherwise the search's match bestID. It reports whether it wrote
+// bestID. The write is guarded so a rematch or Skip that committed during the
+// search wins (#1338).
+func writeConfidentMatch(ctx context.Context, tx bun.Tx, eg *models.ExternalGame, bestID int32) (bool, error) {
+	took, err := externalgame.TakePrecedent(ctx, tx, eg.ID)
+	if err != nil || took {
+		return false, err
+	}
+	if err := externalgame.EnsureGameRow(ctx, tx, bestID, eg.Title); err != nil {
+		return false, err
+	}
+	res, err := tx.NewRaw(
+		`UPDATE external_games eg SET resolved_igdb_id = ?, updated_at = now() WHERE eg.id = ? AND `+externalgame.Undecided("eg"),
+		bestID, eg.ID,
+	).Exec(ctx)
+	if err != nil {
+		return false, fmt.Errorf("auto-resolve external_game: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("auto-resolve external_game: rows affected: %w", err)
+	}
+	return n > 0, nil
+}
+
 // completeSameTitleReviews completes the Pending review items of this game's same-title games
 // in this Job, now that a search matched it with confidence (the settle rule of
 // ADR 0008):
@@ -705,21 +714,9 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 // a failure is logged and leaves the items in review.
 func (w *IGDBMatchWorker) completeSameTitleReviews(ctx context.Context, item *models.JobItem, eg *models.ExternalGame) {
 	n, err := w.LC.CompleteByRematch(ctx, item.JobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
-		var waiting []struct {
-			GameID string `bun:"game_id"`
-			ItemID string `bun:"item_id"`
-		}
-		if err := tx.NewRaw(`
-			SELECT o.id AS game_id, ji.id AS item_id
-			FROM external_games o
-			JOIN external_games me ON me.id = ?
-			JOIN job_items ji ON ji.external_game_id = o.id AND ji.job_id = ? AND ji.status = ?
-			WHERE `+externalgame.SameTitle("o", "me")+` AND o.id <> me.id
-			  AND o.resolved_igdb_id IS NULL AND NOT o.is_skipped
-			ORDER BY o.id, ji.id`,
-			eg.ID, job.ID, models.JobItemStatusPendingReview,
-		).Scan(ctx, &waiting); err != nil {
-			return nil, fmt.Errorf("find same-title games in review: %w", err)
+		waiting, err := externalgame.UndecidedSameTitleInReview(ctx, tx, job.ID, eg.ID)
+		if err != nil {
+			return nil, err
 		}
 		done := make([]string, 0, len(waiting))
 		for _, wg := range waiting {
@@ -731,7 +728,7 @@ func (w *IGDBMatchWorker) completeSameTitleReviews(ctx context.Context, item *mo
 					return err
 				}
 				if !took {
-					return errNoPrecedent
+					return errNoMatchToTake
 				}
 				lw, err := externalgame.WriteToLibrary(ctx, sp, job.UserID, wg.GameID)
 				if errors.Is(err, externalgame.ErrNoPlatforms) {
@@ -745,7 +742,9 @@ func (w *IGDBMatchWorker) completeSameTitleReviews(ctx context.Context, item *mo
 			switch {
 			case err == nil:
 				done = append(done, wg.ItemID)
-			case errors.Is(err, errNoPrecedent):
+			case errors.Is(err, errNoMatchToTake):
+				// Its oldest decision is a skip, or the match is gone: it stays
+				// in review for the user, which is not a failure.
 			default:
 				// The library write refuses a game it cannot write (validation);
 				// anything else is a database failure.
@@ -765,6 +764,7 @@ func (w *IGDBMatchWorker) completeSameTitleReviews(ctx context.Context, item *mo
 			slog.DebugContext(ctx, "igdb_match: completed same-title reviews", logging.KeyJobItemID, item.ID, "count", n)
 		}
 	case errors.Is(err, joblifecycle.ErrJobNotActive), errors.Is(err, joblifecycle.ErrGone):
+		// The Job ended or was deleted meanwhile: no items left to complete.
 	default:
 		slog.WarnContext(ctx, "igdb_match: completing same-title reviews failed; they stay in review",
 			logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))

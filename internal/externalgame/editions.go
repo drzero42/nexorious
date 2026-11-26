@@ -66,6 +66,12 @@ func EditionKey(a string) string {
 	return strings.Join(cols, ", ")
 }
 
+// Undecided is the SQL condition that the External game aliased a has no
+// decision: it is neither matched nor skipped.
+func Undecided(a string) string {
+	return fmt.Sprintf("(%s.resolved_igdb_id IS NULL AND NOT %s.is_skipped)", a, a)
+}
+
 // ErrEditionsChanged: the game's set of editions kept changing while
 // LockEditions tried to lock it. Callers answer it with 409 and ask the user to
 // try again.
@@ -94,7 +100,7 @@ func readEditionState(ctx context.Context, db bun.IDB, userID, id string) (editi
 	return st, err
 }
 
-// args binds the state to the placeholders of editionsOf.
+// args binds the state to the placeholders of editionsOfStateFrom.
 func (s editionState) args() []any {
 	args := make([]any, len(s))
 	for i, v := range s {
@@ -105,9 +111,9 @@ func (s editionState) args() []any {
 	return args
 }
 
-// editionsOf selects, as eg, the External games in the set of editions of a
-// bound editionState.
-var editionsOf = func() string {
+// editionsOfStateFrom is the FROM and WHERE clauses that select, as eg, the
+// External games in the set of editions of a bound editionState.
+var editionsOfStateFrom = func() string {
 	cols := make([]string, len(editionColumns))
 	for i, c := range editionColumns {
 		cols[i] = "?::" + c.sqlType + " AS " + c.name
@@ -145,7 +151,7 @@ func LockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.Ext
 		err = tx.RunInTx(ctx, nil, func(ctx context.Context, sp bun.Tx) error {
 			set = nil
 			if err := sp.NewRaw(`
-				SELECT eg.* `+editionsOf+`
+				SELECT eg.* `+editionsOfStateFrom+`
 				ORDER BY eg.id
 				FOR UPDATE OF eg`,
 				st.args()...,
@@ -154,13 +160,13 @@ func LockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.Ext
 			}
 			var again []string
 			if err := sp.NewRaw(`
-				SELECT eg.id `+editionsOf+`
+				SELECT eg.id `+editionsOfStateFrom+`
 				ORDER BY eg.id`,
 				st.args()...,
 			).Scan(ctx, &again); err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("read editions again: %w", err)
 			}
-			locked := IDs(set)
+			locked := GameIDs(set)
 			if !slices.Contains(locked, id) || !slices.Equal(locked, again) {
 				return errRelock
 			}
@@ -181,8 +187,8 @@ func LockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.Ext
 	return models.ExternalGame{}, nil, ErrEditionsChanged
 }
 
-// IDs returns the ids of games, in order.
-func IDs(games []models.ExternalGame) []string {
+// GameIDs returns the ids of the External games games, in order.
+func GameIDs(games []models.ExternalGame) []string {
 	ids := make([]string, len(games))
 	for i := range games {
 		ids[i] = games[i].ID
@@ -197,7 +203,7 @@ var precedentFrom = `
 	FROM external_games s
 	JOIN external_games me ON me.id = ?
 	WHERE ` + SameTitle("s", "me") + ` AND s.id <> me.id
-	  AND (s.resolved_igdb_id IS NOT NULL OR s.is_skipped)`
+	  AND NOT ` + Undecided("s")
 
 // HasPrecedent reports, without a lock, whether a same-title game of the
 // External game id has a decision. It saves a transaction for the common game
@@ -243,7 +249,7 @@ func takePrecedent(ctx context.Context, db bun.IDB, id string, matchOnly bool) (
 			LIMIT 1
 			FOR SHARE OF s
 		) p
-		WHERE e.id = ? AND e.resolved_igdb_id IS NULL AND NOT e.is_skipped`+cond,
+		WHERE e.id = ? AND `+Undecided("e")+cond,
 		id, id,
 	).Exec(ctx)
 	if err != nil {

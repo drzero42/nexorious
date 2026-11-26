@@ -1289,3 +1289,27 @@ func waitForBlockedBy(t *testing.T, pid int) {
 	}
 	t.Fatalf("no backend blocked by pid %d", pid)
 }
+
+// A title with quotes, a backslash, a placeholder character and non-ASCII
+// text survives the editions lock's read of the game's state and its binding
+// back into the lock: Skip and Rematch act on both editions, and not on a game
+// whose title differs only by a trailing space.
+func TestEditions_TitleWithQuotesAndSymbols_LockFindsTheSet(t *testing.T) {
+	f := newRM(t, "rm-odd-title")
+	title := `Marvel's "Spider-Man" \ ? 100% Pokémon™ 戦`
+	f.titled("eg", title, 0, false, "playstation-4")
+	f.titled("ed", title, 0, false, "playstation-5")
+	f.titled("other", title+" ", 0, false, "")
+	f.igdbGame(200)
+
+	if n := len(f.list()); n != 2 {
+		t.Errorf("listed entries = %d, want 2 (the set, and the other title)", n)
+	}
+	wantCode(t, f.skip("ed"), http.StatusNoContent)
+	wantCode(t, f.rematch("eg", 200, ""), http.StatusNoContent)
+
+	got := f.str(`SELECT string_agg(id || '=' || coalesce(resolved_igdb_id::text, '-') || '/' || is_skipped::text, ' ' ORDER BY id) FROM external_games`)
+	if want := "ed=200/false eg=200/false other=-/false"; got != want {
+		t.Errorf("games = %s, want %s", got, want)
+	}
+}

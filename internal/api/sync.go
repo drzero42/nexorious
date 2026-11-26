@@ -1239,7 +1239,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	// A plain read, no lock: the Jobs in which the game or one of its
 	// editions has an open item. Each is entered through the module, which
 	// locks the Job row before the editions (one lock order everywhere).
-	jobIDs, err := editionsOpenItemJobs(ctx, h.db, userID, id)
+	jobIDs, err := externalgame.EditionsOpenItemJobs(ctx, h.db, userID, id)
 	if err != nil {
 		slog.ErrorContext(c.Request().Context(), "sync: skip game: find items", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
@@ -1289,7 +1289,7 @@ func skipEditions(ctx context.Context, tx bun.Tx, userID, id, jobID string) ([]s
 	if err != nil {
 		return nil, abortHTTP(err)
 	}
-	editions := externalgame.IDs(set)
+	editions := externalgame.GameIDs(set)
 	if _, err := tx.NewRaw(
 		`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id IN (?)`, bun.List(editions),
 	).Exec(ctx); err != nil {
@@ -1298,7 +1298,7 @@ func skipEditions(ctx context.Context, tx bun.Tx, userID, id, jobID string) ([]s
 	if jobID == "" {
 		return nil, nil
 	}
-	items, err := editionsOpenItems(ctx, tx, jobID, editions)
+	items, err := externalgame.EditionsOpenItems(ctx, tx, jobID, editions)
 	if err != nil {
 		return nil, err
 	}
@@ -1361,42 +1361,16 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 // externalGameListQuery lists a storefront's External games, one entry per set
 // of editions (externalgame.EditionKey). Parameters: user id, storefront.
 //
-// The entry is its representative: the oldest edition still in the storefront
-// library, else the oldest. Each edition's status comes from its own newest
-// item (sync_view.go); the entry needs review, has failed, or is in flight
-// (and hidden) when any edition does. It is available when any edition is, and
-// its platforms are those of all editions. failed_job_item_id is the newest
+// The sets come from syncEditionSets, shared with the review badge. The entry
+// is the set's representative; a set with an edition in flight is hidden. Its
+// platforms are those of all editions. failed_job_item_id is the newest
 // item of the first retryable edition, only while the entry shows as failed.
 //
 // The orphan fields are per set, matching rematch's orphan check: links of any
 // edition, "other" meaning outside the set; with the set on several user
 // games, the smallest count among them (zero: at least one would be orphaned),
 // and the user game the representative's own links are on, else the lowest id.
-var externalGameListQuery = `
-	WITH m AS (
-		SELECT eg.id, eg.storefront, eg.external_id, eg.title, eg.resolved_igdb_id,
-		       eg.is_skipped, eg.is_available, eg.is_subscription, eg.store_link,
-		       first_value(eg.id) OVER w AS rep_id,
-		       row_number() OVER w AS rn,
-		       ni.id AS newest_item_id,
-		       ` + syncNeedsReview + ` AS needs_review,
-		       ` + syncFailed + ` AS failed,
-		       ` + syncRetryable + ` AS retryable,
-		       ` + syncInFlight + ` AS in_flight
-		FROM external_games eg
-		` + syncNewestItemJoin + `
-		WHERE eg.user_id = ? AND eg.storefront = ?
-		WINDOW w AS (PARTITION BY ` + externalgame.EditionKey("eg") + `
-		             ORDER BY NOT eg.is_available, eg.created_at, eg.id)
-	), s AS (
-		SELECT rep_id, array_agg(id) AS ids,
-		       bool_or(is_available) AS is_available,
-		       bool_or(needs_review) AS needs_review,
-		       bool_or(failed) AS failed,
-		       bool_or(in_flight) AS in_flight,
-		       (array_agg(newest_item_id ORDER BY rn) FILTER (WHERE retryable))[1] AS retry_item_id
-		FROM m GROUP BY rep_id
-	)
+var externalGameListQuery = syncEditionSets(`eg.user_id = ? AND eg.storefront = ?`) + `
 	SELECT r.id, r.storefront, r.external_id, r.title, r.resolved_igdb_id, r.is_skipped,
 	       s.is_available, r.is_subscription,
 	       COALESCE(fl.has_user_game, false) AS has_user_game, fl.user_game_id,
@@ -1436,7 +1410,7 @@ var externalGameListQuery = `
 		) per_user_game
 		HAVING COUNT(*) > 0
 	) fl ON true
-	WHERE NOT s.in_flight
+	WHERE ` + syncSetListed + `
 	ORDER BY r.title ASC, r.id`
 
 // HandleResetSyncData handles DELETE /api/sync/:storefront/data.

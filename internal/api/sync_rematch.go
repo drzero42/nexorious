@@ -44,53 +44,6 @@ func lockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.Ext
 	return eg, set, nil
 }
 
-// editionsOpenItemJobs returns the active Jobs in which the user's External
-// game id or one of its editions has an open item: the Job holding the game's
-// own item first, then the newest. It is a plain read, without locks.
-func editionsOpenItemJobs(ctx context.Context, db bun.IDB, userID, id string) ([]string, error) {
-	var jobIDs []string
-	err := db.NewRaw(`
-		SELECT ji.job_id FROM job_items ji
-		JOIN jobs j ON j.id = ji.job_id
-		JOIN external_games eg ON eg.id = ji.external_game_id
-		JOIN external_games g ON g.id = ? AND g.user_id = ?
-		WHERE `+externalgame.SameEdition("eg", "g")+`
-		  AND ji.status IN (?, ?)
-		  AND j.status IN (?, ?)
-		GROUP BY ji.job_id
-		ORDER BY bool_or(eg.id = g.id) DESC, max(j.created_at) DESC`,
-		id, userID,
-		models.JobItemStatusPending, models.JobItemStatusPendingReview,
-		models.JobStatusPending, models.JobStatusProcessing,
-	).Scan(ctx, &jobIDs)
-	if err != nil {
-		return nil, fmt.Errorf("find open items of the editions: %w", err)
-	}
-	return jobIDs, nil
-}
-
-// openItem is an open item of a set of editions in one Job.
-type openItem struct {
-	ID             string `bun:"id"`
-	ExternalGameID string `bun:"external_game_id"`
-	Status         string `bun:"status"`
-}
-
-// editionsOpenItems returns the open items (pending or in Pending review) of
-// the External games editions in the Job jobID, in id order.
-func editionsOpenItems(ctx context.Context, db bun.IDB, jobID string, editions []string) ([]openItem, error) {
-	var items []openItem
-	if err := db.NewRaw(`
-		SELECT id, external_game_id, status FROM job_items
-		WHERE job_id = ? AND external_game_id IN (?) AND status IN (?, ?)
-		ORDER BY id`,
-		jobID, bun.List(editions), models.JobItemStatusPending, models.JobItemStatusPendingReview,
-	).Scan(ctx, &items); err != nil {
-		return nil, fmt.Errorf("load the editions' items: %w", err)
-	}
-	return items, nil
-}
-
 // rematchUnlinkEditions removes the platform links of a set of editions and
 // applies the orphan rule to every user game their links sit on: one left with
 // no links from outside the set is orphaned, unless it is the user game of the
@@ -183,7 +136,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	// editions has an open item, preferring the game's own. Then everything
 	// runs in the module's transaction for that Job: the Job row lock first,
 	// then the editions, as a sync worker does, so the two cannot deadlock.
-	jobIDs, err := editionsOpenItemJobs(ctx, h.db, userID, id)
+	jobIDs, err := externalgame.EditionsOpenItemJobs(ctx, h.db, userID, id)
 	if err != nil {
 		slog.ErrorContext(reqCtx, "sync: rematch: find items", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to rematch external game")
@@ -240,11 +193,11 @@ func rematchEditions(ctx context.Context, tx bun.Tx, userID, id string, igdbID i
 	if err != nil {
 		return nil, abortHTTP(err)
 	}
-	ids := externalgame.IDs(set)
+	ids := externalgame.GameIDs(set)
 
-	var items []openItem
+	var items []externalgame.OpenItem
 	if jobID != "" {
-		if items, err = editionsOpenItems(ctx, tx, jobID, ids); err != nil {
+		if items, err = externalgame.EditionsOpenItems(ctx, tx, jobID, ids); err != nil {
 			return nil, err
 		}
 	}
@@ -315,7 +268,7 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		if err != nil {
 			return err
 		}
-		ids := externalgame.IDs(set)
+		ids := externalgame.GameIDs(set)
 		if _, err := tx.NewRaw(
 			`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE id IN (?)`, bun.List(ids),
 		).Exec(ctx); err != nil {
