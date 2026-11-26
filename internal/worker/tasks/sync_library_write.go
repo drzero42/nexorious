@@ -24,7 +24,7 @@ func WriteMatchedToLibrary(ctx context.Context, db bun.IDB, userID, id string) (
 	lw, err = externalgame.WriteToLibrary(ctx, db, userID, id)
 	if errors.Is(err, externalgame.ErrNoPlatforms) {
 		slog.WarnContext(ctx, "sync: external game has no platform rows; match recorded, nothing written to the library",
-			logging.KeyExternalGameID, id)
+			logging.KeyExternalGameID, id, logging.Cat(logging.CategoryValidation))
 		return lw, false, nil
 	}
 	if err != nil {

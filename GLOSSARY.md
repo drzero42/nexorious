@@ -79,6 +79,10 @@ _Avoid_: duplicate, related game
 The editions of an External game are the External games of the same user and storefront that have the same title, the same match and the same skip. Nothing stores which games are editions: two games are editions for as long as they agree. A sync gives a game without a decision the decision of the oldest same-title game that has one; Rematch, Skip and Unskip act on every edition; the storefront list shows the editions as one entry.
 _Avoid_: child game, parent, sibling, family
 
+**Set of editions**:
+An External game together with all its Editions. Rematch, Skip and Unskip act on the whole set, the storefront list shows it as one entry, and the review badge counts it once.
+_Avoid_: family, group, duplicates
+
 **Decision**:
 An External game's match and its skip, together. A game has a decision when it is matched or skipped, and none when it is neither. Editions share one decision.
 _Avoid_: resolution (the user's choice for an item in Pending review), item status (it never records a decision)
