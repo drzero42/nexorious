@@ -22,7 +22,7 @@ import (
 // syncKind is the sync Job kind on the lifecycle module (#1268): a dispatch
 // that adds the storefront library's games in batches, then match and write
 // per game. Whatever the module queues by itself for a sync item (Retry,
-// recovery, an item that stops waiting) is an igdb_match, whose fast paths
+// recovery) is an igdb_match, whose fast paths
 // send an already matched or skipped game on to the write stage.
 func syncKind() *joblifecycle.Kind {
 	return &joblifecycle.Kind{
@@ -42,33 +42,7 @@ func syncKind() *joblifecycle.Kind {
 		HasEffects: func(joblifecycle.Outcome) bool { return true },
 		Effects:    syncEffects,
 		Observer:   syncObserver{},
-		WaitsOn:    syncWaitsOn,
 	}
-}
-
-// syncWaitsOn is the sync kind's waiting hook: an item whose game currently
-// has a parent (a Child game) waits on the parent game's item in the same
-// Job, or on nothing when the parent has none.
-func syncWaitsOn(ctx context.Context, tx bun.Tx, q joblifecycle.WaitQuery) ([]joblifecycle.WaitEdge, error) {
-	query := `SELECT ji.id AS item_id, pi.id AS awaited_item_id
-		FROM job_items ji
-		JOIN external_games eg ON eg.id = ji.external_game_id
-		LEFT JOIN job_items pi ON pi.job_id = ji.job_id AND pi.external_game_id = eg.parent_id
-		WHERE ji.job_id = ? AND eg.parent_id IS NOT NULL`
-	args := []any{q.JobID}
-	if len(q.Items) > 0 {
-		query += ` AND ji.id IN (?)`
-		args = append(args, bun.List(q.Items))
-	}
-	if len(q.Awaited) > 0 {
-		query += ` AND pi.id IN (?)`
-		args = append(args, bun.List(q.Awaited))
-	}
-	var edges []joblifecycle.WaitEdge
-	if err := tx.NewRaw(query, args...).Scan(ctx, &edges); err != nil {
-		return nil, fmt.Errorf("sync waits on: %w", err)
-	}
-	return edges, nil
 }
 
 // syncFailure is the kind data of a failed sync. A Job failed by recovery

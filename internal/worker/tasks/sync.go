@@ -163,11 +163,13 @@ func upsertGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p Dispatch
 	return egID, isSkipped, err
 }
 
+// upsertExternalGame writes the fetched game and returns its id and whether
+// it is skipped. A game that is new here is not given a decision: its match
+// worker takes a same-title game's decision (precedent) or searches.
 func upsertExternalGame(ctx context.Context, db bun.IDB, e ExternalGameEntry, p DispatchSyncArgs) (egID string, isSkipped bool, err error) {
 	var row struct {
 		ID        string `bun:"id"`
 		IsSkipped bool   `bun:"is_skipped"`
-		IsNew     bool   `bun:"is_new"`
 	}
 	var sourceMetaJSON []byte
 	if len(e.SourceMetadata) > 0 {
@@ -183,45 +185,12 @@ func upsertExternalGame(ctx context.Context, db bun.IDB, e ExternalGameEntry, p 
 			source_metadata = COALESCE(EXCLUDED.source_metadata, external_games.source_metadata),
 			is_available = true,
 			updated_at = now()
-		RETURNING id, is_skipped, (xmax = 0) AS is_new`,
+		RETURNING id, is_skipped`,
 		uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
 		e.IsSubscription, e.OwnershipStatus, nullableJSON(sourceMetaJSON),
 	).Scan(ctx, &row); err != nil {
 		return "", false, fmt.Errorf("upsert external_game: %w", err)
 	}
-
-	if row.IsNew {
-		// A new edition of a known game becomes its child and takes its skip
-		// (#1339). Only a game a child can inherit from qualifies: top-level and
-		// available, matched or skipped. An unmatched, unskipped game that has
-		// left the library could never end a child's wait. The oldest wins. One
-		// statement, with the parent locked, so a skip committing in between is
-		// not missed.
-		var inheritedSkip bool
-		err := db.NewRaw(`
-			UPDATE external_games c
-			SET parent_id = p.id, is_skipped = p.is_skipped
-			FROM (
-			  SELECT id, is_skipped FROM external_games
-			  WHERE user_id = ? AND storefront = ? AND title = ?
-			    AND id != ? AND parent_id IS NULL
-			    AND (is_available OR resolved_igdb_id IS NOT NULL OR is_skipped)
-			  ORDER BY created_at, id
-			  LIMIT 1
-			  FOR SHARE
-			) p
-			WHERE c.id = ? AND c.parent_id IS NULL
-			RETURNING c.is_skipped`,
-			p.UserID, p.Storefront, e.Title, row.ID, row.ID,
-		).Scan(ctx, &inheritedSkip)
-		switch {
-		case err == nil:
-			row.IsSkipped = inheritedSkip
-		case !errors.Is(err, sql.ErrNoRows):
-			return "", false, fmt.Errorf("set parent_id: %w", err)
-		}
-	}
-
 	return row.ID, row.IsSkipped, nil
 }
 
@@ -260,18 +229,6 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyn
 	// hard-killed after marking done must not fetch the library again.
 	if _, err := w.LC.StartDispatch(ctx, p.JobID, rj.ID); err != nil {
 		return exitOrRetry(ctx, err)
-	}
-
-	// Child games (#1339): give every child its parent's skip, then promote the
-	// children of parents that left in an earlier sync, so a new edition in this
-	// fetch finds the promoted game as its parent. Failures are logged: the next
-	// dispatch repairs what this one missed.
-	if err := repairChildSkips(ctx, w.DB, p.UserID, p.Storefront); err != nil && ctx.Err() == nil {
-		slog.WarnContext(ctx, "dispatch_sync: repair child skips failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-	promoteOrphanedChildren(ctx, w.DB, p.UserID, p.Storefront)
-	if ctx.Err() != nil {
-		return ctx.Err()
 	}
 
 	var cfg models.UserSyncConfig
@@ -416,9 +373,6 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyn
 
 	w.sweep(ctx, p, fetchedIDs, seenPlatforms)
 
-	// Parents that left in this sync: promote their children (#1339).
-	promoteOrphanedChildren(ctx, w.DB, p.UserID, p.Storefront)
-
 	// The sweeps ran on ctx: if it was cancelled meanwhile they may not
 	// have run to the end, so the dispatch must not be marked done.
 	if ctx.Err() != nil {
@@ -427,8 +381,8 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyn
 
 	// Mark the dispatch done, with last_synced_at, last_fetched_at and the
 	// cleared credentials flag as this sync's own writes, after sync.recovered when
-	// this fetch ends an outage. The module then queues the items that can no
-	// longer wait and evaluates completion (an empty library completes here).
+	// this fetch ends an outage. The module then evaluates completion (an empty
+	// library completes here).
 	return exitOrRetry(ctx, w.LC.MarkDispatched(ctx, p.JobID, rj.ID, joblifecycle.Dispatched{
 		Own: func(ctx context.Context, tx bun.Tx) error {
 			if err := emitSyncRecovered(ctx, tx, p); err != nil {
@@ -574,9 +528,9 @@ func (IGDBMatchArgs) InsertOpts() river.InsertOpts {
 }
 
 // IGDBMatchWorker matches a sync item's game to IGDB, or hands it straight to
-// the write stage when it is already matched or skipped. It is also what the
-// module queues by itself for a sync item (Retry, recovery, an item that
-// stops waiting).
+// the write stage when it is already matched or skipped, or when a same-title
+// game has a decision it can take (precedent, #1449). It is also what the
+// module queues by itself for a sync item (Retry, recovery).
 type IGDBMatchWorker struct {
 	river.WorkerDefaults[IGDBMatchArgs]
 	DB         *bun.DB
@@ -584,11 +538,14 @@ type IGDBMatchWorker struct {
 	IGDBClient *igdbsvc.Client
 }
 
-// maxChildWaitTries bounds how often a child starts again from loading its
-// game: after it was told "cannot wait", or when its inherit found that the
-// game had changed since it was loaded (re-pointed to another parent, or
-// matched meanwhile). After that the error goes to River.
-const maxChildWaitTries = 4
+// errNoPrecedent rolls back a transition whose precedent was gone by the time
+// it ran (the other game's decision changed in between).
+var errNoPrecedent = errors.New("igdb_match: no same-title game has a decision any more")
+
+// errNoMatchToTake rolls back the completion of one same-title review: the
+// game's precedent is not a match (it is a skip, or the match is gone), so the
+// game keeps its item in review.
+var errNoMatchToTake = errors.New("igdb_match: no same-title match to take")
 
 func (w *IGDBMatchWorker) Work(ctx context.Context, rj *river.Job[IGDBMatchArgs]) error {
 	item, done, err := loadOwnedItem(ctx, w.DB, w.LC, rj.Args.JobItemID, rj.ID)
@@ -600,122 +557,63 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, rj *river.Job[IGDBMatchArgs]
 		return failItem(ctx, w.LC, item.ID, rj.ID, "external_game_id not set on job_item")
 	}
 
-	cannotWaitOn := ""
-	for range maxChildWaitTries {
-		var eg models.ExternalGame
-		if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if errors.Is(err, sql.ErrNoRows) {
-				return failItem(ctx, w.LC, item.ID, rj.ID, "external game not found")
-			}
-			return fmt.Errorf("igdb_match: load external game: %w", err)
+	var eg models.ExternalGame
+	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return failItem(ctx, w.LC, item.ID, rj.ID, "external game not found")
+		}
+		return fmt.Errorf("igdb_match: load external game: %w", err)
+	}
 
-		// Fast path: a skipped or matched game goes straight to the write stage.
-		if eg.IsSkipped || eg.ResolvedIGDBID != nil {
-			return w.toWrite(ctx, rj, item.ID, nil)
-		}
-		if eg.ParentID == nil {
-			return w.search(ctx, rj, item, &eg)
-		}
+	// Fast path: a skipped or matched game goes straight to the write stage.
+	if eg.IsSkipped || eg.ResolvedIGDBID != nil {
+		return w.toWrite(ctx, rj, item.ID, nil)
+	}
 
-		// A child of a parent that is matched now takes its match.
-		err := w.toWrite(ctx, rj, item.ID, inheritParentMatch(&eg))
-		if errors.Is(err, errChildChanged) {
-			// Loaded outside the transition: the game is no longer what
-			// was loaded. Decide again on the game as it is now (#1437).
-			slog.DebugContext(ctx, "igdb_match: child changed since it was loaded, loading it again",
-				logging.KeyJobItemID, item.ID, "parent_id", *eg.ParentID)
-			continue
+	// Precedent: a same-title game has a decision, so this game takes it and
+	// is not searched. Checked without a lock first; the take decides.
+	has, err := externalgame.HasPrecedent(ctx, w.DB, eg.ID)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
-		if !errors.Is(err, errParentUnmatched) {
-			return err
-		}
-		// Told "cannot wait" on this parent before and it is still
-		// unmatched: the child cannot follow it.
-		if *eg.ParentID == cannotWaitOn {
-			slog.InfoContext(ctx, "igdb_match: child cannot wait for its unmatched parent; item failed",
-				logging.KeyJobItemID, item.ID, "parent_id", *eg.ParentID)
-			return failItem(ctx, w.LC, item.ID, rj.ID, childUnmatchedParentMsg)
-		}
-		waiting, err := w.LC.Wait(ctx, item.ID, rj.ID)
-		if err != nil {
+		return fmt.Errorf("igdb_match: %w", err)
+	}
+	if has {
+		// NextStage directly, not toWrite: a precedent gone by now is not a
+		// refusal but a reason to search instead.
+		err := w.LC.NextStage(ctx, item.ID, rj.ID, joblifecycle.Stage{
+			Args: UserGameArgs{JobItemID: item.ID},
+			Own: func(ctx context.Context, tx bun.Tx) error {
+				took, err := externalgame.TakePrecedent(ctx, tx, eg.ID)
+				if err != nil {
+					return err
+				}
+				if !took {
+					return joblifecycle.Abort(errNoPrecedent)
+				}
+				return nil
+			},
+		})
+		if !errors.Is(err, errNoPrecedent) {
 			return exitOrRetry(ctx, err)
 		}
-		if waiting {
-			slog.DebugContext(ctx, "igdb_match: parent unmatched, waiting", logging.KeyJobItemID, item.ID, "parent_id", *eg.ParentID)
-			return nil
-		}
-		// Cannot wait: the parent's item has ended, or it has none and the
-		// dispatch is done, or the game is no longer a child. Decide on the
-		// game as it is now.
-		cannotWaitOn = *eg.ParentID
+		slog.DebugContext(ctx, "igdb_match: precedent gone before it was taken, searching", logging.KeyJobItemID, item.ID)
 	}
-	return fmt.Errorf("igdb_match: child game kept changing parent; retrying")
-}
-
-// errParentUnmatched rolls back an inherit whose parent has no match.
-var errParentUnmatched = errors.New("igdb_match: parent game is unmatched")
-
-// errChildChanged rolls back an inherit whose child is no longer what the
-// worker loaded: it has another parent, or it was matched meanwhile.
-var errChildChanged = errors.New("igdb_match: child game changed since it was loaded")
-
-// inheritParentMatch is the own write that gives a child its parent's match:
-// the parent is read FOR SHARE in the transition, so a child never takes a
-// match a rematch in progress is replacing, and the child only takes it while
-// it has none (#1338) and while that game is still its parent (#1437). The
-// child was loaded outside the transition, so a promotion may have re-pointed
-// it before the parent's lock was taken; once the parent is held FOR SHARE,
-// promotion cannot re-point it any more, so the update's parent_id check holds
-// until commit.
-func inheritParentMatch(eg *models.ExternalGame) joblifecycle.OwnWrite {
-	return func(ctx context.Context, tx bun.Tx) error {
-		var parentMatch *int32
-		if err := tx.NewRaw(
-			`SELECT resolved_igdb_id FROM external_games WHERE id = ? FOR SHARE`, *eg.ParentID,
-		).Scan(ctx, &parentMatch); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("lock parent: %w", err)
-		}
-		if parentMatch == nil {
-			return joblifecycle.Abort(errParentUnmatched)
-		}
-		if err := externalgame.EnsureGameRow(ctx, tx, *parentMatch, eg.Title); err != nil {
-			return err
-		}
-		res, err := tx.NewRaw(
-			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL AND parent_id = ?`,
-			*parentMatch, eg.ID, *eg.ParentID,
-		).Exec(ctx)
-		if err != nil {
-			return fmt.Errorf("apply child inherit: %w", err)
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("apply child inherit: rows affected: %w", err)
-		}
-		if n == 0 {
-			return joblifecycle.Abort(errChildChanged)
-		}
-		return nil
-	}
+	return w.search(ctx, rj, item, &eg)
 }
 
 // toWrite hands the item to the write stage, with own as the transition's
-// own write. errParentUnmatched and errChildChanged are returned as is, for
-// the caller to decide.
+// own write.
 func (w *IGDBMatchWorker) toWrite(ctx context.Context, rj *river.Job[IGDBMatchArgs], itemID string, own joblifecycle.OwnWrite) error {
-	err := w.LC.NextStage(ctx, itemID, rj.ID, joblifecycle.Stage{Args: UserGameArgs{JobItemID: itemID}, Own: own})
-	if errors.Is(err, errParentUnmatched) || errors.Is(err, errChildChanged) {
-		return err
-	}
-	return exitOrRetry(ctx, err)
+	return exitOrRetry(ctx, w.LC.NextStage(ctx, itemID, rj.ID, joblifecycle.Stage{Args: UserGameArgs{JobItemID: itemID}, Own: own}))
 }
 
-// search matches a top-level game through IGDB: a confident match goes to
-// the write stage, anything else to Pending review.
+// search matches a game through IGDB: a confident match goes to the write
+// stage, anything else to Pending review.
 func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArgs], item *models.JobItem, eg *models.ExternalGame) error {
 	if w.IGDBClient == nil || !w.IGDBClient.Configured() {
 		slog.DebugContext(ctx, "igdb_match: no IGDB client configured, marking pending_review", logging.KeyJobItemID, item.ID, "title", eg.Title)
@@ -756,21 +654,21 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 
 	if decision.Confident {
 		bestID := decision.ResolvedID
-		// The games row and the match are this transition's own writes. IS
-		// NULL: a rematch that committed during the search wins (#1338);
-		// either way the write stage writes whatever match the game has.
-		return w.toWrite(ctx, rj, item.ID, func(ctx context.Context, tx bun.Tx) error {
-			if err := externalgame.EnsureGameRow(ctx, tx, bestID, eg.Title); err != nil {
-				return err
-			}
-			if _, err := tx.NewRaw(
-				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ? AND resolved_igdb_id IS NULL`,
-				bestID, eg.ID,
-			).Exec(ctx); err != nil {
-				return fmt.Errorf("auto-resolve external_game: %w", err)
-			}
-			return nil
+		// The write stage writes whatever the game has after the own write.
+		var wroteMatch bool
+		err := w.toWrite(ctx, rj, item.ID, func(ctx context.Context, tx bun.Tx) (err error) {
+			wroteMatch, err = writeConfidentMatch(ctx, tx, eg, bestID)
+			return err
 		})
+		if err != nil {
+			return err
+		}
+		// wroteMatch is true only when the write committed: the module refuses
+		// before the own write runs, and any error after it is returned above.
+		if wroteMatch {
+			w.completeSameTitleReviews(ctx, item, eg)
+		}
+		return nil
 	}
 
 	candidatesJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling the candidates slice cannot fail
@@ -778,14 +676,115 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 	return w.toReview(ctx, rj, item.ID, eg.ID, candidatesJSON, &bs)
 }
 
-// toReview puts the item in Pending review, unless the game was matched
-// meanwhile (a rematch committed during the search): then it goes on to the
-// write stage. The game is read FOR SHARE in the transition, so a rematch in
-// progress is waited for (#1338).
+// writeConfidentMatch is the own write of a confident match: the game takes
+// an edition's decision made during the search if there is one (precedent
+// first), otherwise the search's match bestID. It reports whether it wrote
+// bestID. The write is guarded so a rematch or Skip that committed during the
+// search wins (#1338).
+func writeConfidentMatch(ctx context.Context, tx bun.Tx, eg *models.ExternalGame, bestID int32) (bool, error) {
+	took, err := externalgame.TakePrecedent(ctx, tx, eg.ID)
+	if err != nil || took {
+		return false, err
+	}
+	if err := externalgame.EnsureGameRow(ctx, tx, bestID, eg.Title); err != nil {
+		return false, err
+	}
+	res, err := tx.NewRaw(
+		`UPDATE external_games eg SET resolved_igdb_id = ?, updated_at = now() WHERE eg.id = ? AND `+externalgame.Undecided("eg"),
+		bestID, eg.ID,
+	).Exec(ctx)
+	if err != nil {
+		return false, fmt.Errorf("auto-resolve external_game: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("auto-resolve external_game: rows affected: %w", err)
+	}
+	return n > 0, nil
+}
+
+// completeSameTitleReviews completes the Pending review items of this game's same-title games
+// in this Job, now that a search matched it with confidence (the settle rule of
+// ADR 0008):
+// two editions are searched with different platform filters, so one can match
+// while the other went to review. Inside the module's transaction for the Job,
+// in id order, each such game without a decision takes the match by
+// precedent, is written to the library and its diff rows written, and its item
+// is returned for completion. A game whose precedent is a skip is left alone,
+// with its item in review. Best effort: it runs after the match committed, and
+// a failure is logged and leaves the items in review.
+func (w *IGDBMatchWorker) completeSameTitleReviews(ctx context.Context, item *models.JobItem, eg *models.ExternalGame) {
+	n, err := w.LC.CompleteByRematch(ctx, item.JobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
+		waiting, err := externalgame.UndecidedSameTitleInReview(ctx, tx, job.ID, eg.ID)
+		if err != nil {
+			return nil, err
+		}
+		done := make([]string, 0, len(waiting))
+		for _, wg := range waiting {
+			// A savepoint per game: one that cannot be written stays in review
+			// without taking the others with it.
+			err := tx.RunInTx(ctx, nil, func(ctx context.Context, sp bun.Tx) error {
+				took, err := externalgame.TakeMatchPrecedent(ctx, sp, wg.GameID)
+				if err != nil {
+					return err
+				}
+				if !took {
+					return errNoMatchToTake
+				}
+				lw, wrote, err := WriteMatchedToLibrary(ctx, sp, job.UserID, wg.GameID)
+				if err != nil || !wrote {
+					return err // not written (no platform rows): completed without diff rows
+				}
+				return InsertLibraryWriteChanges(ctx, sp, job.ID, job.UserID, lw, lw.Result.Created)
+			})
+			switch {
+			case err == nil:
+				done = append(done, wg.ItemID)
+			case errors.Is(err, errNoMatchToTake):
+				// Its oldest decision is a skip, or the match is gone: it stays
+				// in review for the user, which is not a failure.
+			default:
+				// The library write refuses a game it cannot write (validation);
+				// anything else is a database failure.
+				cat := logging.CategoryDB
+				if cannotWrite(err) {
+					cat = logging.CategoryValidation
+				}
+				slog.WarnContext(ctx, "igdb_match: completing a same-title review failed; its item stays in review",
+					logging.KeyExternalGameID, wg.GameID, logging.KeyErr, err, logging.Cat(cat))
+			}
+		}
+		return done, nil
+	})
+	switch {
+	case err == nil:
+		if n > 0 {
+			slog.DebugContext(ctx, "igdb_match: completed same-title reviews", logging.KeyJobItemID, item.ID, "count", n)
+		}
+	case errors.Is(err, joblifecycle.ErrJobNotActive), errors.Is(err, joblifecycle.ErrGone):
+		// The Job ended or was deleted meanwhile: no items left to complete.
+	default:
+		slog.WarnContext(ctx, "igdb_match: completing same-title reviews failed; they stay in review",
+			logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	}
+}
+
+// toReview puts the item in Pending review, unless the game has a decision by
+// now: a rematch committed during the search, or a same-title game was
+// decided and this game takes it (precedent). Then it goes on to the write
+// stage. The game's row is locked in the transition, so a rematch in progress
+// is waited for (#1338).
 func (w *IGDBMatchWorker) toReview(ctx context.Context, rj *river.Job[IGDBMatchArgs], itemID, externalGameID string, candidates json.RawMessage, confidence *float64) error {
 	return exitOrRetry(ctx, w.LC.AwaitReview(ctx, itemID, rj.ID, joblifecycle.Review{
 		Candidates: candidates, MatchConfidence: confidence,
 		Divert: func(ctx context.Context, tx bun.Tx) (river.JobArgs, error) {
+			took, err := externalgame.TakePrecedent(ctx, tx, externalGameID)
+			if err != nil {
+				return nil, err
+			}
+			if took {
+				return UserGameArgs{JobItemID: itemID}, nil
+			}
 			var resolved *int32
 			if err := tx.NewRaw(
 				`SELECT resolved_igdb_id FROM external_games WHERE id = ? FOR SHARE`, externalGameID,

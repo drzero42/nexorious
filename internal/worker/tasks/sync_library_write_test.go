@@ -20,7 +20,7 @@ import (
 func rematchInTx(t *testing.T, igdbID int32, egIDs ...string) (commit func()) {
 	t.Helper()
 	ctx := context.Background()
-	famEnsureGame(t, igdbID)
+	edEnsureGame(t, igdbID)
 	tx, err := testDB.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatalf("begin: %v", err)
@@ -71,14 +71,14 @@ func runBlocked(t *testing.T, f func() error, release func()) {
 
 func ugCountFor(t *testing.T, userID string, igdbID int32) int {
 	t.Helper()
-	return famCount(t, `SELECT COUNT(*) FROM user_games WHERE user_id = ? AND game_id = ?`, userID, igdbID)
+	return edCount(t, `SELECT COUNT(*) FROM user_games WHERE user_id = ? AND game_id = ?`, userID, igdbID)
 }
 
 func TestUserGameWorker_WritesTheMatchARematchCommittedMeanwhile(t *testing.T) {
-	userID := famSetup(t)
-	egID := famInsertGame(t, userID, famGame{extID: "1", available: true, resolved: 100})
-	jobID := famInsertJob(t, userID, "processing", true)
-	itemID := famInsertItem(t, jobID, userID, egID, "pending")
+	userID := edSetup(t)
+	egID := edInsertGame(t, userID, edGame{extID: "1", available: true, resolved: 100})
+	jobID := edInsertJob(t, userID, "processing", true)
+	itemID := edInsertItem(t, jobID, userID, egID, "pending")
 
 	commit := rematchInTx(t, 200, egID)
 	w := &tasks.UserGameWorker{DB: testDB, LC: newTestLC(t), RiverClient: newTestRiverClient(t)}
@@ -92,28 +92,29 @@ func TestUserGameWorker_WritesTheMatchARematchCommittedMeanwhile(t *testing.T) {
 	if n := ugCountFor(t, userID, 100); n != 0 {
 		t.Errorf("user games on the old match: want 0, got %d", n)
 	}
-	if s, _ := famItemStatus(t, itemID); s != "completed" {
+	if s, _ := edItemStatus(t, itemID); s != "completed" {
 		t.Errorf("item: want completed, got %s", s)
 	}
-	if n := famCount(t, `SELECT COUNT(*) FROM external_games WHERE id = ? AND library_written_at IS NOT NULL`, egID); n != 1 {
+	if n := edCount(t, `SELECT COUNT(*) FROM external_games WHERE id = ? AND library_written_at IS NOT NULL`, egID); n != 1 {
 		t.Error("library_written_at not set by the write")
 	}
 }
 
-func TestIGDBMatchWorker_ChildInheritsTheMatchOfARematchInProgress(t *testing.T) {
-	userID := famSetup(t)
-	parentID := famInsertGame(t, userID, famGame{extID: "p", available: true, resolved: 100})
-	childID := famInsertGame(t, userID, famGame{extID: "c", available: true, parent: parentID})
-	jobID := famInsertJob(t, userID, "processing", true)
-	itemID := famInsertItem(t, jobID, userID, childID, "pending")
+// A game taking precedent from a same-title game that a Rematch holds waits
+// for it and takes the Rematch's match, never the old one.
+func TestIGDBMatchWorker_PrecedentWaitsForARematchInProgress(t *testing.T) {
+	userID := edSetup(t)
+	decidedID := edInsertGame(t, userID, edGame{extID: "d", available: true, resolved: 100, age: time.Hour})
+	newID := edInsertGame(t, userID, edGame{extID: "n", available: true})
+	jobID := edInsertJob(t, userID, "processing", true)
+	itemID := edInsertItem(t, jobID, userID, newID, "pending")
 
-	// The rematch holds the parent's lock but has not reached the child yet.
-	commit := rematchInTx(t, 200, parentID)
+	commit := rematchInTx(t, 200, decidedID)
 	rc := newTestRiverClient(t)
-	runBlocked(t, func() error { return famMatch(t, rc, itemID) }, commit)
+	runBlocked(t, func() error { return edMatch(t, rc, itemID) }, commit)
 
-	if _, eg := famGet(t, userID, "c"); eg.Resolved == nil || *eg.Resolved != 200 {
-		t.Errorf("child match: want 200, got %v", eg.Resolved)
+	if _, eg := edGet(t, userID, "n"); eg.Resolved == nil || *eg.Resolved != 200 {
+		t.Errorf("new game's match: want 200, got %v", eg.Resolved)
 	}
 }
 
@@ -139,44 +140,44 @@ func igdbMatchWithSearchHook(t *testing.T, itemID string, results []map[string]a
 
 func setMatch(t *testing.T, egID string, igdbID int32) {
 	t.Helper()
-	famEnsureGame(t, igdbID)
+	edEnsureGame(t, igdbID)
 	if _, err := testDB.NewRaw(`UPDATE external_games SET resolved_igdb_id = ? WHERE id = ?`, igdbID, egID).Exec(context.Background()); err != nil {
 		t.Fatalf("set match: %v", err)
 	}
 }
 
 func TestIGDBMatchWorker_ConfidentMatchAfterRematch_KeepsTheRematch(t *testing.T) {
-	userID := famSetup(t)
-	egID := famInsertGame(t, userID, famGame{extID: "1", title: "Horizon", available: true})
-	jobID := famInsertJob(t, userID, "processing", true)
-	itemID := famInsertItem(t, jobID, userID, egID, "pending")
+	userID := edSetup(t)
+	egID := edInsertGame(t, userID, edGame{extID: "1", title: "Horizon", available: true})
+	jobID := edInsertJob(t, userID, "processing", true)
+	itemID := edInsertItem(t, jobID, userID, egID, "pending")
 
 	igdbMatchWithSearchHook(t, itemID,
 		[]map[string]any{{"id": 500, "name": "Horizon", "slug": "horizon"}},
 		func() { setMatch(t, egID, 200) })
 
-	if _, eg := famGet(t, userID, "1"); eg.Resolved == nil || *eg.Resolved != 200 {
+	if _, eg := edGet(t, userID, "1"); eg.Resolved == nil || *eg.Resolved != 200 {
 		t.Errorf("match: want the rematch's 200, got %v", eg.Resolved)
 	}
-	if n := famCount(t, `SELECT COUNT(*) FROM river_job WHERE kind = 'user_game_write' AND args->>'job_item_id' = ?`, itemID); n != 1 {
+	if n := edCount(t, `SELECT COUNT(*) FROM river_job WHERE kind = 'user_game_write' AND args->>'job_item_id' = ?`, itemID); n != 1 {
 		t.Errorf("user_game_write jobs: want 1, got %d", n)
 	}
 }
 
 func TestIGDBMatchWorker_LowConfidenceAfterRematch_GoesToTheWriteStage(t *testing.T) {
-	userID := famSetup(t)
-	egID := famInsertGame(t, userID, famGame{extID: "1", title: "Horizon", available: true})
-	jobID := famInsertJob(t, userID, "processing", true)
-	itemID := famInsertItem(t, jobID, userID, egID, "pending")
+	userID := edSetup(t)
+	egID := edInsertGame(t, userID, edGame{extID: "1", title: "Horizon", available: true})
+	jobID := edInsertJob(t, userID, "processing", true)
+	itemID := edInsertItem(t, jobID, userID, egID, "pending")
 
 	igdbMatchWithSearchHook(t, itemID,
 		[]map[string]any{{"id": 501, "name": "Something else", "slug": "x"}},
 		func() { setMatch(t, egID, 200) })
 
-	if s, _ := famItemStatus(t, itemID); s != "pending" {
+	if s, _ := edItemStatus(t, itemID); s != "pending" {
 		t.Errorf("item: want pending (on to the write stage), got %s", s)
 	}
-	if n := famCount(t, `SELECT COUNT(*) FROM river_job WHERE kind = 'user_game_write' AND args->>'job_item_id' = ?`, itemID); n != 1 {
+	if n := edCount(t, `SELECT COUNT(*) FROM river_job WHERE kind = 'user_game_write' AND args->>'job_item_id' = ?`, itemID); n != 1 {
 		t.Errorf("user_game_write jobs: want 1, got %d", n)
 	}
 }

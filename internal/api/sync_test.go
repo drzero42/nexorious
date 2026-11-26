@@ -480,19 +480,6 @@ func insertExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID,
 	}
 }
 
-// insertChildExternalGame inserts an external_game row with parent_id set.
-func insertChildExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID, title, parentID string) {
-	t.Helper()
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, false, true, false, ?, now(), now())`,
-		id, userID, storefront, extID, title, parentID,
-	)
-	if err != nil {
-		t.Fatalf("insertChildExternalGame: %v", err)
-	}
-}
-
 // insertExternalGamePlatform inserts a platform row for an external_game.
 func insertExternalGamePlatform(t *testing.T, db *bun.DB, egID, platform string) {
 	t.Helper()
@@ -620,86 +607,86 @@ func TestSkipGame_MarksJobItemSkippedAndCompletesJob(t *testing.T) {
 	}
 }
 
-func TestSkipGame_CascadesToChildren(t *testing.T) {
-	// Skipping a parent must also skip its children and their job_items.
+func TestSkipGame_SkipsEveryEdition(t *testing.T) {
+	// Skipping a game also skips its editions and their open job_items.
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "skip-cascade")
 
-	insertExternalGame(t, testDB, "eg-skip-parent", userID, "playstation-store", "CUSA001", "Horizon")
-	insertChildExternalGame(t, testDB, "eg-skip-child", userID, "playstation-store", "PPSA001", "Horizon", "eg-skip-parent")
+	insertExternalGame(t, testDB, "eg-skip-game", userID, "playstation-store", "CUSA001", "Horizon")
+	insertExternalGame(t, testDB, "eg-skip-edition", userID, "playstation-store", "PPSA001", "Horizon")
 	insertJob(t, testDB, "job-skip-cascade", userID, "sync", "playstation-store", "processing")
 
 	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES ('ji-skip-child', 'job-skip-cascade', ?, 'PPSA001', 'Horizon', 'eg-skip-child', '{}', 'pending_review', '{}', '[]', now())`,
+		 VALUES ('ji-skip-edition', 'job-skip-cascade', ?, 'PPSA001', 'Horizon', 'eg-skip-edition', '{}', 'pending_review', '{}', '[]', now())`,
 		userID,
 	)
 	if err != nil {
-		t.Fatalf("insert child job_item: %v", err)
+		t.Fatalf("insert edition job_item: %v", err)
 	}
 
-	rec := postJSONAuth(t, e, "/api/sync/ignored/eg-skip-parent", nil, token)
+	rec := postJSONAuth(t, e, "/api/sync/ignored/eg-skip-game", nil, token)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	ctx := context.Background()
 
-	// Child external_game must be skipped.
-	var childSkipped bool
-	if err := testDB.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-skip-child'`).Scan(ctx, &childSkipped); err != nil {
-		t.Fatalf("scan child is_skipped: %v", err)
+	// The other edition must be skipped.
+	var editionSkipped bool
+	if err := testDB.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-skip-edition'`).Scan(ctx, &editionSkipped); err != nil {
+		t.Fatalf("scan edition is_skipped: %v", err)
 	}
-	if !childSkipped {
-		t.Error("expected child external_game to be skipped")
+	if !editionSkipped {
+		t.Error("expected the other edition to be skipped")
 	}
 
-	// Child job_item must be skipped.
-	var childItemStatus string
-	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-skip-child'`).Scan(ctx, &childItemStatus); err != nil {
-		t.Fatalf("scan child job_item status: %v", err)
+	// The other edition's job_item must be skipped.
+	var editionItemStatus string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-skip-edition'`).Scan(ctx, &editionItemStatus); err != nil {
+		t.Fatalf("scan edition job_item status: %v", err)
 	}
-	if childItemStatus != "skipped" {
-		t.Errorf("expected child job_item status=skipped, got %q", childItemStatus)
+	if editionItemStatus != "skipped" {
+		t.Errorf("expected the other edition's job_item status=skipped, got %q", editionItemStatus)
 	}
 }
 
-func TestUnskipGame_CascadesToChildren(t *testing.T) {
-	// Unskipping a parent must also unskip its children.
+func TestUnskipGame_UnskipsEveryEdition(t *testing.T) {
+	// Unskipping a game also unskips its editions.
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "unskip-cascade")
 
-	// Insert parent and child, both pre-skipped.
+	// Two editions, both skipped.
 	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-unskip-parent', ?, 'playstation-store', 'CUSA002', 'Ratchet', true, true, false, now(), now())`,
+		 VALUES ('eg-unskip-game', ?, 'playstation-store', 'CUSA002', 'Ratchet', true, true, false, now(), now())`,
 		userID,
 	)
 	if err != nil {
-		t.Fatalf("insert parent: %v", err)
+		t.Fatalf("insert game: %v", err)
 	}
 	_, err = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
-		 VALUES ('eg-unskip-child', ?, 'playstation-store', 'PPSA002', 'Ratchet', true, true, false, 'eg-unskip-parent', now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
+		 VALUES ('eg-unskip-edition', ?, 'playstation-store', 'PPSA002', 'Ratchet', true, true, false, now(), now())`,
 		userID,
 	)
 	if err != nil {
-		t.Fatalf("insert child: %v", err)
+		t.Fatalf("insert edition: %v", err)
 	}
 
-	rec := deleteAuth(t, e, "/api/sync/ignored/eg-unskip-parent", token)
+	rec := deleteAuth(t, e, "/api/sync/ignored/eg-unskip-game", token)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var childSkipped bool
-	if err := testDB.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-unskip-child'`).Scan(context.Background(), &childSkipped); err != nil {
-		t.Fatalf("scan child is_skipped: %v", err)
+	var editionSkipped bool
+	if err := testDB.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-unskip-edition'`).Scan(context.Background(), &editionSkipped); err != nil {
+		t.Fatalf("scan edition is_skipped: %v", err)
 	}
-	if childSkipped {
-		t.Error("expected child external_game to be unskipped after parent unskip")
+	if editionSkipped {
+		t.Error("expected the other edition to be unskipped")
 	}
 }
 
@@ -1026,14 +1013,14 @@ func TestListExternalGames_IsolatedByUser(t *testing.T) {
 	}
 }
 
-func TestListExternalGames_ExcludesChildren(t *testing.T) {
-	// A child row (parent_id IS NOT NULL) must never appear in the list.
+func TestListExternalGames_OneEntryPerSetOfEditions(t *testing.T) {
+	// Two editions are one entry: the oldest.
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "list-excludes-children")
+	userID, token := setupTagUser(t, testDB, e, "list-one-entry")
 
-	insertExternalGame(t, testDB, "eg-parent-1", userID, "playstation-store", "CUSA001", "Horizon")
-	insertChildExternalGame(t, testDB, "eg-child-1", userID, "playstation-store", "PPSA001", "Horizon", "eg-parent-1")
+	insertExternalGame(t, testDB, "eg-ed-1", userID, "playstation-store", "CUSA001", "Horizon")
+	insertExternalGame(t, testDB, "eg-ed-2", userID, "playstation-store", "PPSA001", "Horizon")
 
 	rec := getAuth(t, e, "/api/sync/playstation-store/external-games", token)
 	if rec.Code != http.StatusOK {
@@ -1044,23 +1031,23 @@ func TestListExternalGames_ExcludesChildren(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if len(resp) != 1 {
-		t.Fatalf("expected 1 result (parent only), got %d", len(resp))
+		t.Fatalf("expected 1 result (one entry for both editions), got %d", len(resp))
 	}
-	if resp[0]["id"] != "eg-parent-1" {
-		t.Errorf("expected parent row, got id=%v", resp[0]["id"])
+	if resp[0]["id"] != "eg-ed-1" {
+		t.Errorf("expected the oldest edition, got id=%v", resp[0]["id"])
 	}
 }
 
-func TestListExternalGames_AggregatesChildPlatforms(t *testing.T) {
-	// The parent entry must include platform slugs from child rows.
+func TestListExternalGames_AggregatesEditionPlatforms(t *testing.T) {
+	// The entry includes the platform slugs of every edition.
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "list-agg-platforms")
 
-	insertExternalGame(t, testDB, "eg-par-2", userID, "playstation-store", "CUSA002", "God of War")
-	insertExternalGamePlatform(t, testDB, "eg-par-2", "playstation-4")
-	insertChildExternalGame(t, testDB, "eg-chi-2", userID, "playstation-store", "PPSA002", "God of War", "eg-par-2")
-	insertExternalGamePlatform(t, testDB, "eg-chi-2", "playstation-5")
+	insertExternalGame(t, testDB, "eg-gow-1", userID, "playstation-store", "CUSA002", "God of War")
+	insertExternalGamePlatform(t, testDB, "eg-gow-1", "playstation-4")
+	insertExternalGame(t, testDB, "eg-gow-2", userID, "playstation-store", "PPSA002", "God of War")
+	insertExternalGamePlatform(t, testDB, "eg-gow-2", "playstation-5")
 
 	rec := getAuth(t, e, "/api/sync/playstation-store/external-games", token)
 	if rec.Code != http.StatusOK {
@@ -1252,32 +1239,31 @@ func TestRematchExternalGame_RemoveOrphan(t *testing.T) {
 	}
 }
 
-func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
-	// Rematching a parent must cascade resolved_igdb_id to children via parent_id,
-	// not title search. A second game with the same title but different user must NOT
-	// be affected.
+func TestRematchExternalGame_ActsOnTheUsersEditionsOnly(t *testing.T) {
+	// Rematching a game gives its editions the match too. A game with the same
+	// title of another user is not an edition and must NOT be affected.
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userA, tokenA := setupTagUser(t, testDB, e, "rm-fk-userA")
 	userB, _ := setupTagUser(t, testDB, e, "rm-fk-userB")
 
-	// User A: parent + child, same title.
-	insertExternalGame(t, testDB, "eg-fk-parent", userA, "playstation-store", "CUSA100", "Spider-Man")
-	insertChildExternalGame(t, testDB, "eg-fk-child", userA, "playstation-store", "PPSA100", "Spider-Man", "eg-fk-parent")
+	// User A: two editions.
+	insertExternalGame(t, testDB, "eg-fk-a", userA, "playstation-store", "CUSA100", "Spider-Man")
+	insertExternalGame(t, testDB, "eg-fk-b", userA, "playstation-store", "PPSA100", "Spider-Man")
 	insertJob(t, testDB, "job-fk", userA, "sync", "playstation-store", "processing")
 	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES ('ji-fk-child', 'job-fk', ?, 'PPSA100', 'Spider-Man', 'eg-fk-child', '{}', 'pending', '{}', '[]', now())`,
+		 VALUES ('ji-fk-b', 'job-fk', ?, 'PPSA100', 'Spider-Man', 'eg-fk-b', '{}', 'pending', '{}', '[]', now())`,
 		userA,
 	)
 	if err != nil {
-		t.Fatalf("insert child job_item: %v", err)
+		t.Fatalf("insert the other edition's job_item: %v", err)
 	}
 
 	// User B: unrelated game with same title — must NOT be touched.
 	insertExternalGame(t, testDB, "eg-fk-other", userB, "playstation-store", "CUSA200", "Spider-Man")
 
-	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-fk-parent/rematch",
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-fk-a/rematch",
 		map[string]any{"igdb_id": 4242}, tokenA)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
@@ -1285,13 +1271,13 @@ func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Child must have inherited resolved_igdb_id.
-	var childResolved *int32
-	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-fk-child'`).Scan(ctx, &childResolved); err != nil {
-		t.Fatalf("scan child resolved_igdb_id: %v", err)
+	// The other edition must have the match.
+	var editionResolved *int32
+	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-fk-b'`).Scan(ctx, &editionResolved); err != nil {
+		t.Fatalf("scan edition resolved_igdb_id: %v", err)
 	}
-	if childResolved == nil || *childResolved != 4242 {
-		t.Errorf("child resolved_igdb_id: want 4242, got %v", childResolved)
+	if editionResolved == nil || *editionResolved != 4242 {
+		t.Errorf("other edition's resolved_igdb_id: want 4242, got %v", editionResolved)
 	}
 
 	// User B's game must NOT have been touched.
@@ -1303,14 +1289,14 @@ func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
 		t.Errorf("other user's game must not be resolved, got %v", *otherResolved)
 	}
 
-	// The child's item was waiting for this rematch: the rematch writes the
-	// child and completes the item itself, queueing no worker (#1338).
-	var childStatus string
-	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-fk-child'`).Scan(ctx, &childStatus); err != nil {
-		t.Fatalf("scan child item: %v", err)
+	// The other edition's open item: the rematch writes that edition and
+	// completes the item itself, queueing no worker (#1338).
+	var editionStatus string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-fk-b'`).Scan(ctx, &editionStatus); err != nil {
+		t.Fatalf("scan edition item: %v", err)
 	}
-	if childStatus != "completed" {
-		t.Errorf("child item: want completed, got %q", childStatus)
+	if editionStatus != "completed" {
+		t.Errorf("other edition's item: want completed, got %q", editionStatus)
 	}
 	var riverJobs int
 	if err := testDB.NewRaw(`SELECT COUNT(*) FROM river_job WHERE kind IN ('user_game_write', 'igdb_match')`).Scan(ctx, &riverJobs); err != nil {
@@ -1387,10 +1373,10 @@ func TestRematchExternalGame_MultiPlatformOrphanRemove(t *testing.T) {
 	}
 }
 
-// TestRematchExternalGame_SiblingAlreadyMatchedWrong reproduces the bug where
-// rematching one platform variant of a game leaves sibling variants on the
-// wrong match because the sibling query filtered resolved_igdb_id IS NULL.
-func TestRematchExternalGame_SiblingAlreadyMatchedWrong(t *testing.T) {
+// TestRematchExternalGame_EditionAlreadyMatchedWrong: rematching one edition
+// of a game must not leave the other editions on the wrong match (an old bug:
+// the lookup of the other editions filtered resolved_igdb_id IS NULL).
+func TestRematchExternalGame_EditionAlreadyMatchedWrong(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-sib-wrong")
@@ -1403,7 +1389,7 @@ func TestRematchExternalGame_SiblingAlreadyMatchedWrong(t *testing.T) {
 		t.Fatalf("insert wrong game: %v", err)
 	}
 	insertExternalGame(t, testDB, "eg-aw-win", userID, "steam", "2100", "Another World")
-	insertChildExternalGame(t, testDB, "eg-aw-lin", userID, "steam", "2101", "Another World", "eg-aw-win")
+	insertExternalGame(t, testDB, "eg-aw-lin", userID, "steam", "2101", "Another World")
 	if _, err := testDB.ExecContext(context.Background(),
 		`UPDATE external_games SET resolved_igdb_id = 1111 WHERE id IN ('eg-aw-win', 'eg-aw-lin')`); err != nil {
 		t.Fatalf("set wrong match: %v", err)

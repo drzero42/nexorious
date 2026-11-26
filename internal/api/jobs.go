@@ -257,9 +257,10 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 	}
 
 	// Import items in Pending review are counted per item, whatever their
-	// Job's status. Sync review is counted per top-level External game by the
-	// storefront list's needs_review rule (sync_view.go), so the badge and the
-	// list agree (#1338); a sync item whose game is gone is not counted.
+	// Job's status. Sync review is counted per set of editions, from the
+	// same sets as the storefront list (syncEditionSets), so the badge and the
+	// list agree (#1338, #1449): a set counts when it is listed as needing
+	// review. A sync item whose game is gone is not counted.
 	var rows []sourceCount
 	err := h.db.NewRaw(`
 		SELECT j.source, COUNT(*) AS count
@@ -268,13 +269,13 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 		WHERE ji.user_id = ? AND ji.status = ? AND j.job_type <> 'sync'
 		GROUP BY j.source
 		UNION ALL
-		SELECT eg.storefront AS source, COUNT(*) AS count
-		FROM external_games eg
-		`+syncNewestItemJoin+`
-		WHERE eg.user_id = ? AND eg.parent_id IS NULL
-		  AND `+syncNeedsReview+`
-		  AND NOT `+syncInFlight+`
-		GROUP BY eg.storefront`,
+		SELECT source, COUNT(*) AS count FROM (
+			`+syncEditionSets(`eg.user_id = ?`)+`
+			SELECT r.storefront AS source
+			FROM edition_sets s JOIN edition_rows r ON r.id = s.rep_id
+			WHERE `+syncSetInReview+`
+		) sets
+		GROUP BY source`,
 		userID, models.JobItemStatusPendingReview, userID,
 	).Scan(context.Background(), &rows)
 	if err != nil {

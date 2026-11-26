@@ -14,7 +14,10 @@ import (
 
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
+	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -28,6 +31,7 @@ type rmFixture struct {
 	}
 	userID string
 	token  string
+	seq    int // games inserted later are younger
 }
 
 func newRM(t *testing.T, name string) *rmFixture {
@@ -67,20 +71,26 @@ func (f *rmFixture) igdbGame(id int) {
 	f.exec(`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Game', now(), now()) ON CONFLICT DO NOTHING`, id)
 }
 
-// game inserts an external game. platform "" means no platform rows.
-func (f *rmFixture) game(id, parent string, resolved int, skipped bool, platform string) {
+// game inserts an External game titled Spider-Man, so the games a test
+// inserts with the same match and skip are editions of each other. platform
+// "" means no platform rows. Each game is younger than the one before.
+func (f *rmFixture) game(id string, resolved int, skipped bool, platform string) {
 	f.t.Helper()
-	var p, r any
-	if parent != "" {
-		p = parent
-	}
+	f.titled(id, "Spider-Man", resolved, skipped, platform)
+}
+
+// titled is game with another title.
+func (f *rmFixture) titled(id, title string, resolved int, skipped bool, platform string) {
+	f.t.Helper()
+	var r any
 	if resolved != 0 {
 		f.igdbGame(resolved)
 		r = resolved
 	}
-	f.exec(`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, resolved_igdb_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'Spider-Man', ?, true, false, ?, ?, now(), now())`,
-		id, f.userID, rmStore, id, skipped, p, r)
+	f.seq++
+	f.exec(`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, true, false, ?, now() - interval '1 day' + ? * interval '1 second', now())`,
+		id, f.userID, rmStore, id, title, skipped, r, f.seq)
 	if platform != "" {
 		f.exec(`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, ?, 0, now())`,
 			id+"-p", id, platform)
@@ -151,7 +161,7 @@ func (f *rmFixture) workerJobs() int {
 
 func TestRematch_EndedSync_WritesLibraryAndLeavesTheItem(t *testing.T) {
 	f := newRM(t, "rm-ended")
-	f.game("eg", "", 100, false, "playstation-4")
+	f.game("eg", 100, false, "playstation-4")
 	f.link("ug-old", 100, "eg", "playstation-4")
 	f.link("ug-old", 100, "", "playstation-5") // another link keeps ug-old from being orphaned
 	f.job("job", "completed")
@@ -184,7 +194,7 @@ func TestRematch_EndedSync_WritesLibraryAndLeavesTheItem(t *testing.T) {
 
 func TestRematch_PendingReview_CompletesItemAndJob(t *testing.T) {
 	f := newRM(t, "rm-review")
-	f.game("eg", "", 0, false, "playstation-4")
+	f.game("eg", 0, false, "playstation-4")
 	f.job("job", "processing")
 	f.item("ji", "job", "eg", "pending_review", 0)
 
@@ -206,7 +216,7 @@ func TestRematch_PendingReview_CompletesItemAndJob(t *testing.T) {
 
 func TestRematch_PendingReview_NoPlatformRows_CompletesItemWithoutChange(t *testing.T) {
 	f := newRM(t, "rm-noplat")
-	f.game("eg", "", 0, false, "")
+	f.game("eg", 0, false, "")
 	f.job("job", "processing")
 	f.item("ji", "job", "eg", "pending_review", 0)
 
@@ -224,10 +234,10 @@ func TestRematch_PendingReview_NoPlatformRows_CompletesItemWithoutChange(t *test
 }
 
 // Rematch is refused only while the game's own item is pending: the sync is
-// not done with it. A child's open item does not refuse it.
+// not done with it. Another edition's open item does not refuse it.
 func TestRematch_RefusedWhileTheGamesOwnItemIsPending(t *testing.T) {
 	f := newRM(t, "rm-409")
-	f.game("eg", "", 100, false, "playstation-4")
+	f.game("eg", 100, false, "playstation-4")
 	job := newSyncJob(t, newTestLifecycle(t), f.userID, rmStore)
 	job.add(t, f.userID, "eg")
 
@@ -241,32 +251,32 @@ func TestRematch_RefusedWhileTheGamesOwnItemIsPending(t *testing.T) {
 	}
 }
 
-// A child's igdb_match still queued when its parent is rematched: the child's
+// Another edition's igdb_match still queued when the game is rematched: that
 // item completes with the rematch and its River job is cancelled, so the
 // worker writes nothing.
-func TestRematch_ChildWorkQueued_CompletesItAndCancelsItsRiverJob(t *testing.T) {
-	f := newRM(t, "rm-child-queued")
-	f.game("eg", "", 0, false, "playstation-4")
-	f.game("ch", "eg", 0, false, "playstation-5")
+func TestRematch_EditionWorkQueued_CompletesItAndCancelsItsRiverJob(t *testing.T) {
+	f := newRM(t, "rm-edition-queued")
+	f.game("eg", 0, false, "playstation-4")
+	f.game("ed", 0, false, "playstation-5")
 	lc := newTestLifecycle(t)
 	job := newSyncJob(t, lc, f.userID, rmStore)
-	ids := job.add(t, f.userID, "eg", "ch")
+	ids := job.add(t, f.userID, "eg", "ed")
 	job.done(t)
-	parentItem, childItem := ids[0], ids[1]
-	if err := lc.AwaitReview(context.Background(), parentItem, itemOwnerID(t, parentItem), joblifecycle.Review{}); err != nil {
+	ownItem, otherItem := ids[0], ids[1]
+	if err := lc.AwaitReview(context.Background(), ownItem, itemOwnerID(t, ownItem), joblifecycle.Review{}); err != nil {
 		t.Fatal(err)
 	}
-	childOwner := itemOwnerID(t, childItem)
+	otherOwner := itemOwnerID(t, otherItem)
 
 	wantCode(t, f.rematch("eg", 200, ""), http.StatusNoContent)
 
-	for _, id := range []string{parentItem, childItem} {
+	for _, id := range []string{ownItem, otherItem} {
 		if s := f.itemStatus(id); s != "completed" {
 			t.Errorf("item %s: want completed, got %s", id, s)
 		}
 	}
-	if s := riverJobState(t, testDB, childOwner); s != "cancelled" {
-		t.Errorf("child's igdb_match: want cancelled, got %s", s)
+	if s := riverJobState(t, testDB, otherOwner); s != "cancelled" {
+		t.Errorf("the other edition's igdb_match: want cancelled, got %s", s)
 	}
 	if s := f.str(`SELECT status FROM jobs WHERE id = ?`, job.ID); s != "completed" {
 		t.Errorf("job: want completed, got %s", s)
@@ -274,33 +284,46 @@ func TestRematch_ChildWorkQueued_CompletesItAndCancelsItsRiverJob(t *testing.T) 
 	// The cancelled worker, run anyway, is refused before it writes.
 	w := &tasks.IGDBMatchWorker{DB: testDB, LC: lc}
 	if err := w.Work(context.Background(), &river.Job[tasks.IGDBMatchArgs]{
-		JobRow: &rivertype.JobRow{ID: childOwner, Attempt: 1, MaxAttempts: 5},
-		Args:   tasks.IGDBMatchArgs{JobItemID: childItem},
+		JobRow: &rivertype.JobRow{ID: otherOwner, Attempt: 1, MaxAttempts: 5},
+		Args:   tasks.IGDBMatchArgs{JobItemID: otherItem},
 	}); err != nil {
 		t.Fatalf("late worker: %v", err)
 	}
-	if s := f.itemStatus(childItem); s != "completed" {
-		t.Errorf("late worker changed the child item: %s", s)
+	if s := f.itemStatus(otherItem); s != "completed" {
+		t.Errorf("late worker changed the other item: %s", s)
 	}
 }
 
-func TestRematch_ParentInReviewWithWaitingChild_CompletesBoth(t *testing.T) {
-	f := newRM(t, "rm-wait")
-	f.game("eg", "", 0, false, "playstation-4")
-	f.game("ch", "eg", 0, false, "playstation-5")
+// Two editions in review are one entry and count once on the badge; one
+// Rematch completes both items and the Job and writes both onto one library
+// game, with one 'added' row.
+func TestRematch_TwoEditionsInReview_OneEntryOneRematch(t *testing.T) {
+	f := newRM(t, "rm-two-review")
+	f.game("eg", 0, false, "playstation-4")
+	f.game("ed", 0, false, "playstation-5")
 	f.job("job", "processing")
 	f.item("ji", "job", "eg", "pending_review", 0)
-	f.item("ji-ch", "job", "ch", "pending", 0)
+	f.item("ji-ed", "job", "ed", "pending_review", 0)
 
-	wantCode(t, f.rematch("eg", 200, ""), http.StatusNoContent)
+	if l := f.list(); len(l) != 1 || l["eg"].SyncStatus != "needs_review" {
+		t.Fatalf("list = %+v, want one entry eg in needs_review", l)
+	}
+	if n := f.badge(); n != 1 {
+		t.Errorf("badge: want 1, got %d", n)
+	}
 
-	for _, id := range []string{"ji", "ji-ch"} {
+	wantCode(t, f.rematch("ed", 200, ""), http.StatusNoContent)
+
+	for _, id := range []string{"ji", "ji-ed"} {
 		if s := f.itemStatus(id); s != "completed" {
 			t.Errorf("%s: want completed, got %s", id, s)
 		}
 	}
-	if n := f.onGame("ch", 200); n != 1 {
-		t.Errorf("child link on the new match: want 1, got %d", n)
+	if n := f.onGame("eg", 200) + f.onGame("ed", 200); n != 2 {
+		t.Errorf("links on the new match: want 2, got %d", n)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM user_games WHERE user_id = ?`, f.userID); n != 1 {
+		t.Errorf("user games: want 1, got %d", n)
 	}
 	// One added row for the Job, not one per edition.
 	if n := f.count(`SELECT COUNT(*) FROM changes WHERE job_id = 'job' AND change_type = 'added'`); n != 1 {
@@ -309,27 +332,32 @@ func TestRematch_ParentInReviewWithWaitingChild_CompletesBoth(t *testing.T) {
 	if s := f.str(`SELECT status FROM jobs WHERE id = 'job'`); s != "completed" {
 		t.Errorf("job: want completed, got %s", s)
 	}
+	if n := f.badge(); n != 0 {
+		t.Errorf("badge after the rematch: want 0, got %d", n)
+	}
 }
 
-func TestRematch_ParentWithoutItemOrFailed_CompletesWaitingChild(t *testing.T) {
-	for _, parentItem := range []string{"", "failed"} {
-		t.Run("parent item="+parentItem, func(t *testing.T) {
-			f := newRM(t, "rm-orphan-child")
-			f.game("eg", "", 0, false, "playstation-4")
-			f.game("ch", "eg", 0, false, "playstation-5")
+// The given game has no open item (none, or a failed one); another edition's
+// pending item is completed by the Rematch.
+func TestRematch_OtherEditionsPendingItem_IsCompleted(t *testing.T) {
+	for _, ownItem := range []string{"", "failed"} {
+		t.Run("own item="+ownItem, func(t *testing.T) {
+			f := newRM(t, "rm-other-pending")
+			f.game("eg", 0, false, "playstation-4")
+			f.game("ed", 0, false, "playstation-5")
 			f.job("job", "processing")
-			if parentItem != "" {
-				f.item("ji", "job", "eg", parentItem, 0)
+			if ownItem != "" {
+				f.item("ji", "job", "eg", ownItem, 0)
 			}
-			f.item("ji-ch", "job", "ch", "pending", 0)
+			f.item("ji-ed", "job", "ed", "pending", 0)
 
 			wantCode(t, f.rematch("eg", 200, ""), http.StatusNoContent)
 
-			if s := f.itemStatus("ji-ch"); s != "completed" {
-				t.Errorf("child item: want completed, got %s", s)
+			if s := f.itemStatus("ji-ed"); s != "completed" {
+				t.Errorf("the other edition's item: want completed, got %s", s)
 			}
-			if n := f.count(`SELECT COUNT(*) FROM changes WHERE job_id = 'job' AND external_game_id = 'ch' AND change_type = 'added'`); n != 1 {
-				t.Errorf("added change for the child: want 1, got %d", n)
+			if n := f.count(`SELECT COUNT(*) FROM changes WHERE job_id = 'job' AND external_game_id = 'ed' AND change_type = 'added'`); n != 1 {
+				t.Errorf("added change for the other edition: want 1, got %d", n)
 			}
 			if s := f.str(`SELECT status FROM jobs WHERE id = 'job'`); s != "completed" {
 				t.Errorf("job: want completed, got %s", s)
@@ -340,7 +368,7 @@ func TestRematch_ParentWithoutItemOrFailed_CompletesWaitingChild(t *testing.T) {
 
 func TestRematch_CompletesReviewItemInAnOlderReopenedJob(t *testing.T) {
 	f := newRM(t, "rm-reopened")
-	f.game("eg", "", 0, false, "playstation-4")
+	f.game("eg", 0, false, "playstation-4")
 	f.job("old", "processing") // reopened by retry
 	f.item("ji-old", "old", "eg", "pending_review", 48*time.Hour)
 	f.job("new", "completed")
@@ -358,7 +386,7 @@ func TestRematch_CompletesReviewItemInAnOlderReopenedJob(t *testing.T) {
 
 func TestRematch_RacingASkip_DoesNotCompleteTheSkippedItem(t *testing.T) {
 	f := newRM(t, "rm-skip-race")
-	f.game("eg", "", 0, false, "playstation-4")
+	f.game("eg", 0, false, "playstation-4")
 	f.job("job", "processing")
 	f.item("ji", "job", "eg", "pending_review", 0)
 	ctx := context.Background()
@@ -391,51 +419,54 @@ func TestRematch_RacingASkip_DoesNotCompleteTheSkippedItem(t *testing.T) {
 	}
 }
 
-func TestRematch_MovesChildLinksToTheNewGame(t *testing.T) {
+func TestRematch_MovesEveryEditionsLinks(t *testing.T) {
 	f := newRM(t, "rm-move")
-	f.game("eg", "", 100, false, "playstation-4")
-	f.game("ch", "eg", 100, false, "playstation-5")
+	f.game("eg", 100, false, "playstation-4")
+	f.game("ed", 100, false, "playstation-5")
 	f.link("ug-old", 100, "eg", "playstation-4")
-	f.link("ug-old", 100, "ch", "playstation-5")
+	f.link("ug-old", 100, "ed", "playstation-5")
 
-	// The child's link is the parent's only other link: that is no other link.
+	// The other edition's link is the game's only other link: that is no
+	// other link.
 	wantCode(t, f.rematch("eg", 200, ""), http.StatusConflict)
-	if n := f.onGame("ch", 100); n != 1 {
+	if n := f.onGame("ed", 100); n != 1 {
 		t.Fatal("refused rematch changed the links")
 	}
 
 	wantCode(t, f.rematch("eg", 200, "keep"), http.StatusNoContent)
-	if n := f.onGame("ch", 100); n != 0 {
-		t.Errorf("child links left on the old game: %d", n)
+	if n := f.onGame("ed", 100); n != 0 {
+		t.Errorf("edition links left on the old game: %d", n)
 	}
-	if n := f.onGame("ch", 200); n != 1 {
-		t.Errorf("child links on the new game: want 1, got %d", n)
+	if n := f.onGame("ed", 200); n != 1 {
+		t.Errorf("edition links on the new game: want 1, got %d", n)
 	}
 	if n := f.count(`SELECT COUNT(*) FROM user_games WHERE id = 'ug-old'`); n != 1 {
 		t.Error("keep removed the old user game")
 	}
 }
 
-func TestRematch_FamilySplitOverTwoUserGames_AppliesTheActionToEach(t *testing.T) {
+// Editions whose links sit on two library games (an edition's link left on a
+// game it is no longer matched to): the orphan action applies to each.
+func TestRematch_EditionsOnTwoUserGames_AppliesTheActionToEach(t *testing.T) {
 	f := newRM(t, "rm-split")
-	f.game("eg", "", 100, false, "playstation-4")
-	f.game("ch", "eg", 101, false, "playstation-5")
+	f.game("eg", 100, false, "playstation-4")
+	f.game("ed", 100, false, "playstation-5")
 	f.link("ug-a", 100, "eg", "playstation-4")
-	f.link("ug-b", 101, "ch", "playstation-5")
+	f.link("ug-b", 101, "ed", "playstation-5")
 
 	wantCode(t, f.rematch("eg", 200, "remove"), http.StatusNoContent)
 
 	if n := f.count(`SELECT COUNT(*) FROM user_games WHERE id IN ('ug-a', 'ug-b')`); n != 0 {
 		t.Errorf("orphaned user games left: %d", n)
 	}
-	if n := f.onGame("eg", 200) + f.onGame("ch", 200); n != 2 {
-		t.Errorf("family links on the new game: want 2, got %d", n)
+	if n := f.onGame("eg", 200) + f.onGame("ed", 200); n != 2 {
+		t.Errorf("edition links on the new game: want 2, got %d", n)
 	}
 }
 
 func TestRematch_ToTheCurrentGameWithRemove_KeepsTheUserGame(t *testing.T) {
 	f := newRM(t, "rm-same")
-	f.game("eg", "", 100, false, "playstation-4")
+	f.game("eg", 100, false, "playstation-4")
 	f.link("ug", 100, "eg", "playstation-4")
 
 	wantCode(t, f.rematch("eg", 100, "remove"), http.StatusNoContent)
@@ -448,77 +479,100 @@ func TestRematch_ToTheCurrentGameWithRemove_KeepsTheUserGame(t *testing.T) {
 	}
 }
 
-func TestRematch_SkippedFamily_IsUnskippedAndMatched(t *testing.T) {
+func TestRematch_SkippedEditions_AreUnskippedAndMatched(t *testing.T) {
 	f := newRM(t, "rm-skipped")
-	f.game("eg", "", 0, true, "playstation-4")
-	f.game("ch", "eg", 0, true, "playstation-5")
+	f.game("eg", 0, true, "playstation-4")
+	f.game("ed", 0, true, "playstation-5")
 
 	wantCode(t, f.rematch("eg", 200, ""), http.StatusNoContent)
 
-	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id IN ('eg', 'ch') AND NOT is_skipped AND resolved_igdb_id = 200`); n != 2 {
-		t.Errorf("unskipped and matched family members: want 2, got %d", n)
+	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id IN ('eg', 'ed') AND NOT is_skipped AND resolved_igdb_id = 200`); n != 2 {
+		t.Errorf("unskipped and matched editions: want 2, got %d", n)
 	}
 }
 
-func TestRematchUnskipSkip_ChildGame_Is400(t *testing.T) {
-	f := newRM(t, "rm-child-400")
-	f.game("eg", "", 0, false, "playstation-4")
-	f.game("ch", "eg", 0, true, "playstation-5")
-	wantCode(t, f.rematch("ch", 200, ""), http.StatusBadRequest)
-	wantCode(t, f.unskip("ch"), http.StatusBadRequest)
+// Rematch, Skip and Unskip through any edition's id act on the whole set; no
+// edition is refused for being younger.
+func TestRematchSkipUnskip_ThroughAnyEdition_ActOnTheSet(t *testing.T) {
+	f := newRM(t, "rm-any-edition")
+	f.game("eg", 0, false, "playstation-4")
+	f.game("ed", 0, false, "playstation-5")
+	set := `SELECT COUNT(*) FROM external_games WHERE id IN ('eg', 'ed') AND `
 
-	f.game("eg2", "", 0, false, "playstation-4")
-	f.game("ch2", "eg2", 0, false, "playstation-5")
-	wantCode(t, f.skip("ch2"), http.StatusBadRequest)
-	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id = 'ch2' AND is_skipped`); n != 0 {
-		t.Error("child skipped despite 400")
+	wantCode(t, f.skip("ed"), http.StatusNoContent)
+	if n := f.count(set + `is_skipped`); n != 2 {
+		t.Errorf("skipped editions: want 2, got %d", n)
+	}
+	wantCode(t, f.unskip("ed"), http.StatusNoContent)
+	if n := f.count(set + `NOT is_skipped`); n != 2 {
+		t.Errorf("unskipped editions: want 2, got %d", n)
+	}
+	wantCode(t, f.rematch("ed", 200, ""), http.StatusNoContent)
+	if n := f.count(set + `resolved_igdb_id = 200`); n != 2 {
+		t.Errorf("rematched editions: want 2, got %d", n)
 	}
 }
 
-// Skipping a Child game with an open item in an active Job is refused
-// inside the module's transaction: the item stays pending and the child is
-// not skipped (#1419).
-func TestSkip_ChildGameWithActiveItem_Is400(t *testing.T) {
-	f := newRM(t, "rm-child-skip-item")
-	f.game("eg", "", 0, false, "playstation-4")
-	f.game("ch", "eg", 0, false, "playstation-5")
+// Skip of an edition whose own item is pending skips that item and the whole
+// set (#1419).
+func TestSkip_EditionWithItsOwnPendingItem_SkipsThatItem(t *testing.T) {
+	f := newRM(t, "rm-skip-own-item")
+	f.game("eg", 0, false, "playstation-4")
+	f.game("ed", 0, false, "playstation-5")
 	f.job("job", "processing")
-	f.item("ji", "job", "ch", "pending", 0)
+	f.item("ji", "job", "ed", "pending", 0)
 
-	wantCode(t, f.skip("ch"), http.StatusBadRequest)
+	wantCode(t, f.skip("ed"), http.StatusNoContent)
 
-	if s := f.itemStatus("ji"); s != "pending" {
-		t.Errorf("item: want pending, got %s", s)
+	if s := f.itemStatus("ji"); s != "skipped" {
+		t.Errorf("item: want skipped, got %s", s)
 	}
-	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE is_skipped`); n != 0 {
-		t.Errorf("skipped games: want 0, got %d", n)
+	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE is_skipped`); n != 2 {
+		t.Errorf("skipped games: want 2, got %d", n)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM changes WHERE job_id = 'job' AND external_game_id = 'ed' AND change_type = 'skipped'`); n != 1 {
+		t.Errorf("skipped change: want 1, got %d", n)
+	}
+}
+
+// A same-title game on another match is not an edition: a Rematch leaves it
+// alone.
+func TestRematch_LeavesASameTitleGameOnAnotherMatchAlone(t *testing.T) {
+	f := newRM(t, "rm-other-match")
+	f.game("eg", 100, false, "playstation-4")
+	f.game("other", 300, false, "playstation-5")
+
+	wantCode(t, f.rematch("eg", 200, ""), http.StatusNoContent)
+
+	if s := f.str(`SELECT resolved_igdb_id::text FROM external_games WHERE id = 'other'`); s != "300" {
+		t.Errorf("other game's match: want 300, got %s", s)
 	}
 }
 
 func TestRematch_RollsBackOnMidSequenceFailure(t *testing.T) {
 	f := newRM(t, "rm-rollback")
-	f.game("eg", "", 100, false, "playstation-4")
-	f.game("ch", "eg", 100, false, "playstation-5")
+	f.game("eg", 100, false, "playstation-4")
+	f.game("ed", 100, false, "playstation-5")
 	f.link("ug", 100, "eg", "playstation-4")
-	f.link("ug", 100, "ch", "playstation-5")
+	f.link("ug", 100, "ed", "playstation-5")
 	f.job("job", "processing")
 	f.item("ji", "job", "eg", "pending_review", 0)
 
-	// Fail the child's library write, after everything else has been done.
+	// Fail the other edition's library write, after everything else has been done.
 	f.exec(`
-		CREATE OR REPLACE FUNCTION test_fail_rematch_child() RETURNS trigger AS $$
+		CREATE OR REPLACE FUNCTION test_fail_rematch_edition() RETURNS trigger AS $$
 		BEGIN
-			IF NEW.external_game_id = 'ch' THEN
+			IF NEW.external_game_id = 'ed' THEN
 				RAISE EXCEPTION 'injected failure';
 			END IF;
 			RETURN NEW;
 		END $$ LANGUAGE plpgsql;
-		CREATE TRIGGER test_fail_rematch_child BEFORE INSERT ON user_game_platforms
-			FOR EACH ROW EXECUTE FUNCTION test_fail_rematch_child();`)
+		CREATE TRIGGER test_fail_rematch_edition BEFORE INSERT ON user_game_platforms
+			FOR EACH ROW EXECUTE FUNCTION test_fail_rematch_edition();`)
 	t.Cleanup(func() {
 		if _, err := testDB.ExecContext(context.Background(), `
-			DROP TRIGGER IF EXISTS test_fail_rematch_child ON user_game_platforms;
-			DROP FUNCTION IF EXISTS test_fail_rematch_child();`); err != nil {
+			DROP TRIGGER IF EXISTS test_fail_rematch_edition ON user_game_platforms;
+			DROP FUNCTION IF EXISTS test_fail_rematch_edition();`); err != nil {
 			t.Errorf("drop failure trigger: %v", err)
 		}
 	})
@@ -528,7 +582,7 @@ func TestRematch_RollsBackOnMidSequenceFailure(t *testing.T) {
 	if n := f.count(`SELECT COUNT(*) FROM user_games WHERE id = 'ug'`); n != 1 {
 		t.Error("user game removed despite rollback")
 	}
-	if n := f.onGame("eg", 100) + f.onGame("ch", 100); n != 2 {
+	if n := f.onGame("eg", 100) + f.onGame("ed", 100); n != 2 {
 		t.Errorf("old links: want 2, got %d", n)
 	}
 	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE resolved_igdb_id = 200`); n != 0 {
@@ -539,24 +593,24 @@ func TestRematch_RollsBackOnMidSequenceFailure(t *testing.T) {
 	}
 }
 
-// A user_game_write for a child and a rematch of its parent both lock the Job
-// row first, then the family, so they never deadlock: the rematch answers
-// 204, the worker returns without an error, and the child's item ends
-// completed whichever went first.
-func TestRematch_ConcurrentChildWrite_NoDeadlock(t *testing.T) {
+// A user_game_write for one edition and a rematch through another both lock
+// the Job row first, then the editions, so they never deadlock: the rematch
+// answers 204, the worker returns without an error, and the edition's item
+// ends completed whichever went first.
+func TestRematch_ConcurrentEditionWrite_NoDeadlock(t *testing.T) {
 	for range 5 {
 		f := newRM(t, "rm-deadlock")
-		f.game("eg", "", 100, false, "playstation-4")
-		f.game("ch", "eg", 100, false, "playstation-5")
+		f.game("eg", 100, false, "playstation-4")
+		f.game("ed", 100, false, "playstation-5")
 		f.link("ug", 100, "eg", "playstation-4")
 		f.link("ug", 100, "", "playstation-3")
 		lc := newTestLifecycle(t)
 		job := newSyncJob(t, lc, f.userID, rmStore)
-		childItem := job.add(t, f.userID, "ch")[0]
+		editionItem := job.add(t, f.userID, "ed")[0]
 		job.done(t)
 
 		w := &tasks.UserGameWorker{DB: testDB, LC: lc}
-		owner := itemOwnerID(t, childItem)
+		owner := itemOwnerID(t, editionItem)
 		var wg sync.WaitGroup
 		var rec *httptest.ResponseRecorder
 		var werr error
@@ -565,7 +619,7 @@ func TestRematch_ConcurrentChildWrite_NoDeadlock(t *testing.T) {
 			defer wg.Done()
 			werr = w.Work(context.Background(), &river.Job[tasks.UserGameArgs]{
 				JobRow: &rivertype.JobRow{ID: owner, Attempt: 1, MaxAttempts: 5},
-				Args:   tasks.UserGameArgs{JobItemID: childItem},
+				Args:   tasks.UserGameArgs{JobItemID: editionItem},
 			})
 		}()
 		go func() { defer wg.Done(); rec = f.rematch("eg", 200, "keep") }()
@@ -574,31 +628,26 @@ func TestRematch_ConcurrentChildWrite_NoDeadlock(t *testing.T) {
 			t.Fatalf("worker: %v", werr)
 		}
 		wantCode(t, rec, http.StatusNoContent)
-		if s := f.itemStatus(childItem); s != "completed" {
-			t.Fatalf("child item: want completed, got %s (%s)", s, f.str(`SELECT COALESCE(error_message, '') FROM job_items WHERE id = ?`, childItem))
+		if s := f.itemStatus(editionItem); s != "completed" {
+			t.Fatalf("edition item: want completed, got %s (%s)", s, f.str(`SELECT COALESCE(error_message, '') FROM job_items WHERE id = ?`, editionItem))
 		}
 	}
 }
 
 // ── Unskip ────────────────────────────────────────────────────────────────────
 
-func TestUnskip_MatchedGame_WritesFamilyWithoutAJob(t *testing.T) {
+func TestUnskip_MatchedEditions_WritesEachWithoutAJob(t *testing.T) {
 	f := newRM(t, "unskip-matched")
-	f.game("eg", "", 200, true, "playstation-4")
-	f.game("ch", "eg", 100, true, "playstation-5") // an older match of its own
-	f.link("ug-old", 100, "ch", "playstation-5")
-	f.link("ug-old", 100, "", "playstation-3")
+	f.game("eg", 200, true, "playstation-4")
+	f.game("ed", 200, true, "playstation-5")
 
 	wantCode(t, f.unskip("eg"), http.StatusNoContent)
 
-	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id IN ('eg', 'ch') AND NOT is_skipped AND resolved_igdb_id = 200`); n != 2 {
-		t.Errorf("unskipped family on the parent's match: want 2, got %d", n)
+	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id IN ('eg', 'ed') AND NOT is_skipped AND resolved_igdb_id = 200`); n != 2 {
+		t.Errorf("unskipped editions on the match: want 2, got %d", n)
 	}
-	if n := f.onGame("eg", 200) + f.onGame("ch", 200); n != 2 {
-		t.Errorf("family links on the parent's match: want 2, got %d", n)
-	}
-	if n := f.onGame("ch", 100); n != 0 {
-		t.Errorf("child links left on its old game: %d", n)
+	if n := f.onGame("eg", 200) + f.onGame("ed", 200); n != 2 {
+		t.Errorf("edition links on the match: want 2, got %d", n)
 	}
 	if n := f.count(`SELECT COUNT(*) FROM jobs`) + f.count(`SELECT COUNT(*) FROM job_items`); n != 0 {
 		t.Errorf("jobs and items created: %d", n)
@@ -610,7 +659,7 @@ func TestUnskip_MatchedGame_WritesFamilyWithoutAJob(t *testing.T) {
 
 func TestUnskip_UnmatchedGame_OnlyClearsTheFlag(t *testing.T) {
 	f := newRM(t, "unskip-unmatched")
-	f.game("eg", "", 0, true, "playstation-4")
+	f.game("eg", 0, true, "playstation-4")
 
 	wantCode(t, f.unskip("eg"), http.StatusNoContent)
 
@@ -622,35 +671,26 @@ func TestUnskip_UnmatchedGame_OnlyClearsTheFlag(t *testing.T) {
 	}
 }
 
-// A family from before #1424 can have an unmatched parent and a matched,
-// linked child. Unskip makes the child follow its parent, as the dispatch's
-// repair does: its links go (the user game is kept) and its match is cleared
-// (#1425).
-func TestUnskip_UnmatchedGame_ClearsAMatchedChild(t *testing.T) {
-	f := newRM(t, "unskip-unmatched-child")
-	f.game("eg", "", 0, true, "playstation-4")
-	f.game("ch", "eg", 100, true, "playstation-5")
-	f.link("ug-old", 100, "ch", "playstation-5")
+// A same-title game on another match is not an edition: an Unskip of an
+// unmatched game leaves it skipped.
+func TestUnskip_LeavesASameTitleGameOnAnotherMatchAlone(t *testing.T) {
+	f := newRM(t, "unskip-other-match")
+	f.game("eg", 0, true, "playstation-4")
+	f.game("other", 100, true, "playstation-5")
 
 	wantCode(t, f.unskip("eg"), http.StatusNoContent)
 
-	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id IN ('eg', 'ch') AND NOT is_skipped AND resolved_igdb_id IS NULL`); n != 2 {
-		t.Errorf("unskipped, unmatched family: want 2, got %d", n)
+	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id = 'other' AND is_skipped AND resolved_igdb_id = 100`); n != 1 {
+		t.Error("the same-title game on another match was changed")
 	}
-	if n := f.count(`SELECT COUNT(*) FROM user_game_platforms WHERE external_game_id = 'ch'`); n != 0 {
-		t.Errorf("child links left: %d", n)
-	}
-	if n := f.count(`SELECT COUNT(*) FROM user_games WHERE id = 'ug-old'`); n != 1 {
-		t.Error("the child's user game was removed")
-	}
-	if n := f.count(`SELECT COUNT(*) FROM jobs`) + f.count(`SELECT COUNT(*) FROM river_job`); n != 0 {
-		t.Errorf("jobs or river jobs created: %d", n)
+	if n := f.count(`SELECT COUNT(*) FROM external_games WHERE id = 'eg' AND NOT is_skipped`); n != 1 {
+		t.Error("eg was not unskipped")
 	}
 }
 
 func TestUnskip_FailureRollsBackTheFlag(t *testing.T) {
 	f := newRM(t, "unskip-rollback")
-	f.game("eg", "", 200, true, "playstation-4")
+	f.game("eg", 200, true, "playstation-4")
 	f.exec(`
 		CREATE OR REPLACE FUNCTION test_fail_unskip() RETURNS trigger AS $$
 		BEGIN RAISE EXCEPTION 'injected failure'; END $$ LANGUAGE plpgsql;
@@ -737,41 +777,41 @@ func TestListExternalGames_StatusComesFromTheNewestItem(t *testing.T) {
 		badge int
 	}{
 		{"old failed item, newer completed item", func(f *rmFixture) {
-			f.game("eg", "", 100, false, "playstation-4")
+			f.game("eg", 100, false, "playstation-4")
 			f.job("j1", "completed")
 			f.item("i1", "j1", "eg", "failed", 48*time.Hour)
 			f.job("j2", "completed")
 			f.item("i2", "j2", "eg", "completed", time.Hour)
 		}, "matched", 0},
 		{"newest failed", func(f *rmFixture) {
-			f.game("eg", "", 0, false, "playstation-4")
+			f.game("eg", 0, false, "playstation-4")
 			f.job("j1", "completed")
 			f.item("i1", "j1", "eg", "failed", time.Hour)
 		}, "failed", 0},
 		{"skipped game whose newest item failed", func(f *rmFixture) {
-			f.game("eg", "", 0, true, "playstation-4")
+			f.game("eg", 0, true, "playstation-4")
 			f.job("j1", "completed")
 			f.item("i1", "j1", "eg", "failed", time.Hour)
 		}, "skipped", 0},
 		{"newest in review in a cancelled job", func(f *rmFixture) {
-			f.game("eg", "", 0, false, "playstation-4")
+			f.game("eg", 0, false, "playstation-4")
 			f.job("j1", "cancelled")
 			f.item("i1", "j1", "eg", "pending_review", time.Hour)
 		}, "needs_review", 1},
 		{"in review in an older reopened job, newest ended", func(f *rmFixture) {
-			f.game("eg", "", 0, false, "playstation-4")
+			f.game("eg", 0, false, "playstation-4")
 			f.job("old", "processing")
 			f.item("i1", "old", "eg", "pending_review", 48*time.Hour)
 			f.job("new", "completed")
 			f.item("i2", "new", "eg", "failed", time.Hour)
 		}, "needs_review", 1},
 		{"newest pending in a cancelled job", func(f *rmFixture) {
-			f.game("eg", "", 0, false, "playstation-4")
+			f.game("eg", 0, false, "playstation-4")
 			f.job("j1", "cancelled")
 			f.item("i1", "j1", "eg", "pending", time.Hour)
 		}, "unmatched", 0},
 		{"newest pending in an active job", func(f *rmFixture) {
-			f.game("eg", "", 0, false, "playstation-4")
+			f.game("eg", 0, false, "playstation-4")
 			f.job("j1", "processing")
 			f.item("i1", "j1", "eg", "pending", 0)
 		}, "(hidden)", 0},
@@ -779,14 +819,14 @@ func TestListExternalGames_StatusComesFromTheNewestItem(t *testing.T) {
 		// Job any more (the module cancels them with it, the upgrade fails or
 		// cancels the old ones), so a live River job naming one is ignored.
 		{"newest pending in an ended job, live river job", func(f *rmFixture) {
-			f.game("eg", "", 0, false, "playstation-4")
+			f.game("eg", 0, false, "playstation-4")
 			f.job("j1", "completed")
 			f.item("i1", "j1", "eg", "pending", 0)
 			f.liveRiverJob("i1", "igdb_match")
 		}, "unmatched", 0},
 		// Failed, but Retry never reopens a failed Job: no retry is offered.
 		{"newest failed in a failed job", func(f *rmFixture) {
-			f.game("eg", "", 0, false, "playstation-4")
+			f.game("eg", 0, false, "playstation-4")
 			f.job("j1", "failed")
 			f.item("i1", "j1", "eg", "failed", time.Hour)
 		}, "failed", 0},
@@ -813,7 +853,7 @@ func TestListExternalGames_StatusComesFromTheNewestItem(t *testing.T) {
 func TestListExternalGames_RematchSupersedesOldItems(t *testing.T) {
 	t.Run("newest item failed", func(t *testing.T) {
 		f := newRM(t, "list-rematch-failed")
-		f.game("eg", "", 0, false, "playstation-4")
+		f.game("eg", 0, false, "playstation-4")
 		f.job("j1", "completed")
 		f.item("i1", "j1", "eg", "failed", time.Hour)
 
@@ -826,7 +866,7 @@ func TestListExternalGames_RematchSupersedesOldItems(t *testing.T) {
 	})
 	t.Run("in review in a cancelled job", func(t *testing.T) {
 		f := newRM(t, "list-rematch-cancelled")
-		f.game("eg", "", 0, false, "playstation-4")
+		f.game("eg", 0, false, "playstation-4")
 		f.job("j1", "cancelled")
 		f.item("i1", "j1", "eg", "pending_review", time.Hour)
 
@@ -844,22 +884,22 @@ func TestListExternalGames_RematchSupersedesOldItems(t *testing.T) {
 	})
 }
 
-func TestListExternalGames_OrphanFieldsArePerFamily(t *testing.T) {
+func TestListExternalGames_OrphanFieldsArePerSet(t *testing.T) {
 	f := newRM(t, "list-orphan")
-	f.game("eg", "", 100, false, "playstation-4")
-	f.game("ch", "eg", 100, false, "playstation-5")
+	f.game("eg", 100, false, "playstation-4")
+	f.game("ed", 100, false, "playstation-5")
 	f.link("ug", 100, "eg", "playstation-4")
-	f.link("ug", 100, "ch", "playstation-5")
+	f.link("ug", 100, "ed", "playstation-5")
 
 	g := f.list()["eg"]
 	if !g.HasUserGame || g.UserGameID == nil || *g.UserGameID != "ug" {
 		t.Errorf("want has_user_game on ug, got %v / %v", g.HasUserGame, g.UserGameID)
 	}
 	if g.UserGameOtherPlatformCount != 0 {
-		t.Errorf("user_game_other_platform_count: want 0 (the child's link is in the family), got %d", g.UserGameOtherPlatformCount)
+		t.Errorf("user_game_other_platform_count: want 0 (the other edition's link is in the set), got %d", g.UserGameOtherPlatformCount)
 	}
 
-	f.link("ug", 100, "", "playstation-3") // a link from outside the family
+	f.link("ug", 100, "", "playstation-3") // a link from outside the set
 	if n := f.list()["eg"].UserGameOtherPlatformCount; n != 1 {
 		t.Errorf("user_game_other_platform_count: want 1, got %d", n)
 	}
@@ -867,7 +907,7 @@ func TestListExternalGames_OrphanFieldsArePerFamily(t *testing.T) {
 
 func TestListExternalGames_UnskippedNeverMatchedGameIsUnmatched(t *testing.T) {
 	f := newRM(t, "list-unmatched")
-	f.game("eg", "", 0, true, "playstation-4")
+	f.game("eg", 0, true, "playstation-4")
 	wantCode(t, f.unskip("eg"), http.StatusNoContent)
 	if s := f.status("eg"); s != "unmatched" {
 		t.Errorf("sync_status: want unmatched, got %s", s)
@@ -886,29 +926,390 @@ func TestPendingReviewCount_IgnoresSyncItemOfADeletedGame(t *testing.T) {
 
 func TestRetryFailedExternalGames_RetriesOnlyGamesShownAsFailed(t *testing.T) {
 	f := newRM(t, "retry-failed")
-	// Shown as failed, with a failed child.
-	f.game("eg", "", 0, false, "playstation-4")
-	f.game("ch", "eg", 0, false, "playstation-5")
+	// Shown as failed, with a failed edition.
+	f.game("eg", 0, false, "playstation-4")
+	f.game("ed", 0, false, "playstation-5")
 	f.job("j1", "completed")
 	f.item("i-eg", "j1", "eg", "failed", time.Hour)
-	f.item("i-ch", "j1", "ch", "failed", time.Hour)
+	f.item("i-ed", "j1", "ed", "failed", time.Hour)
 	// An old failure superseded by a newer completed item.
-	f.game("old", "", 100, false, "playstation-4")
+	f.game("old", 100, false, "playstation-4")
 	f.item("i-old", "j1", "old", "failed", 48*time.Hour)
 	f.job("j2", "completed")
 	f.item("i-old2", "j2", "old", "completed", time.Hour)
 	// A skipped game whose newest item failed.
-	f.game("sk", "", 0, true, "playstation-4")
+	f.game("sk", 0, true, "playstation-4")
 	f.item("i-sk", "j1", "sk", "failed", time.Hour)
 
 	wantCode(t, postJSONAuth(t, f.e, "/api/sync/"+rmStore+"/external-games/retry-failed", nil, f.token), http.StatusNoContent)
 
-	for id, want := range map[string]string{"i-eg": "pending", "i-ch": "pending", "i-old": "failed", "i-sk": "failed"} {
+	for id, want := range map[string]string{"i-eg": "pending", "i-ed": "pending", "i-old": "failed", "i-sk": "failed"} {
 		if s := f.itemStatus(id); s != want {
 			t.Errorf("%s: want %s, got %s", id, want, s)
 		}
 	}
-	if n := f.count(`SELECT COUNT(*) FROM river_job WHERE kind = 'igdb_match' AND args->>'job_item_id' IN ('i-eg', 'i-ch')`); n != 2 {
+	if n := f.count(`SELECT COUNT(*) FROM river_job WHERE kind = 'igdb_match' AND args->>'job_item_id' IN ('i-eg', 'i-ed')`); n != 2 {
 		t.Errorf("queued igdb_match jobs: want 2, got %d", n)
+	}
+}
+
+// ── Editions in the storefront view and the badge ─────────────────────────────
+
+// One edition still in flight: the entry is hidden and not on the badge,
+// although the other edition is in review.
+func TestListExternalGames_EditionInFlight_HidesTheEntry(t *testing.T) {
+	f := newRM(t, "list-in-flight")
+	f.game("eg", 0, false, "playstation-4")
+	f.game("ed", 0, false, "playstation-5")
+	f.job("job", "processing")
+	f.item("ji", "job", "eg", "pending_review", 0)
+	f.item("ji-ed", "job", "ed", "pending", 0)
+
+	if l := f.list(); len(l) != 0 {
+		t.Errorf("list = %+v, want the entry hidden", l)
+	}
+	if n := f.badge(); n != 0 {
+		t.Errorf("badge: want 0, got %d", n)
+	}
+}
+
+// One edition failed: the entry shows as failed and offers that edition's
+// item for retry.
+func TestListExternalGames_EditionFailed_OffersItsItem(t *testing.T) {
+	f := newRM(t, "list-failed")
+	f.game("eg", 0, false, "playstation-4")
+	f.game("ed", 0, false, "playstation-5")
+	f.job("job", "completed")
+	f.item("ji", "job", "eg", "completed", time.Hour)
+	f.item("ji-ed", "job", "ed", "failed", time.Hour)
+
+	l := f.list()
+	g, ok := l["eg"]
+	if len(l) != 1 || !ok {
+		t.Fatalf("list = %+v, want one entry eg", l)
+	}
+	if g.SyncStatus != "failed" || g.FailedJobItemID == nil || *g.FailedJobItemID != "ji-ed" {
+		t.Errorf("entry = %s / %v, want failed offering ji-ed", g.SyncStatus, g.FailedJobItemID)
+	}
+}
+
+// The entry is the oldest edition still in the storefront library, and it is
+// available when any edition is.
+func TestListExternalGames_EntryIsTheOldestAvailableEdition(t *testing.T) {
+	f := newRM(t, "list-representative")
+	f.game("gone", 100, false, "playstation-4")
+	f.game("eg", 100, false, "playstation-5")
+	f.game("young", 100, false, "playstation-5")
+	f.exec(`UPDATE external_games SET is_available = false WHERE id = 'gone'`)
+
+	type entry struct {
+		ID          string   `json:"id"`
+		IsAvailable bool     `json:"is_available"`
+		Platforms   []string `json:"platforms"`
+	}
+	rec := getAuth(t, f.e, "/api/sync/"+rmStore+"/external-games", f.token)
+	wantCode(t, rec, http.StatusOK)
+	var entries []entry
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].ID != "eg" || !entries[0].IsAvailable {
+		t.Fatalf("entries = %+v, want one available entry eg", entries)
+	}
+	if got := strings.Join(entries[0].Platforms, ","); got != "playstation-4,playstation-5" {
+		t.Errorf("platforms = %s, want those of every edition", got)
+	}
+
+	// None left in the library: the oldest, unavailable.
+	f.exec(`UPDATE external_games SET is_available = false`)
+	rec = getAuth(t, f.e, "/api/sync/"+rmStore+"/external-games", f.token)
+	entries = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].ID != "gone" || entries[0].IsAvailable {
+		t.Errorf("entries = %+v, want one unavailable entry gone", entries)
+	}
+}
+
+// The list, the badge and the lock agree on which games form a set: every
+// listed entry is one locked set, every game is in exactly one, and the
+// badge counts the entries in review.
+func TestEditions_ListBadgeAndLockAgree(t *testing.T) {
+	f := newRM(t, "editions-agree")
+	// Two editions in review, matched editions, a same-title game on another
+	// match, a skipped one, an unmatched one with no item, and another title.
+	f.game("a1", 0, false, "playstation-4")
+	f.game("a2", 0, false, "playstation-5")
+	f.game("m1", 100, false, "playstation-4")
+	f.game("m2", 100, false, "playstation-5")
+	f.game("m3", 300, false, "playstation-4")
+	f.game("s1", 100, true, "playstation-4")
+	f.titled("t1", "Other", 0, false, "playstation-4")
+	f.titled("t2", "Other", 0, false, "playstation-5")
+	f.job("job", "processing")
+	f.item("ia1", "job", "a1", "pending_review", 0)
+	f.item("ia2", "job", "a2", "pending_review", 0)
+	f.item("it1", "job", "t1", "pending_review", 0)
+
+	list := f.list()
+	var all []string
+	if err := testDB.NewRaw(`SELECT id FROM external_games WHERE user_id = ? ORDER BY id`, f.userID).Scan(context.Background(), &all); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, id := range all {
+		var set []models.ExternalGame
+		err := testDB.RunInTx(context.Background(), nil, func(ctx context.Context, tx bun.Tx) error {
+			var err error
+			_, set, err = externalgame.LockEditions(ctx, tx, f.userID, id)
+			return err
+		})
+		if err != nil {
+			t.Fatalf("lock %s: %v", id, err)
+		}
+		var entry string
+		for _, eg := range set {
+			if _, ok := list[eg.ID]; ok {
+				if entry != "" {
+					t.Errorf("set of %s has two entries: %s and %s", id, entry, eg.ID)
+				}
+				entry = eg.ID
+			}
+		}
+		if entry == "" {
+			t.Errorf("set of %s has no entry in the list", id)
+		}
+		if prev, ok := seen[id]; ok && prev != entry {
+			t.Errorf("%s is in two sets", id)
+		}
+		seen[id] = entry
+	}
+	if len(list) != 5 {
+		t.Errorf("entries = %d, want 5 (a, m, m3, s1, t)", len(list))
+	}
+	review := 0
+	for _, g := range list {
+		if g.SyncStatus == "needs_review" {
+			review++
+		}
+	}
+	if n := f.badge(); n != review || n != 2 {
+		t.Errorf("badge = %d, entries in review = %d, want 2", n, review)
+	}
+}
+
+// ── Concurrency ───────────────────────────────────────────────────────────────
+
+// Two Rematches at once through different editions' ids do not deadlock and
+// end on one match.
+func TestRematch_TwoAtOnceThroughDifferentEditions_EndOnOneMatch(t *testing.T) {
+	for range 10 {
+		f := newRM(t, "rm-two-at-once")
+		f.game("eg", 100, false, "playstation-4")
+		f.game("ed", 100, false, "playstation-5")
+		f.igdbGame(200)
+		f.igdbGame(300)
+
+		var wg sync.WaitGroup
+		recs := make([]*httptest.ResponseRecorder, 2)
+		wg.Add(2)
+		go func() { defer wg.Done(); recs[0] = f.rematch("eg", 200, "keep") }()
+		go func() { defer wg.Done(); recs[1] = f.rematch("ed", 300, "keep") }()
+		wg.Wait()
+		for _, rec := range recs {
+			if rec.Code != http.StatusNoContent && rec.Code != http.StatusConflict {
+				t.Fatalf("rematch: %d %s", rec.Code, rec.Body.String())
+			}
+		}
+		if n := f.count(`SELECT COUNT(DISTINCT resolved_igdb_id) FROM external_games WHERE id IN ('eg', 'ed')`); n != 1 {
+			t.Fatalf("matches across the editions: want 1, got %d", n)
+		}
+	}
+}
+
+// waitForLockWait waits until some backend is blocked on a lock.
+func waitForLockWait(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var n int
+		if err := testDB.NewRaw(`SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'`).Scan(context.Background(), &n); err != nil {
+			t.Fatal(err)
+		}
+		if n > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("no backend blocked on a lock")
+}
+
+// takePrecedentInTx takes precedent for egID in a transaction, as a match
+// worker does, and returns the commit; the transaction holds the precedent
+// FOR SHARE until then.
+func takePrecedentInTx(t *testing.T, egID string) (commit func()) {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := testDB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback() })
+	took, err := externalgame.TakePrecedent(ctx, tx, egID)
+	if err != nil || !took {
+		t.Fatalf("take precedent: took %v, %v", took, err)
+	}
+	return func() {
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A Rematch or an Unskip of a game while a match worker takes precedent from
+// it: the new edition ends on the same match and skip as the rest of the set,
+// in either order.
+func TestRematchUnskip_RacingAPrecedentTake_NewEditionFollowsTheSet(t *testing.T) {
+	type op struct {
+		name    string
+		skipped bool
+		run     func(f *rmFixture) *httptest.ResponseRecorder
+		want    string // the match and skip every edition must end on
+	}
+	ops := []op{
+		{"rematch", false, func(f *rmFixture) *httptest.ResponseRecorder { return f.rematch("eg", 200, "keep") }, "200 false"},
+		{"unskip", true, func(f *rmFixture) *httptest.ResponseRecorder { return f.unskip("eg") }, "100 false"},
+	}
+	for _, o := range ops {
+		for _, takeFirst := range []bool{true, false} {
+			name := o.name + "/take first"
+			if !takeFirst {
+				name = o.name + "/" + o.name + " first"
+			}
+			t.Run(name, func(t *testing.T) {
+				f := newRM(t, "rm-race-take")
+				f.game("eg", 100, o.skipped, "playstation-4")
+				f.game("new", 0, false, "playstation-5")
+				f.igdbGame(200)
+
+				if takeFirst {
+					commit := takePrecedentInTx(t, "new")
+					done := make(chan *httptest.ResponseRecorder, 1)
+					go func() { done <- o.run(f) }()
+					waitForLockWait(t)
+					commit()
+					wantCode(t, <-done, http.StatusNoContent)
+				} else {
+					wantCode(t, o.run(f), http.StatusNoContent)
+					takePrecedentInTx(t, "new")()
+				}
+
+				for _, id := range []string{"eg", "new"} {
+					got := f.str(`SELECT resolved_igdb_id::text || ' ' || is_skipped::text FROM external_games WHERE id = ?`, id)
+					if got != o.want {
+						t.Errorf("%s = %s, want %s", id, got, o.want)
+					}
+				}
+			})
+		}
+	}
+}
+
+// A game whose editions change under every try of the editions lock answers
+// 409 after the third try, and writes nothing. Each try reads the game's
+// state, then blocks on an edition another transaction holds; that
+// transaction moves the game to another match and commits, so the try locks a
+// set without the game and starts again.
+func TestRematch_EditionsChangeUnderEveryTry_Answers409(t *testing.T) {
+	f := newRM(t, "rm-editions-changed")
+	f.game("e1", 0, false, "")   // an edition of g as it is now
+	f.game("e2", 101, false, "") // of g once it is on 101
+	f.game("e3", 102, false, "") // of g once it is on 102
+	f.game("g", 0, false, "playstation-4")
+	f.igdbGame(103)
+	f.igdbGame(200)
+
+	ctx := context.Background()
+	holders := make([]bun.Tx, 3)
+	pids := make([]int, 3)
+	for i, id := range []string{"e1", "e2", "e3"} {
+		tx, err := testDB.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = tx.Rollback() })
+		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM external_games WHERE id = ? FOR UPDATE`, id); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.NewRaw(`SELECT pg_backend_pid()`).Scan(ctx, &pids[i]); err != nil {
+			t.Fatal(err)
+		}
+		holders[i] = tx
+	}
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- f.rematch("g", 200, "") }()
+
+	for i, tx := range holders {
+		waitForBlockedBy(t, pids[i])
+		if _, err := tx.ExecContext(ctx, `UPDATE external_games SET resolved_igdb_id = ? WHERE id = 'g'`, 101+i); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rec := <-done
+	wantCode(t, rec, http.StatusConflict)
+	if !strings.Contains(rec.Body.String(), "try again") {
+		t.Errorf("body = %s, want the try-again message", rec.Body.String())
+	}
+	got := f.str(`SELECT string_agg(id || '=' || coalesce(resolved_igdb_id::text, '-'), ' ' ORDER BY id) FROM external_games`)
+	if want := "e1=- e2=101 e3=102 g=103"; got != want {
+		t.Errorf("games = %s, want %s (nothing written by the refused rematch)", got, want)
+	}
+}
+
+// waitForBlockedBy waits until a backend is blocked on a lock held by the
+// backend pid.
+func waitForBlockedBy(t *testing.T, pid int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var n int
+		if err := testDB.NewRaw(`SELECT count(*) FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))`, pid).Scan(context.Background(), &n); err != nil {
+			t.Fatal(err)
+		}
+		if n > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("no backend blocked by pid %d", pid)
+}
+
+// A title with quotes, a backslash, a placeholder character and non-ASCII
+// text survives the editions lock's read of the game's state and its binding
+// back into the lock: Skip and Rematch act on both editions, and not on a game
+// whose title differs only by a trailing space.
+func TestEditions_TitleWithQuotesAndSymbols_LockFindsTheSet(t *testing.T) {
+	f := newRM(t, "rm-odd-title")
+	title := `Marvel's "Spider-Man" \ ? 100% Pokémon™ 戦`
+	f.titled("eg", title, 0, false, "playstation-4")
+	f.titled("ed", title, 0, false, "playstation-5")
+	f.titled("other", title+" ", 0, false, "")
+	f.igdbGame(200)
+
+	if n := len(f.list()); n != 2 {
+		t.Errorf("listed entries = %d, want 2 (the set, and the other title)", n)
+	}
+	wantCode(t, f.skip("ed"), http.StatusNoContent)
+	wantCode(t, f.rematch("eg", 200, ""), http.StatusNoContent)
+
+	got := f.str(`SELECT string_agg(id || '=' || coalesce(resolved_igdb_id::text, '-') || '/' || is_skipped::text, ' ' ORDER BY id) FROM external_games`)
+	if want := "ed=200/false eg=200/false other=-/false"; got != want {
+		t.Errorf("games = %s, want %s", got, want)
 	}
 }

@@ -71,12 +71,32 @@ _Avoid_: service (the Storefront you connect), refresh, import (a one-off from a
 A game as it appears in a connected storefront's library, matched to at most one IGDB game.
 _Avoid_: storefront game
 
-**Child game**:
-An External game that is another edition of an External game already known for the same storefront, its parent. It follows the parent's match instead of being matched itself.
-_Avoid_: sibling
+**Same-title game**:
+An External game of the same user and storefront with the same title as another, whatever its match and skip. Same-title games that also agree on their Decision are Editions of each other; the others are not, but a game without a Decision can take one of theirs as its Precedent.
+_Avoid_: duplicate, related game
+
+**Edition**:
+The editions of an External game are the External games of the same user and storefront that have the same title, the same match and the same skip. Nothing stores which games are editions: two games are editions for as long as they agree. A sync gives a game without a decision the decision of the oldest same-title game that has one; Rematch, Skip and Unskip act on every edition; the storefront list shows the editions as one entry.
+_Avoid_: child game, parent, sibling, family
+
+**Set of editions**:
+An External game together with all its Editions. Rematch, Skip and Unskip act on the whole set, the storefront list shows it as one entry, and the review badge counts it once.
+_Avoid_: family, group, duplicates
+
+**Decision**:
+An External game's match and its skip, together. A game has a decision when it is matched or skipped, and none when it is neither. Editions share one decision.
+_Avoid_: resolution (the user's choice for an item in Pending review), item status (it never records a decision)
+
+**Precedent**:
+The decision a sync gives an External game that has none: that of the oldest same-title game (same user, storefront and title) that has one. A game takes its precedent instead of being searched, and before it would go to Pending review.
+_Avoid_: inheriting, the parent's match
+
+**Settle**:
+After a sync's search matches an External game with confidence, its same-title games of that sync that wait in Pending review without a decision take that match by precedent, and their items are completed. Only a match is taken: a game whose precedent is a skip stays in review.
+_Avoid_: the lifecycle module's startup settle of River jobs left running (`joblifecycle.Settle`), a different thing with the same name until #1451
 
 **Unmatched**:
-An External game that is not skipped and points to no IGDB game, and has no item in Pending review: for instance one unskipped before it was ever matched. It waits for the user to Rematch it, or for the next sync to match it while it is still in the storefront library.
+An External game that is not skipped and points to no IGDB game, and has no item in Pending review: for instance one unskipped before it was ever matched. It waits for the user to Rematch it, or for the next sync to match it while it is still in the storefront library, or to take the decision of a same-title game that has one.
 _Avoid_: pending review (an item in a Job waiting for the user; an Unmatched game is waiting for nothing)
 
 **Rematch**:

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,59 +19,37 @@ import (
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
-// Rematch and unskip are edits to one External game and its Child games, not
+// Rematch and unskip are edits to one External game and its editions, not
 // sync work (#1338, ADR 0002): they write the library in the request's own
 // transaction with the same library write the sync worker uses, and create no
-// Job, no item and no River job.
+// Job, no item and no River job. Rematch, Skip and Unskip act on every edition
+// of the game they are given, through any edition's id (#1449).
 
 // errSyncStillWorking is the 409 while a sync worker may be writing the game.
 const errSyncStillWorking = "a sync is still working on this game"
 
-// lockFamily locks an External game FOR UPDATE, then its Child games ordered
-// by id: the family lock order #1339's promotion uses. A Child game is refused
-// with 400; verb names the action in that message.
-func lockFamily(ctx context.Context, tx bun.Tx, userID, id, verb string) (models.ExternalGame, []models.ExternalGame, error) {
-	var eg models.ExternalGame
-	err := tx.NewSelect().Model(&eg).
-		Where("id = ? AND user_id = ?", id, userID).
-		For("UPDATE").
-		Scan(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
+// lockEditions locks the user's External game id and its editions, in id
+// order (externalgame.LockEditions), and answers its refusals as HTTP errors:
+// a missing game 404, a set that kept changing 409.
+func lockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.ExternalGame, []models.ExternalGame, error) {
+	eg, set, err := externalgame.LockEditions(ctx, tx, userID, id)
+	switch {
+	case errors.Is(err, externalgame.ErrNotFound):
 		return eg, nil, echo.NewHTTPError(http.StatusNotFound, "not found")
+	case errors.Is(err, externalgame.ErrEditionsChanged):
+		return eg, nil, echo.NewHTTPError(http.StatusConflict, "the game changed while it was being updated; try again")
+	case err != nil:
+		return eg, nil, err
 	}
-	if err != nil {
-		return eg, nil, fmt.Errorf("lock external game: %w", err)
-	}
-	if eg.ParentID != nil {
-		return eg, nil, echo.NewHTTPError(http.StatusBadRequest,
-			fmt.Sprintf("this game is an edition of another game in the storefront library; %s that game instead", verb))
-	}
-	var children []models.ExternalGame
-	if err := tx.NewSelect().Model(&children).
-		Where("parent_id = ?", eg.ID).
-		Order("id").
-		For("UPDATE").
-		Scan(ctx); err != nil {
-		return eg, nil, fmt.Errorf("lock child external games: %w", err)
-	}
-	return eg, children, nil
+	return eg, set, nil
 }
 
-func familyIDs(eg models.ExternalGame, children []models.ExternalGame) []string {
-	ids := make([]string, 0, len(children)+1)
-	ids = append(ids, eg.ID)
-	for _, ch := range children {
-		ids = append(ids, ch.ID)
-	}
-	return ids
-}
-
-// rematchUnlinkFamily removes the platform links of the game and its Child
-// games and applies the orphan rule to every user game the family's links sit
-// on: one left with no links from outside the family is orphaned, unless it is
-// the user game of the new match (rematching onto it rewrites its links).
-// Without orphanAction an orphan refuses the rematch with 409.
-func rematchUnlinkFamily(ctx context.Context, tx bun.Tx, userID string, ids []string, newIGDBID int, orphanAction string) error {
+// rematchUnlinkEditions removes the platform links of a set of editions and
+// applies the orphan rule to every user game their links sit on: one left with
+// no links from outside the set is orphaned, unless it is the user game of the
+// new match (rematching onto it rewrites its links). Without orphanAction an
+// orphan refuses the rematch with 409.
+func rematchUnlinkEditions(ctx context.Context, tx bun.Tx, userID string, ids []string, newIGDBID int, orphanAction string) error {
 	var ugs []struct {
 		UserGameID string `bun:"user_game_id"`
 		Others     int    `bun:"others"`
@@ -116,28 +93,26 @@ func rematchUnlinkFamily(ctx context.Context, tx bun.Tx, userID string, ids []st
 	return nil
 }
 
-// writeFamily writes each family member to the library. A member with no
-// platform rows cannot be written; it is logged and left out of the result.
-func writeFamily(ctx context.Context, tx bun.Tx, userID string, ids []string) (map[string]externalgame.LibraryWrite, error) {
+// writeEditions writes each edition to the library. One with no platform
+// rows cannot be written; it is left out of the result
+// (tasks.WriteMatchedToLibrary).
+func writeEditions(ctx context.Context, tx bun.Tx, userID string, ids []string) (map[string]externalgame.LibraryWrite, error) {
 	writes := make(map[string]externalgame.LibraryWrite, len(ids))
 	for _, id := range ids {
-		lw, err := externalgame.WriteToLibrary(ctx, tx, userID, id)
-		if errors.Is(err, externalgame.ErrNoPlatforms) {
-			slog.WarnContext(ctx, "sync: external game has no platform rows; match recorded, nothing written to the library",
-				logging.KeyExternalGameID, id)
-			continue
-		}
+		lw, wrote, err := tasks.WriteMatchedToLibrary(ctx, tx, userID, id)
 		if err != nil {
-			return nil, fmt.Errorf("write %s to the library: %w", id, err)
+			return nil, err
 		}
-		writes[id] = lw
+		if wrote {
+			writes[id] = lw
+		}
 	}
 	return writes, nil
 }
 
 // HandleRematchExternalGame handles POST /api/sync/external-games/:id/rematch:
-// it re-resolves a top-level external game and its Child games to a new IGDB
-// id and writes them to the library, all in one transaction (#1338).
+// it re-resolves an External game and its editions to a new IGDB id and writes
+// them to the library, all in one transaction (#1338).
 func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -155,30 +130,23 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "igdb_id is required")
 	}
 
-	// A plain read, no lock: the active Job in which the game or a child has
-	// an open item, preferring the game's own. Then everything runs in
-	// the module's transaction for that Job: the Job row lock first, then the
-	// family, as a sync worker does, so the two cannot deadlock.
-	var jobID string
-	if err := h.db.NewRaw(`
-		SELECT ji.job_id FROM job_items ji
-		JOIN jobs j ON j.id = ji.job_id
-		JOIN external_games eg ON eg.id = ji.external_game_id
-		WHERE (eg.id = ? OR eg.parent_id = ?) AND eg.user_id = ?
-		  AND ji.status IN ('pending', 'pending_review')
-		  AND j.status IN ('pending', 'processing')
-		ORDER BY (eg.id = ?) DESC, j.created_at DESC
-		LIMIT 1`,
-		id, id, userID, id,
-	).Scan(ctx, &jobID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	// A plain read, no lock: the active Job in which the game or one of its
+	// editions has an open item, preferring the game's own. Then everything
+	// runs in the module's transaction for that Job: the Job row lock first,
+	// then the editions, as a sync worker does, so the two cannot deadlock.
+	jobIDs, err := externalgame.EditionsOpenItemJobs(ctx, h.db, userID, id)
+	if err != nil {
 		slog.ErrorContext(reqCtx, "sync: rematch: find items", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to rematch external game")
 	}
+	jobID := ""
+	if len(jobIDs) > 0 {
+		jobID = jobIDs[0]
+	}
 
-	var err error
 	if jobID != "" {
 		_, err = h.lc.CompleteByRematch(ctx, jobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
-			return rematchFamily(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, job.ID)
+			return rematchEditions(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, job.ID)
 		})
 		if errors.Is(err, joblifecycle.ErrJobNotActive) || errors.Is(err, joblifecycle.ErrGone) {
 			jobID, err = "", nil // ended meanwhile: no items to touch
@@ -186,7 +154,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 	if jobID == "" && err == nil {
 		err = h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-			_, err := rematchFamily(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, "")
+			_, err := rematchEditions(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, "")
 			return err
 		})
 	}
@@ -213,32 +181,22 @@ func abortHTTP(err error) error {
 	return err
 }
 
-// rematchFamily re-resolves a top-level game and its Child games to igdbID
-// and writes them to the library. With jobID set it runs in the module's
-// transaction for that Job and returns the items to complete there, with
-// their diff rows written: the game's item when it is in Pending review, and
-// every open item of its children, waiting or not. It refuses (409)
-// while the game's own item is pending: the sync is not done with it.
-func rematchFamily(ctx context.Context, tx bun.Tx, userID, id string, igdbID int, orphanAction, jobID string) ([]string, error) {
-	eg, children, err := lockFamily(ctx, tx, userID, id, "rematch")
+// rematchEditions re-resolves an External game and its editions to igdbID and
+// writes them to the library. With jobID set it runs in the module's
+// transaction for that Job and returns the items to complete there, with their
+// diff rows written: every open item of the set in that Job. It refuses (409)
+// while the given game's own item is pending: the sync is not done with it.
+func rematchEditions(ctx context.Context, tx bun.Tx, userID, id string, igdbID int, orphanAction, jobID string) ([]string, error) {
+	eg, set, err := lockEditions(ctx, tx, userID, id)
 	if err != nil {
 		return nil, abortHTTP(err)
 	}
-	ids := familyIDs(eg, children)
+	ids := externalgame.GameIDs(set)
 
-	var items []struct {
-		ID             string `bun:"id"`
-		ExternalGameID string `bun:"external_game_id"`
-		Status         string `bun:"status"`
-	}
+	var items []externalgame.OpenItem
 	if jobID != "" {
-		if err := tx.NewRaw(`
-			SELECT id, external_game_id, status FROM job_items
-			WHERE job_id = ? AND external_game_id IN (?) AND status IN ('pending', 'pending_review')
-			ORDER BY id`,
-			jobID, bun.List(ids),
-		).Scan(ctx, &items); err != nil {
-			return nil, fmt.Errorf("load family items: %w", err)
+		if items, err = externalgame.EditionsOpenItems(ctx, tx, jobID, ids); err != nil {
+			return nil, err
 		}
 	}
 	for _, it := range items {
@@ -250,18 +208,17 @@ func rematchFamily(ctx context.Context, tx bun.Tx, userID, id string, igdbID int
 	if err := externalgame.EnsureGameRow(ctx, tx, int32(igdbID), eg.Title); err != nil { //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 		return nil, err
 	}
-	if err := rematchUnlinkFamily(ctx, tx, userID, ids, igdbID, orphanAction); err != nil {
+	if err := rematchUnlinkEditions(ctx, tx, userID, ids, igdbID, orphanAction); err != nil {
 		return nil, abortHTTP(err)
 	}
-	// The whole family takes the match and is unskipped: a child's skip
-	// equals its parent's (#1339), and a rematch unskips the parent.
+	// Every edition takes the match and is unskipped.
 	if _, err := tx.NewRaw(
 		`UPDATE external_games SET resolved_igdb_id = ?, is_skipped = false, updated_at = now() WHERE id IN (?)`,
 		igdbID, bun.List(ids),
 	).Exec(ctx); err != nil {
 		return nil, fmt.Errorf("set match: %w", err)
 	}
-	writes, err := writeFamily(ctx, tx, userID, ids)
+	writes, err := writeEditions(ctx, tx, userID, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -290,11 +247,10 @@ func rematchFamily(ctx context.Context, tx bun.Tx, userID, id string, igdbID int
 }
 
 // HandleUnskipGame handles POST /api/sync/external-games/:id/unskip. It clears
-// the skip on a top-level game and its Child games; a matched game is written
-// to the library at once, with its children on its match. An unmatched game is
-// not written: its children are made unmatched too (#1425), and the family
-// shows as unmatched until the user matches it or the next sync does (#1338).
-// All of it is one transaction.
+// the skip on an External game and its editions; matched editions are written
+// to the library at once. Unmatched ones are not written, and show as
+// unmatched until the user matches them or the next sync does (#1338). All of
+// it is one transaction.
 func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -306,39 +262,21 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 
 	var wrote *int32
 	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		eg, children, err := lockFamily(ctx, tx, userID, id, "unskip")
+		eg, set, err := lockEditions(ctx, tx, userID, id)
 		if err != nil {
 			return err
 		}
-		ids := familyIDs(eg, children)
+		ids := externalgame.GameIDs(set)
 		if _, err := tx.NewRaw(
 			`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE id IN (?)`, bun.List(ids),
 		).Exec(ctx); err != nil {
 			return fmt.Errorf("unskip: %w", err)
 		}
-		// A child skipped with its parent may carry an older match, and one
-		// created while the parent was skipped has none: it takes the parent's,
-		// leaving its old user game (unskip has no orphan_action; it is kept).
-		// An unmatched parent's matched child (older data: the backfill that
-		// introduced parent_id, or the inherit race fixed in #1437) loses its
-		// match the same way, as repairChildSkips does (#1425).
-		for _, ch := range children {
-			if sameMatch(ch.ResolvedIGDBID, eg.ResolvedIGDBID) {
-				continue
-			}
-			if err := usergame.UnlinkExternalGame(ctx, tx, userID, ch.ID); err != nil {
-				return err
-			}
-			if _, err := tx.NewRaw(
-				`UPDATE external_games SET resolved_igdb_id = ? WHERE id = ?`, eg.ResolvedIGDBID, ch.ID,
-			).Exec(ctx); err != nil {
-				return fmt.Errorf("re-point child: %w", err)
-			}
-		}
+		// Editions share one match, so the set is either matched or not.
 		if eg.ResolvedIGDBID == nil {
 			return nil
 		}
-		if _, err := writeFamily(ctx, tx, userID, ids); err != nil {
+		if _, err := writeEditions(ctx, tx, userID, ids); err != nil {
 			return err
 		}
 		wrote = eg.ResolvedIGDBID
@@ -356,12 +294,4 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		tasks.EnqueueImmediateMetadataFetch(ctx, h.db, h.riverClient, *wrote)
 	}
 	return c.NoContent(http.StatusNoContent)
-}
-
-// sameMatch reports whether two matches are equal, both unmatched included.
-func sameMatch(a, b *int32) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
 }

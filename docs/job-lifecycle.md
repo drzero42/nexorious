@@ -33,7 +33,7 @@ Each Job kind registers with the module and tells it what is particular to the k
 - how to run the Job's dispatch again, or that it cannot be run again;
 - what counts as a duplicate Job;
 - its ending effects and, optionally, a metrics observer;
-- which items wait on which other items (only sync has any).
+- which items wait on which other items (no kind has any since #1450).
 
 The module does not import the workers.
 
@@ -91,12 +91,12 @@ stateDiagram-v2
     [*] --> completed : created already ended
     pending --> pending : next stage / starts or stops waiting
     pending --> pending_review : worker cannot match
-    pending --> completed : worker, or sync rematch of its parent
+    pending --> completed : worker, or sync rematch through another edition
     pending --> failed : worker, or recovery
     pending --> skipped : worker (standing skip) or Skip
     pending_review --> pending : Resolve
     pending_review --> skipped : Skip
-    pending_review --> completed : sync rematch
+    pending_review --> completed : sync rematch, or sync settle
     failed --> pending : Retry
     pending --> cancelled : Job cancelled or failed
     pending_review --> cancelled : Job cancelled or failed
@@ -118,7 +118,8 @@ stateDiagram-v2
 | `pending` | `failed` | Recovery: the owner ended without changing the item | Owner cleared; waiting items queued; completion evaluated |
 | `pending_review` | `pending` | Resolve (imports) | Chosen IGDB game stored; River job inserted and recorded |
 | `pending_review` | `completed` | Sync rematch of a game in Pending review | The library write itself (see [Outside the lifecycle](#outside-the-lifecycle)); completion evaluated |
-| `pending` | `completed` | Sync rematch of its parent game, for a child's item whether it is waiting or has an owner | The library write for this game too; owning River job cancelled, if any; completion evaluated |
+| `pending_review` | `completed` | Sync settle: a search matched a same-title game of the Job with confidence, and this game takes that match (no user action) | The library write for this game; completion evaluated |
+| `pending` | `completed` | Sync rematch through another edition of its game | The library write for this game too; owning River job cancelled, if any; completion evaluated |
 | `pending_review` | `skipped` | Skip | Waiting items queued; completion evaluated |
 | `pending` | `skipped` | Skip of the game (sync only) | Owning River job cancelled, if any; waiting items queued; completion evaluated |
 | `failed` | `pending` | Retry | Job reopened if it was `completed`; River job inserted and recorded |
@@ -315,6 +316,8 @@ A River job names the Job or item it works on in its args (`job_id` for a dispat
 
 ### Items that wait on another item
 
+> No kind uses this since #1450: sync games are editions now, and no item waits on another. #1451 removes it.
+
 A sync **Child game** follows its parent's match, and the user never sees it on its own. Its item can therefore be `pending` with no owner while it waits for the parent's item. The module knows nothing about games: the sync kind tells it which item another item waits on, and the module applies these rules.
 
 - **Only an item the kind names can wait.** A `pending` item without an owner that the kind does not say waits on another is an orphan, and recovery gives it a River job.
@@ -328,7 +331,7 @@ Sync keeps a child from being left without a parent item in the first place (#13
 
 ## Outside the lifecycle
 
-- **Sync rematch and unskip are not Job work** (see [ADR 0002](adr/0002-rematch-and-unskip-are-not-job-work.md)). Rematch updates the library in its own transaction. It touches items in one case only: when the game or one of its children has an open item in an active Job. Then it runs inside the module's transaction for that Job, and completes the game's item if it is in Pending review and every open item of its children, cancelling their owners. The handler names those items; the game need not have an item of its own. It is refused (409) only while the game's own item is `pending`: the sync is not done with it. Unskip writes the library directly when the game is already matched; an unmatched game waits for the user to match it, or for the next sync.
+- **Sync rematch and unskip are not Job work** (see [ADR 0002](adr/0002-rematch-and-unskip-are-not-job-work.md)). Rematch updates the library in its own transaction. It touches items in one case only: when the game or one of its editions has an open item in an active Job. Then it runs inside the module's transaction for that Job, and completes every open item of the set, cancelling their owners. The handler names those items; the game need not have an item of its own. It is refused (409) only while the game's own item is `pending`: the sync is not done with it. Unskip writes the library directly when the game is already matched; an unmatched game waits for the user to match it, or for the next sync. Sync **settle** also completes items in Pending review that no user chose: after a search matched a game with confidence, the match worker completes, through the same module operation (`CompleteByRematch`), the Pending review items of the game's same-title games in that Job that take the match.
 - **The storefront view** reads a game's status from its newest item only, never from older items. An item's status counts only while nothing has written the game to the library since. One exception: an item in Pending review in an active Job (an older Job that Retry reopened) shows the game for review, because it keeps that Job from completing.
 - **Restoring a backup** replaces the whole database. River is stopped first and running work is cancelled; in the restored database the queue is emptied and the module fails every active Job, of every kind, with its open items cancelled and no owner left recorded (`FailAllAfterRestore`). It queues no ending effects, so a restore sends no notifications, and it needs no River client, since it runs before River starts, possibly in `nexorious migrate`. Nothing in flight survives a restore, so there is nothing to recover afterwards (#1341).
 - **Reset sync data** cancels the storefront's active sync through the module, then deletes the storefront's games. Items of older Jobs lose their link to a game and stay as history.

@@ -450,48 +450,48 @@ func TestPendingReviewCount_AllJobStatuses(t *testing.T) {
 }
 
 func TestPendingReviewCount_Deduplicates(t *testing.T) {
-	// A child row with a pending_review job_item must not be counted — only the
-	// parent counts. Dedup now comes from parent_id IS NULL, not DISTINCT title.
+	// Two editions with a pending_review job_item each are one set and count
+	// once.
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "prc-dedup")
 
 	insertJob(t, testDB, "job-prc-dedup", userID, "sync", "playstation-store", "processing")
 
-	// Insert parent external_game and link its job_item.
+	// The first edition and its job_item.
 	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-prc-parent', ?, 'playstation-store', 'CUSA12345_00', 'Call of Duty', false, true, false, now(), now())`,
+		 VALUES ('eg-prc-ed-a', ?, 'playstation-store', 'CUSA12345_00', 'Call of Duty', false, true, false, now(), now())`,
 		userID,
 	)
 	if err != nil {
-		t.Fatalf("insert parent eg: %v", err)
+		t.Fatalf("insert first edition: %v", err)
 	}
 	_, err = testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES ('ji-prc-dedup-1', 'job-prc-dedup', ?, 'CUSA12345_00', 'Call of Duty', 'eg-prc-parent', '{}', 'pending_review', '{}', '[]', now())`,
+		 VALUES ('ji-prc-dedup-1', 'job-prc-dedup', ?, 'CUSA12345_00', 'Call of Duty', 'eg-prc-ed-a', '{}', 'pending_review', '{}', '[]', now())`,
 		userID,
 	)
 	if err != nil {
-		t.Fatalf("insert parent job_item: %v", err)
+		t.Fatalf("insert first job_item: %v", err)
 	}
 
-	// Insert child external_game and link its job_item.
+	// The second edition and its job_item.
 	_, err = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
-		 VALUES ('eg-prc-child', ?, 'playstation-store', 'PPSA07890_00', 'Call of Duty', false, true, false, 'eg-prc-parent', now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
+		 VALUES ('eg-prc-ed-b', ?, 'playstation-store', 'PPSA07890_00', 'Call of Duty', false, true, false, now(), now())`,
 		userID,
 	)
 	if err != nil {
-		t.Fatalf("insert child eg: %v", err)
+		t.Fatalf("insert second edition: %v", err)
 	}
 	_, err = testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES ('ji-prc-dedup-2', 'job-prc-dedup', ?, 'PPSA07890_00', 'Call of Duty', 'eg-prc-child', '{}', 'pending_review', '{}', '[]', now())`,
+		 VALUES ('ji-prc-dedup-2', 'job-prc-dedup', ?, 'PPSA07890_00', 'Call of Duty', 'eg-prc-ed-b', '{}', 'pending_review', '{}', '[]', now())`,
 		userID,
 	)
 	if err != nil {
-		t.Fatalf("insert child job_item: %v", err)
+		t.Fatalf("insert second job_item: %v", err)
 	}
 
 	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
@@ -503,7 +503,7 @@ func TestPendingReviewCount_Deduplicates(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if resp["pending_review_count"].(float64) != 1 {
-		t.Fatalf("expected pending_review_count=1 (child excluded), got %v", resp["pending_review_count"])
+		t.Fatalf("expected pending_review_count=1 (one set), got %v", resp["pending_review_count"])
 	}
 	bySource := resp["counts_by_source"].(map[string]any)
 	if bySource["playstation-store"].(float64) != 1 {
@@ -511,30 +511,30 @@ func TestPendingReviewCount_Deduplicates(t *testing.T) {
 	}
 }
 
-func TestPendingReviewCount_ExcludesChildren(t *testing.T) {
-	// A pending_review item linked to a child external_game must be excluded
-	// from the count even when the parent has no pending_review item.
+func TestPendingReviewCount_AnyEditionInReview_CountsTheSet(t *testing.T) {
+	// A set of editions counts when any edition is in review, also when the
+	// oldest edition has no pending_review item.
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "prc-exclude-child")
+	userID, token := setupTagUser(t, testDB, e, "prc-any-edition")
 
-	insertJob(t, testDB, "job-prc-child", userID, "sync", "playstation-store", "processing")
+	insertJob(t, testDB, "job-prc-ed", userID, "sync", "playstation-store", "processing")
 
-	// Parent: no pending_review item.
+	// The oldest edition: no pending_review item.
 	_, _ = testDB.ExecContext(context.Background(),
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-prc-ex-parent', ?, 'playstation-store', 'CUSA999', 'Ratchet', false, true, false, now(), now())`,
+		 VALUES ('eg-prc-ed-1', ?, 'playstation-store', 'CUSA999', 'Ratchet', false, true, false, now() - interval '1 hour', now())`,
 		userID,
 	)
-	// Child: has a pending_review item — must NOT be counted.
+	// A younger edition with a pending_review item: the set counts.
 	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
-		 VALUES ('eg-prc-ex-child', ?, 'playstation-store', 'PPSA999', 'Ratchet', false, true, false, 'eg-prc-ex-parent', now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
+		 VALUES ('eg-prc-ed-2', ?, 'playstation-store', 'PPSA999', 'Ratchet', false, true, false, now(), now())`,
 		userID,
 	)
 	_, _ = testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES ('ji-prc-ex-child', 'job-prc-child', ?, 'PPSA999', 'Ratchet', 'eg-prc-ex-child', '{}', 'pending_review', '{}', '[]', now())`,
+		 VALUES ('ji-prc-ed-2', 'job-prc-ed', ?, 'PPSA999', 'Ratchet', 'eg-prc-ed-2', '{}', 'pending_review', '{}', '[]', now())`,
 		userID,
 	)
 
@@ -546,8 +546,8 @@ func TestPendingReviewCount_ExcludesChildren(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["pending_review_count"].(float64) != 0 {
-		t.Fatalf("expected pending_review_count=0 (child excluded), got %v", resp["pending_review_count"])
+	if resp["pending_review_count"].(float64) != 1 {
+		t.Fatalf("expected pending_review_count=1 (the set), got %v", resp["pending_review_count"])
 	}
 }
 

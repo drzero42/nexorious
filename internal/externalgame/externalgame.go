@@ -1,11 +1,13 @@
 // Package externalgame owns the storefront side of a sync: External games
 // (external_games) and their platform rows (external_game_platforms), and the
-// rules about an External game and its Child games (#1412). It sits between
-// internal/joblifecycle, which owns the sync Job, and internal/usergame, which
-// owns the library.
+// rules about a game's editions (#1449, ADR 0008): the definition of a set of
+// editions (SameEdition, EditionKey), locking a game's editions
+// (LockEditions), and taking a same-title game's decision (TakePrecedent). It
+// sits between internal/joblifecycle, which owns the sync Job, and
+// internal/usergame, which owns the library.
 //
-// For now it holds only the library write (WriteToLibrary); the other writes
-// to these tables move in over the following steps of #1412.
+// It also holds the library write (WriteToLibrary); the other writes to these
+// tables move in over the following steps of #1412.
 package externalgame
 
 import (
