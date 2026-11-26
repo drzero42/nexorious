@@ -163,7 +163,7 @@ A `failed` or `cancelled` Job is never reopened. Its dispatch may not be done, s
 - Retry applies to `failed` items only, in a Job that is active or `completed`. On a `failed` or `cancelled` Job it is refused (HTTP 409).
 - Retry of a Job with no failed items changes nothing. It does not reopen the Job.
 - Reopening a `completed` Job takes the kind's duplicate lock. If another Job with the same duplicate key is active, Retry is refused (409): there is never more than one active Job per duplicate key.
-- Retrying an item also retries every `failed` item that, by the kind's rule, waits on it (a sync parent's children), whatever the reason each of them failed. Each gets a River job like any retried item; its worker then asks to wait on the retried item in the normal way.
+- Retrying an item also retries every `failed` item that, by the kind's rule, waits on it, whatever the reason each of them failed. Each gets a River job like any retried item; its worker then asks to wait on the retried item in the normal way.
 - A reopened Job completes again through the normal rule, and its ending effects run again.
 
 ### What each transition writes besides status
@@ -191,7 +191,7 @@ Completion is not an operation callers perform. The module evaluates it inside e
 | Waiting on the user | The dispatch is done, no `pending` item has an owner, and at least one item is `pending_review` | The Job stays `processing`. When any transition other than a user action (Resolve, Skip, Retry, rematch) produces this outcome, the kind's *awaiting review* effect is queued; a user action that leaves the Job still waiting does not queue it again |
 | Completed | The dispatch is done and no item is `pending` or `pending_review` | The Job becomes `completed`; ending effects are queued |
 
-One combination is left: the dispatch is done, the only `pending` items have no owner, and nothing is in Pending review. It cannot arise, because once the dispatch is done an item may only wait on an item that is open in the same Job, and that item is then `pending` with an owner or in Pending review. (An item that is waited on does not itself wait, except between a promotion and the end of the same dispatch, and the end of the dispatch queues it.) If recovery finds it anyway, it queues the waiting items.
+One combination is left: the dispatch is done, the only `pending` items have no owner, and nothing is in Pending review. It cannot arise, because once the dispatch is done an item may only wait on an item that is open in the same Job, and that item is then `pending` with an owner or in Pending review. (An item that is waited on does not itself wait, except while the kind still names it as waiting during the dispatch, and the end of the dispatch queues it.) If recovery finds it anyway, it queues the waiting items.
 
 A Job waiting on the user stays `processing` for as long as it takes. For sync this means a storefront with games in **Pending review** does not start a new sync until they are resolved or skipped.
 
@@ -318,16 +318,14 @@ A River job names the Job or item it works on in its args (`job_id` for a dispat
 
 > No kind uses this since #1450: sync games are editions now, and no item waits on another. #1451 removes it.
 
-A sync **Child game** follows its parent's match, and the user never sees it on its own. Its item can therefore be `pending` with no owner while it waits for the parent's item. The module knows nothing about games: the sync kind tells it which item another item waits on, and the module applies these rules.
+A kind can say, for a `pending` item, which other item of the same Job it waits on. Such an item has no owner while it waits. The module knows nothing about why it waits: the kind names the awaited item, and the module applies these rules.
 
 - **Only an item the kind names can wait.** A `pending` item without an owner that the kind does not say waits on another is an orphan, and recovery gives it a River job.
-- **Waiting is allowed only while it can end:** the item it waits on is open in the same Job, or that item does not exist yet and the dispatch is not done (it may be in a later batch). If the awaited item has already ended, or does not exist once the dispatch is done, waiting is not allowed. The module decides this inside the transaction in which the child's worker asks to wait. If waiting is not allowed the worker is told so, and decides at once.
-- **When the parent's item ends, in whatever status, its waiting children are queued** in the same transaction. Each child's worker then decides without waiting: it inherits when the parent is matched, is skipped when the game is skipped, and fails otherwise.
-- **When the dispatch is marked done,** every waiting item whose awaited item does not exist is queued the same way, and so is every `pending` item without an owner that the kind no longer names as waiting: a game promoted during this dispatch has no parent any more.
-- **While the parent's item is in Pending review** the children keep waiting. They do not stop the Job from counting as waiting on the user.
-- **A rematch of the parent** completes its children's items with it, waiting or not (see below).
-
-Sync keeps a child from being left without a parent item in the first place (#1339): a child's skip follows its parent's, only a suitable game is chosen as a parent, and when an unmatched parent leaves the storefront library its oldest remaining child is promoted in its place. A child that fails for want of a parent is an error case, not a normal outcome.
+- **Waiting is allowed only while it can end:** the awaited item is open in the same Job, or it does not exist yet and the dispatch is not done (it may be in a later batch). If the awaited item has already ended, or does not exist once the dispatch is done, waiting is not allowed. The module decides this inside the transaction in which the waiting item's worker asks to wait. If waiting is not allowed the worker is told so, and decides at once.
+- **When the awaited item ends, in whatever status, the items waiting on it are queued** in the same transaction. Each of their workers then decides without waiting.
+- **When the dispatch is marked done,** every waiting item whose awaited item does not exist is queued the same way, and so is every `pending` item without an owner that the kind no longer names as waiting.
+- **While the awaited item is in Pending review** the items waiting on it keep waiting. They do not stop the Job from counting as waiting on the user.
+- **A rematch** completes the open items its handler names, waiting or not (see below).
 
 ## Outside the lifecycle
 

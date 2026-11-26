@@ -681,7 +681,7 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 			return err
 		}
 		if wroteMatch {
-			w.settle(ctx, item, eg)
+			w.completeSameTitleReviews(ctx, item, eg)
 		}
 		return nil
 	}
@@ -691,8 +691,9 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 	return w.toReview(ctx, rj, item.ID, eg.ID, candidatesJSON, &bs)
 }
 
-// settle completes the Pending review items of this game's same-title games
-// in this Job, now that a search matched it with confidence (rule 4 of #1449):
+// completeSameTitleReviews completes the Pending review items of this game's same-title games
+// in this Job, now that a search matched it with confidence (the settle rule of
+// ADR 0008):
 // two editions are searched with different platform filters, so one can match
 // while the other went to review. Inside the module's transaction for the Job,
 // in id order, each such game without a decision takes the match by
@@ -700,7 +701,7 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 // is returned for completion. A game whose precedent is a skip is left alone,
 // with its item in review. Best effort: it runs after the match committed, and
 // a failure is logged and leaves the items in review.
-func (w *IGDBMatchWorker) settle(ctx context.Context, item *models.JobItem, eg *models.ExternalGame) {
+func (w *IGDBMatchWorker) completeSameTitleReviews(ctx context.Context, item *models.JobItem, eg *models.ExternalGame) {
 	n, err := w.LC.CompleteByRematch(ctx, item.JobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
 		var waiting []struct {
 			GameID string `bun:"game_id"`
@@ -710,11 +711,11 @@ func (w *IGDBMatchWorker) settle(ctx context.Context, item *models.JobItem, eg *
 			SELECT o.id AS game_id, ji.id AS item_id
 			FROM external_games o
 			JOIN external_games me ON me.id = ?
-			JOIN job_items ji ON ji.external_game_id = o.id AND ji.job_id = ? AND ji.status = 'pending_review'
+			JOIN job_items ji ON ji.external_game_id = o.id AND ji.job_id = ? AND ji.status = ?
 			WHERE `+externalgame.SameTitle("o", "me")+` AND o.id <> me.id
 			  AND o.resolved_igdb_id IS NULL AND NOT o.is_skipped
 			ORDER BY o.id, ji.id`,
-			eg.ID, job.ID,
+			eg.ID, job.ID, models.JobItemStatusPendingReview,
 		).Scan(ctx, &waiting); err != nil {
 			return nil, fmt.Errorf("find same-title games in review: %w", err)
 		}
@@ -744,7 +745,7 @@ func (w *IGDBMatchWorker) settle(ctx context.Context, item *models.JobItem, eg *
 				done = append(done, wg.ItemID)
 			case errors.Is(err, errNoPrecedent):
 			default:
-				slog.WarnContext(ctx, "igdb_match: settle of a same-title game failed; its item stays in review",
+				slog.WarnContext(ctx, "igdb_match: completing a same-title review failed; its item stays in review",
 					logging.KeyExternalGameID, wg.GameID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			}
 		}
@@ -753,11 +754,11 @@ func (w *IGDBMatchWorker) settle(ctx context.Context, item *models.JobItem, eg *
 	switch {
 	case err == nil:
 		if n > 0 {
-			slog.DebugContext(ctx, "igdb_match: settled same-title games in review", logging.KeyJobItemID, item.ID, "settled", n)
+			slog.DebugContext(ctx, "igdb_match: completed same-title reviews", logging.KeyJobItemID, item.ID, "count", n)
 		}
 	case errors.Is(err, joblifecycle.ErrJobNotActive), errors.Is(err, joblifecycle.ErrGone):
 	default:
-		slog.WarnContext(ctx, "igdb_match: settle failed; same-title games stay in review",
+		slog.WarnContext(ctx, "igdb_match: completing same-title reviews failed; they stay in review",
 			logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 }

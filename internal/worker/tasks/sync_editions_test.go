@@ -561,7 +561,7 @@ func TestSettle_OldestDecisionIsASkip_LeavesTheGameInReview(t *testing.T) {
 	itemC := edInsertItem(t, jobID, userID, cID, "pending")
 	itemB := edInsertItem(t, jobID, userID, bID, "pending_review")
 
-	if err := tasks.SettleForTest(ctx, &tasks.IGDBMatchWorker{DB: testDB, LC: lc}, itemC, cID); err != nil {
+	if err := tasks.CompleteSameTitleReviewsForTest(ctx, &tasks.IGDBMatchWorker{DB: testDB, LC: lc}, itemC, cID); err != nil {
 		t.Fatal(err)
 	}
 	if _, b := edGet(t, userID, "B"); b.Resolved != nil || b.IsSkipped {

@@ -134,10 +134,7 @@ func LockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.Ext
 			).Scan(ctx, &again); err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("read editions again: %w", err)
 			}
-			locked := make([]string, len(set))
-			for i := range set {
-				locked[i] = set[i].ID
-			}
+			locked := IDs(set)
 			if !slices.Contains(locked, id) || !slices.Equal(locked, again) {
 				return errRelock
 			}
@@ -167,12 +164,13 @@ func IDs(games []models.ExternalGame) []string {
 	return ids
 }
 
-// precedentFrom selects the precedent of the game aliased me: the oldest other
-// same-title game that has a decision (created_at, then id).
-const precedentFrom = `
+// precedentFrom selects the candidates for the precedent of the game aliased
+// me: the other same-title games that have a decision. The precedent is the
+// oldest of them (created_at, then id).
+var precedentFrom = `
 	FROM external_games s
 	JOIN external_games me ON me.id = ?
-	WHERE %s AND s.id <> me.id
+	WHERE ` + SameTitle("s", "me") + ` AND s.id <> me.id
 	  AND (s.resolved_igdb_id IS NOT NULL OR s.is_skipped)`
 
 // HasPrecedent reports, without a lock, whether a same-title game of the
@@ -181,7 +179,7 @@ const precedentFrom = `
 func HasPrecedent(ctx context.Context, db bun.IDB, id string) (bool, error) {
 	var exists bool
 	if err := db.NewRaw(
-		`SELECT EXISTS (SELECT 1 `+fmt.Sprintf(precedentFrom, SameTitle("s", "me"))+`)`, id,
+		`SELECT EXISTS (SELECT 1 `+precedentFrom+`)`, id,
 	).Scan(ctx, &exists); err != nil {
 		return false, fmt.Errorf("check precedent: %w", err)
 	}
@@ -197,8 +195,9 @@ func TakePrecedent(ctx context.Context, db bun.IDB, id string) (bool, error) {
 }
 
 // TakeMatchPrecedent is TakePrecedent that only takes a match: when the
-// precedent is a skip the game is left as it is and false is returned. Settle
-// uses it, so a game is never left skipped with its item in review.
+// precedent is a skip the game is left as it is and false is returned. The match
+// worker uses it to complete same-title reviews, so a game is never left
+// skipped with its item in review.
 func TakeMatchPrecedent(ctx context.Context, db bun.IDB, id string) (bool, error) {
 	return takePrecedent(ctx, db, id, true)
 }
@@ -213,7 +212,7 @@ func takePrecedent(ctx context.Context, db bun.IDB, id string, matchOnly bool) (
 		SET resolved_igdb_id = p.resolved_igdb_id, is_skipped = p.is_skipped, updated_at = now()
 		FROM (
 			SELECT s.resolved_igdb_id, s.is_skipped
-			`+fmt.Sprintf(precedentFrom, SameTitle("s", "me"))+`
+			`+precedentFrom+`
 			ORDER BY s.created_at, s.id
 			LIMIT 1
 			FOR SHARE OF s

@@ -33,9 +33,10 @@ func ApplyImportedPoolsForTest(ctx context.Context, db *bun.DB, jobID, userID st
 	return applyImportedPools(ctx, db, jobID, userID)
 }
 
-// SettleForTest runs the match worker's settle for the item itemID, whose
-// External game egID a search has just matched.
-func SettleForTest(ctx context.Context, w *IGDBMatchWorker, itemID, egID string) error {
+// CompleteSameTitleReviewsForTest runs the match worker's completion of
+// same-title reviews for the item itemID, whose External game egID a search
+// has just matched.
+func CompleteSameTitleReviewsForTest(ctx context.Context, w *IGDBMatchWorker, itemID, egID string) error {
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx); err != nil {
 		return err
@@ -44,6 +45,6 @@ func SettleForTest(ctx context.Context, w *IGDBMatchWorker, itemID, egID string)
 	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", egID).Scan(ctx); err != nil {
 		return err
 	}
-	w.settle(ctx, &item, &eg)
+	w.completeSameTitleReviews(ctx, &item, &eg)
 	return nil
 }
