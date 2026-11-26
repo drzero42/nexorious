@@ -1671,6 +1671,49 @@ func TestCollectionStats(t *testing.T) {
 			t.Fatalf("expected total_hours_played=60.5, got %v", hours)
 		}
 	})
+
+	// A game is counted once per platform, however many storefronts it is
+	// owned through there (ADR 0007, #1442).
+	t.Run("platform counts games, not storefront rows", func(t *testing.T) {
+		userID, token := setupUserGamesUser(t, testDB, e, "stats-platforms")
+
+		gA := insertTestGame(t, testDB, "Platform Game A")
+		gB := insertTestGame(t, testDB, "Platform Game B")
+		insertTestUserGame(t, testDB, "ug-plat-a", userID, int(gA))
+		insertTestUserGame(t, testDB, "ug-plat-b", userID, int(gB))
+
+		pcWindows, ps5 := "pc-windows", "playstation-5"
+		steam, gog, psStore := "steam", "gog", "playstation-store"
+		insertTestUserGamePlatform(t, testDB, "ugp-plat-a-steam", "ug-plat-a", &pcWindows, &steam)
+		insertTestUserGamePlatform(t, testDB, "ugp-plat-a-gog", "ug-plat-a", &pcWindows, &gog)
+		insertTestUserGamePlatform(t, testDB, "ugp-plat-a-ps5", "ug-plat-a", &ps5, &psStore)
+		insertTestUserGamePlatform(t, testDB, "ugp-plat-b-steam", "ug-plat-b", &pcWindows, &steam)
+
+		rec := getAuth(t, e, "/api/user-games/stats", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			TotalGames    int            `json:"total_games"`
+			PlatformStats map[string]int `json:"platform_stats"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode stats: %v", err)
+		}
+
+		if resp.TotalGames != 2 {
+			t.Fatalf("expected total_games=2, got %d", resp.TotalGames)
+		}
+		want := map[string]int{"PC (Windows)": 2, "PlayStation 5": 1}
+		if len(resp.PlatformStats) != len(want) {
+			t.Fatalf("expected platform_stats=%v, got %v", want, resp.PlatformStats)
+		}
+		for name, n := range want {
+			if resp.PlatformStats[name] != n {
+				t.Fatalf("expected platform_stats=%v, got %v", want, resp.PlatformStats)
+			}
+		}
+	})
 }
 
 func TestListUserGames_EverySortKeyBothDirections(t *testing.T) {
