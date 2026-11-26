@@ -94,11 +94,7 @@ type RematchRequest struct {
 // outside.
 func (e *Editions) Rematch(ctx context.Context, req RematchRequest) (map[string]LibraryWrite, error) {
 	changed, staying := e.scope(req.OnlyThisEdition)
-	title := req.IGDBTitle
-	if title == "" {
-		title = e.game.Title
-	}
-	if err := EnsureGameRow(ctx, e.tx, int32(req.IGDBID), title); err != nil { //nolint:gosec // an id outside int32 is refused by the match UPDATE below, which takes it unconverted
+	if err := EnsureGameRow(ctx, e.tx, int32(req.IGDBID), req.IGDBTitle, e.game.Title); err != nil { //nolint:gosec // an id outside int32 is refused by the match UPDATE below, which takes it unconverted
 		return nil, err
 	}
 	if err := e.handOverSharedLinks(ctx, staying); err != nil {

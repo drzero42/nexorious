@@ -683,17 +683,12 @@ func writeConfidentMatch(ctx context.Context, tx bun.Tx, eg *models.ExternalGame
 	if err != nil || took {
 		return false, err
 	}
-	bestID := best.ID
-	title := best.Title
-	if title == "" {
-		title = eg.Title
-	}
-	if err := externalgame.EnsureGameRow(ctx, tx, bestID, title); err != nil {
+	if err := externalgame.EnsureGameRow(ctx, tx, best.ID, best.Title, eg.Title); err != nil {
 		return false, err
 	}
 	res, err := tx.NewRaw(
 		`UPDATE external_games eg SET resolved_igdb_id = ?, updated_at = now() WHERE eg.id = ? AND `+externalgame.Undecided("eg"),
-		bestID, eg.ID,
+		best.ID, eg.ID,
 	).Exec(ctx)
 	if err != nil {
 		return false, fmt.Errorf("auto-resolve external_game: %w", err)

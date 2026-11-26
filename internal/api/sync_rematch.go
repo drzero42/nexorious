@@ -92,7 +92,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		jobID = jobIDs[0]
 	}
 	req := externalgame.RematchRequest{
-		IGDBID: body.IGDBID, IGDBTitle: h.newIGDBGameTitle(reqCtx, body.IGDBID),
+		IGDBID: body.IGDBID, IGDBTitle: h.igdbTitleForNewGame(reqCtx, userID, id, body.IGDBID),
 		OrphanAction: body.OrphanAction, OnlyThisEdition: onlyThis,
 	}
 
@@ -123,18 +123,24 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-// newIGDBGameTitle looks up the title of an IGDB game that has no games row
-// yet, so the Rematch writes the row with it rather than the storefront's
-// title (#1455). It returns "" (Rematch falls back to the External game's
-// title) when the row exists, IGDB is not configured or the lookup fails; the
-// metadata fetch fills the row in either way. It runs before the transaction,
-// so no lock is held while IGDB answers.
-func (h *SyncHandler) newIGDBGameTitle(ctx context.Context, igdbID int) string {
+// igdbTitleForNewGame looks up the IGDB title of igdbID when a Rematch of
+// the user's External game id would create its games row, so the row takes
+// the IGDB title rather than the storefront's (#1455). It returns "" (the row
+// takes the storefront title until the metadata fetch replaces it) when the
+// game is not the user's, the row exists, IGDB is not configured or a step
+// fails. It runs before the transaction, so no lock is held while IGDB
+// answers.
+func (h *SyncHandler) igdbTitleForNewGame(ctx context.Context, userID, id string, igdbID int) string {
 	if h.igdbClient == nil || !h.igdbClient.Configured() {
 		return ""
 	}
-	exists, err := h.db.NewSelect().Table("games").Where("id = ?", igdbID).Exists(ctx)
-	if err != nil || exists {
+	needs, err := externalgame.NeedsGameRow(ctx, h.db, userID, id, igdbID)
+	if err != nil {
+		slog.WarnContext(ctx, "sync: rematch: check games row, using the storefront title",
+			logging.KeyErr, err, logging.KeyExternalGameID, id, "game_id", igdbID, logging.Cat(logging.CategoryDB))
+		return ""
+	}
+	if !needs {
 		return ""
 	}
 	md, err := h.igdbClient.GetGameByID(ctx, igdbID)

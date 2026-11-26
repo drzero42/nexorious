@@ -90,3 +90,27 @@ func TestRematchExternalGame_KnownIGDBGame_NoLookup(t *testing.T) {
 		t.Errorf("want the existing title kept, got row %q, list %q", rowTitle, listTitle)
 	}
 }
+
+// A Rematch of another user's External game is refused (404) before IGDB is
+// asked anything.
+func TestRematchExternalGame_OtherUsersGame_NoLookup(t *testing.T) {
+	truncateAllTables(t)
+	srv, stub := newIGDBInferenceServer(t,
+		map[string]any{"id": 295728, "name": "Gaunt Summoner", "slug": "gaunt-summoner"}, nil)
+	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
+	insertAuthTestUser(t, testDB, "u-rm-owner", "rmowner", "pass123", true, false)
+	insertAuthTestUser(t, testDB, "u-rm-other", "rmother", "pass123", true, false)
+	token := loginAndGetToken(t, e, "rmother", "pass123")
+	insertExternalGame(t, testDB, "eg-rm-foreign", "u-rm-owner", "playstation-store", "ps-1", "Gauntlet™")
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-rm-foreign/rematch",
+		map[string]any{"igdb_id": 295728}, token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	if stub.idQueried {
+		t.Error("expected no IGDB lookup for another user's game")
+	}
+}
