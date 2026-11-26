@@ -680,6 +680,8 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 		if err != nil {
 			return err
 		}
+		// wroteMatch is true only when the write committed: the module refuses
+		// before the own write runs, and any error after it is returned above.
 		if wroteMatch {
 			w.completeSameTitleReviews(ctx, item, eg)
 		}

@@ -1215,3 +1215,77 @@ func TestRematchUnskip_RacingAPrecedentTake_NewEditionFollowsTheSet(t *testing.T
 		}
 	}
 }
+
+// A game whose editions change under every try of the editions lock answers
+// 409 after the third try, and writes nothing. Each try reads the game's
+// state, then blocks on an edition another transaction holds; that
+// transaction moves the game to another match and commits, so the try locks a
+// set without the game and starts again.
+func TestRematch_EditionsChangeUnderEveryTry_Answers409(t *testing.T) {
+	f := newRM(t, "rm-editions-changed")
+	f.game("e1", 0, false, "")   // an edition of g as it is now
+	f.game("e2", 101, false, "") // of g once it is on 101
+	f.game("e3", 102, false, "") // of g once it is on 102
+	f.game("g", 0, false, "playstation-4")
+	f.igdbGame(103)
+	f.igdbGame(200)
+
+	ctx := context.Background()
+	holders := make([]bun.Tx, 3)
+	pids := make([]int, 3)
+	for i, id := range []string{"e1", "e2", "e3"} {
+		tx, err := testDB.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = tx.Rollback() })
+		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM external_games WHERE id = ? FOR UPDATE`, id); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.NewRaw(`SELECT pg_backend_pid()`).Scan(ctx, &pids[i]); err != nil {
+			t.Fatal(err)
+		}
+		holders[i] = tx
+	}
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- f.rematch("g", 200, "") }()
+
+	for i, tx := range holders {
+		waitForBlockedBy(t, pids[i])
+		if _, err := tx.ExecContext(ctx, `UPDATE external_games SET resolved_igdb_id = ? WHERE id = 'g'`, 101+i); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rec := <-done
+	wantCode(t, rec, http.StatusConflict)
+	if !strings.Contains(rec.Body.String(), "try again") {
+		t.Errorf("body = %s, want the try-again message", rec.Body.String())
+	}
+	got := f.str(`SELECT string_agg(id || '=' || coalesce(resolved_igdb_id::text, '-'), ' ' ORDER BY id) FROM external_games`)
+	if want := "e1=- e2=101 e3=102 g=103"; got != want {
+		t.Errorf("games = %s, want %s (nothing written by the refused rematch)", got, want)
+	}
+}
+
+// waitForBlockedBy waits until a backend is blocked on a lock held by the
+// backend pid.
+func waitForBlockedBy(t *testing.T, pid int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var n int
+		if err := testDB.NewRaw(`SELECT count(*) FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))`, pid).Scan(context.Background(), &n); err != nil {
+			t.Fatal(err)
+		}
+		if n > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("no backend blocked by pid %d", pid)
+}

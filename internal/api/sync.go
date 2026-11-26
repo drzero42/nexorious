@@ -1239,8 +1239,8 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	// A plain read, no lock: the Jobs in which the game or one of its
 	// editions has an open item. Each is entered through the module, which
 	// locks the Job row before the editions (one lock order everywhere).
-	var jobIDs []string
-	if err := h.db.NewRaw(editionsOpenItemJobs, id, userID, id).Scan(ctx, &jobIDs); err != nil {
+	jobIDs, err := editionsOpenItemJobs(ctx, h.db, userID, id)
+	if err != nil {
 		slog.ErrorContext(c.Request().Context(), "sync: skip game: find items", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 	}
