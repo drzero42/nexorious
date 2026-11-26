@@ -37,18 +37,24 @@ import { retryJobItem } from '@/api/jobs';
 import { isOrphanActionRequired } from '@/api/sync';
 import { editionLabel } from '@/lib/edition-label';
 import { useQueryClient } from '@tanstack/react-query';
-import type { ExternalGame, IGDBGameCandidate, SyncStorefront } from '@/types';
+import type { ExternalGame, ExternalGameEdition, IGDBGameCandidate, SyncStorefront } from '@/types';
 
 interface ExternalGamesSectionProps {
   storefront: SyncStorefront;
   isSyncing?: boolean;
 }
 
-/** A Rematch request: to an entry's id (all editions) or to one edition's id. */
+/**
+ * A Rematch request: to an entry's id (all editions) or to one edition's id.
+ * game, edition and newTitle name what the keep-or-remove question is about.
+ */
 interface RematchRequest {
   id: string;
   igdbId: number;
   onlyThisEdition: boolean;
+  game: ExternalGame;
+  edition: ExternalGameEdition | null;
+  newTitle: string;
 }
 
 /** The entry in the match dialog, and the edition chosen (null: all editions). */
@@ -65,6 +71,26 @@ interface EditionDecision {
 
 function hasSeveralEditions(game: ExternalGame) {
   return game.editions.length > 1;
+}
+
+/**
+ * OrphanQuestion names the games in the keep-or-remove question of a Rematch:
+ * the library game of the current match is left with no copies, and the
+ * chosen game is added either way.
+ */
+function OrphanQuestion({ req }: { req: RematchRequest }) {
+  const current = req.game.igdb_title ?? 'The game in your library';
+  const subject = req.edition ? `${req.game.title} (${editionLabel(req.edition)})` : req.game.title;
+  return (
+    <AlertDialogHeader>
+      <AlertDialogTitle>Keep {req.game.igdb_title ?? 'the game'} in your library?</AlertDialogTitle>
+      <AlertDialogDescription>
+        {subject} will be matched to {req.newTitle} instead. {current} then has no copies left in
+        your library: all of its copies came from {subject}.
+        <span className="mt-2 block">{req.newTitle} is added to your library either way.</span>
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+  );
 }
 
 // GameTitle renders the storefront title, linking to the game's store page when
@@ -230,6 +256,9 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
       id: editionId ?? game.id,
       igdbId: candidate.igdb_id,
       onlyThisEdition: editionId !== null,
+      game,
+      edition: game.editions.find((e) => e.id === editionId) ?? null,
+      newTitle: candidate.title,
     });
   }
 
@@ -513,13 +542,7 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
           }}
         >
           <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Storefront link will be removed</AlertDialogTitle>
-              <AlertDialogDescription>
-                This game's only storefront link will be removed when rematching. Do you want to
-                keep it in your library (unlinked) or remove it from your collection entirely?
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+            <OrphanQuestion req={pendingRematch} />
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setPendingRematch(null)}>Cancel</AlertDialogCancel>
               <AlertDialogAction
@@ -529,7 +552,7 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
                   setPendingRematch(null);
                 }}
               >
-                Keep in Library
+                Keep it, without copies
               </AlertDialogAction>
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90"
@@ -538,7 +561,7 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
                   setPendingRematch(null);
                 }}
               >
-                Remove from Collection
+                Remove it from library
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

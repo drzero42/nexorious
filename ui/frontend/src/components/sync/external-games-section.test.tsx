@@ -342,7 +342,17 @@ describe('ExternalGamesSection', () => {
     // Sent without orphan_action: the entry's orphan fields are for the set.
     await waitFor(() => expect(rematches).toEqual(['eg-ed?only_this_edition=true ']));
     const question = await screen.findByRole('alertdialog');
-    await userEvent.click(within(question).getByRole('button', { name: 'Keep in Library' }));
+    // The question names the edition, the library game left without copies
+    // and the game matched instead.
+    expect(within(question).getByText('Keep Spider-Man in your library?')).toBeInTheDocument();
+    expect(
+      within(question).getByText(
+        /^Spider-Man \(pc-linux · ID 200\) will be matched to Spider-Man 2 instead\. Spider-Man then has no copies left/,
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      within(question).getByRole('button', { name: 'Keep it, without copies' }),
+    );
     await waitFor(() =>
       expect(rematches).toEqual([
         'eg-ed?only_this_edition=true ',
@@ -397,7 +407,13 @@ describe('ExternalGamesSection', () => {
     await waitFor(() => expect(rematches).toEqual([' ']));
     if (orphan) {
       const question = await screen.findByRole('alertdialog');
-      await userEvent.click(within(question).getByRole('button', { name: /Remove/ }));
+      expect(within(question).getByText('Keep Solo IGDB in your library?')).toBeInTheDocument();
+      expect(
+        within(question).getByText(/^Solo will be matched to Solo Again instead\./),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        within(question).getByRole('button', { name: 'Remove it from library' }),
+      );
     } else {
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     }
