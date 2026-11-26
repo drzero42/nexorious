@@ -94,20 +94,18 @@ func rematchUnlinkEditions(ctx context.Context, tx bun.Tx, userID string, ids []
 }
 
 // writeEditions writes each edition to the library. One with no platform
-// rows cannot be written; it is logged and left out of the result.
+// rows cannot be written; it is left out of the result
+// (tasks.WriteMatchedToLibrary).
 func writeEditions(ctx context.Context, tx bun.Tx, userID string, ids []string) (map[string]externalgame.LibraryWrite, error) {
 	writes := make(map[string]externalgame.LibraryWrite, len(ids))
 	for _, id := range ids {
-		lw, err := externalgame.WriteToLibrary(ctx, tx, userID, id)
-		if errors.Is(err, externalgame.ErrNoPlatforms) {
-			slog.WarnContext(ctx, "sync: external game has no platform rows; match recorded, nothing written to the library",
-				logging.KeyExternalGameID, id)
-			continue
-		}
+		lw, wrote, err := tasks.WriteMatchedToLibrary(ctx, tx, userID, id)
 		if err != nil {
-			return nil, fmt.Errorf("write %s to the library: %w", id, err)
+			return nil, err
 		}
-		writes[id] = lw
+		if wrote {
+			writes[id] = lw
+		}
 	}
 	return writes, nil
 }

@@ -50,20 +50,21 @@ const syncRetryable = `(` + syncFailed + ` AND NOT ` + syncNeedsReview + `
 const syncInFlight = `COALESCE(ni.status IN ('pending', 'processing') AND nj.status IN ('pending', 'processing'), false)`
 
 // syncEditionSets is the WITH clause shared by the list and the badge, so the
-// two group and flag the sets of editions the same way. m has one row per
-// External game eg of the user that matches where (SQL with its own
+// two group and flag the sets of editions the same way. edition_rows has one
+// row per External game eg of the user that matches where (SQL with its own
 // placeholders), with its view flags, its set's representative rep_id (the
-// oldest edition still in the storefront library, else the oldest) and its rank
-// rn in the set. s has one row per set of editions (externalgame.EditionKey):
-// it needs review, has failed or is in flight when any edition does, and is
-// available when any edition is.
+// oldest edition still in the storefront library, else the oldest) and its
+// rank_in_set. edition_sets has one row per set of editions
+// (externalgame.EditionKey): it needs review, has failed or is in flight when
+// any edition does, and is available when any edition is. Callers select
+// FROM edition_sets s JOIN edition_rows r ON r.id = s.rep_id.
 func syncEditionSets(where string) string {
 	return `
-	WITH m AS (
+	WITH edition_rows AS (
 		SELECT eg.id, eg.storefront, eg.external_id, eg.title, eg.resolved_igdb_id,
 		       eg.is_skipped, eg.is_available, eg.is_subscription, eg.store_link,
 		       first_value(eg.id) OVER w AS rep_id,
-		       row_number() OVER w AS rn,
+		       row_number() OVER w AS rank_in_set,
 		       ni.id AS newest_item_id,
 		       ` + syncNeedsReview + ` AS needs_review,
 		       ` + syncFailed + ` AS failed,
@@ -74,19 +75,19 @@ func syncEditionSets(where string) string {
 		WHERE ` + where + `
 		WINDOW w AS (PARTITION BY ` + externalgame.EditionKey("eg") + `
 		             ORDER BY NOT eg.is_available, eg.created_at, eg.id)
-	), s AS (
+	), edition_sets AS (
 		SELECT rep_id, array_agg(id) AS ids,
 		       bool_or(is_available) AS is_available,
 		       bool_or(needs_review) AS needs_review,
 		       bool_or(failed) AS failed,
 		       bool_or(in_flight) AS in_flight,
-		       (array_agg(newest_item_id ORDER BY rn) FILTER (WHERE retryable))[1] AS retry_item_id
-		FROM m GROUP BY rep_id
+		       (array_agg(newest_item_id ORDER BY rank_in_set) FILTER (WHERE retryable))[1] AS retry_item_id
+		FROM edition_rows GROUP BY rep_id
 	)`
 }
 
-// syncSetListed: the set s is listed, as no edition is in flight.
+// syncSetListed: the set (edition_sets aliased s) is listed, as no edition is in flight.
 const syncSetListed = `NOT s.in_flight`
 
-// syncSetInReview: the set s is listed as needing review.
+// syncSetInReview: the set (edition_sets aliased s) is listed as needing review.
 const syncSetInReview = syncSetListed + ` AND s.needs_review`

@@ -272,7 +272,7 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 		SELECT source, COUNT(*) AS count FROM (
 			`+syncEditionSets(`eg.user_id = ?`)+`
 			SELECT r.storefront AS source
-			FROM s JOIN m r ON r.id = s.rep_id
+			FROM edition_sets s JOIN edition_rows r ON r.id = s.rep_id
 			WHERE `+syncSetInReview+`
 		) sets
 		GROUP BY source`,

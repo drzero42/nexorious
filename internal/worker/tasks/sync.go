@@ -583,18 +583,23 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, rj *river.Job[IGDBMatchArgs]
 		return fmt.Errorf("igdb_match: %w", err)
 	}
 	if has {
-		err := w.toWrite(ctx, rj, item.ID, func(ctx context.Context, tx bun.Tx) error {
-			took, err := externalgame.TakePrecedent(ctx, tx, eg.ID)
-			if err != nil {
-				return err
-			}
-			if !took {
-				return joblifecycle.Abort(errNoPrecedent)
-			}
-			return nil
+		// NextStage directly, not toWrite: a precedent gone by now is not a
+		// refusal but a reason to search instead.
+		err := w.LC.NextStage(ctx, item.ID, rj.ID, joblifecycle.Stage{
+			Args: UserGameArgs{JobItemID: item.ID},
+			Own: func(ctx context.Context, tx bun.Tx) error {
+				took, err := externalgame.TakePrecedent(ctx, tx, eg.ID)
+				if err != nil {
+					return err
+				}
+				if !took {
+					return joblifecycle.Abort(errNoPrecedent)
+				}
+				return nil
+			},
 		})
 		if !errors.Is(err, errNoPrecedent) {
-			return err
+			return exitOrRetry(ctx, err)
 		}
 		slog.DebugContext(ctx, "igdb_match: precedent gone before it was taken, searching", logging.KeyJobItemID, item.ID)
 	}
@@ -602,13 +607,9 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, rj *river.Job[IGDBMatchArgs]
 }
 
 // toWrite hands the item to the write stage, with own as the transition's
-// own write. errNoPrecedent is returned as is, for the caller to decide.
+// own write.
 func (w *IGDBMatchWorker) toWrite(ctx context.Context, rj *river.Job[IGDBMatchArgs], itemID string, own joblifecycle.OwnWrite) error {
-	err := w.LC.NextStage(ctx, itemID, rj.ID, joblifecycle.Stage{Args: UserGameArgs{JobItemID: itemID}, Own: own})
-	if errors.Is(err, errNoPrecedent) {
-		return err
-	}
-	return exitOrRetry(ctx, err)
+	return exitOrRetry(ctx, w.LC.NextStage(ctx, itemID, rj.ID, joblifecycle.Stage{Args: UserGameArgs{JobItemID: itemID}, Own: own}))
 }
 
 // search matches a game through IGDB: a confident match goes to the write
@@ -730,12 +731,9 @@ func (w *IGDBMatchWorker) completeSameTitleReviews(ctx context.Context, item *mo
 				if !took {
 					return errNoMatchToTake
 				}
-				lw, err := externalgame.WriteToLibrary(ctx, sp, job.UserID, wg.GameID)
-				if errors.Is(err, externalgame.ErrNoPlatforms) {
-					return nil // matched, nothing to write: completed without diff rows
-				}
-				if err != nil {
-					return err
+				lw, wrote, err := WriteMatchedToLibrary(ctx, sp, job.UserID, wg.GameID)
+				if err != nil || !wrote {
+					return err // not written (no platform rows): completed without diff rows
 				}
 				return InsertLibraryWriteChanges(ctx, sp, job.ID, job.UserID, lw, lw.Result.Created)
 			})

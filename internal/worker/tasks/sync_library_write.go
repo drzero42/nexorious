@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -13,6 +14,24 @@ import (
 	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/logging"
 )
+
+// WriteMatchedToLibrary writes the matched External game id to the library,
+// as Rematch, Unskip and the match worker's completion of same-title reviews
+// do. A game with no platform rows has nothing to write: that is logged and
+// reported as wrote=false without an error, since its match stands and its
+// item can still complete (without diff rows).
+func WriteMatchedToLibrary(ctx context.Context, db bun.IDB, userID, id string) (lw externalgame.LibraryWrite, wrote bool, err error) {
+	lw, err = externalgame.WriteToLibrary(ctx, db, userID, id)
+	if errors.Is(err, externalgame.ErrNoPlatforms) {
+		slog.WarnContext(ctx, "sync: external game has no platform rows; match recorded, nothing written to the library",
+			logging.KeyExternalGameID, id)
+		return lw, false, nil
+	}
+	if err != nil {
+		return lw, false, fmt.Errorf("write %s to the library: %w", id, err)
+	}
+	return lw, true, nil
+}
 
 // InsertLibraryWriteChanges records a library write in a sync Job's diff:
 // one status_changed row per ownership upgrade, otherwise one added row (when

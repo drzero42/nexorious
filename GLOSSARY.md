@@ -71,6 +71,10 @@ _Avoid_: service (the Storefront you connect), refresh, import (a one-off from a
 A game as it appears in a connected storefront's library, matched to at most one IGDB game.
 _Avoid_: storefront game
 
+**Same-title game**:
+An External game of the same user and storefront with the same title as another, whatever its match and skip. Same-title games that also agree on their Decision are Editions of each other; the others are not, but a game without a Decision can take one of theirs as its Precedent.
+_Avoid_: duplicate, related game
+
 **Edition**:
 The editions of an External game are the External games of the same user and storefront that have the same title, the same match and the same skip. Nothing stores which games are editions: two games are editions for as long as they agree. A sync gives a game without a decision the decision of the oldest same-title game that has one; Rematch, Skip and Unskip act on every edition; the storefront list shows the editions as one entry.
 _Avoid_: child game, parent, sibling, family

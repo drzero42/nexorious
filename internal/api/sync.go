@@ -1390,8 +1390,8 @@ var externalGameListQuery = syncEditionSets(`eg.user_id = ? AND eg.storefront = 
 	            WHERE egp.external_game_id = ANY(s.ids)),
 	           '') AS platforms_csv,
 	       r.store_link
-	FROM s
-	JOIN m r ON r.id = s.rep_id
+	FROM edition_sets s
+	JOIN edition_rows r ON r.id = s.rep_id
 	LEFT JOIN games g ON g.id = r.resolved_igdb_id
 	LEFT JOIN LATERAL (
 		SELECT true AS has_user_game,
