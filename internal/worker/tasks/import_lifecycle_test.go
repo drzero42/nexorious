@@ -151,8 +151,8 @@ func TestImportItemInterruptedThenCompleted(t *testing.T) {
 		t.Fatal("interrupted item wrote the library")
 	}
 
-	// Restart: settle and recover leave the still-queued owner alone.
-	if _, err := lc.Settle(context.Background()); err != nil {
+	// Restart: reclaim and recover leave the still-queued owner alone.
+	if _, err := lc.ReclaimRunning(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := lc.Recover(context.Background()); err != nil {
@@ -192,7 +192,7 @@ func TestImportResolvedItemCompletedAfterRestart(t *testing.T) {
 	}
 
 	// The server stops before finalize runs.
-	if _, err := lc.Settle(context.Background()); err != nil {
+	if _, err := lc.ReclaimRunning(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := lc.Recover(context.Background()); err != nil {
@@ -670,7 +670,7 @@ func TestImportRecoveryAfterUpgrade(t *testing.T) {
 	execSQL(t, `UPDATE job_items SET resolved_igdb_id = 42 WHERE id = ?`, csvIDs[0])
 	execSQL(t, `DELETE FROM river_job`)
 
-	if _, err := lc.Settle(ctx); err != nil {
+	if _, err := lc.ReclaimRunning(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if res, err := lc.Recover(ctx); err != nil || res.Requeued != 2 {

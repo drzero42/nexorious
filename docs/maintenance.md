@@ -44,7 +44,7 @@ to every active Job: metadata refresh, store-link refresh, export, imports and
 sync. It has no age thresholds: each `pending` item and each unfinished
 dispatch records the River job that owns it, so recovery can tell work that is
 still queued or running from work whose River job was lost (it is queued again)
-or gave up after its last attempt (it is failed). At startup it first settles
+or gave up after its last attempt (it is failed). At startup it first reclaims
 the River jobs a stopped process left running, and deletes queued River jobs of
 the periodic kinds older versions used for this (the orphaned-item rescue and
 the stale-job cleanup). A periodic run that fails or re-queues something sends one

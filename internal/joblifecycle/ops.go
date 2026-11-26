@@ -302,11 +302,6 @@ func (m *Module) MarkDispatched(ctx context.Context, jobID string, riverJobID in
 				return err
 			}
 		}
-		// Items that waited on an item the dispatch never added, and items
-		// the kind no longer names as waiting, are queued now.
-		if err := m.queueUnwaitable(ctx, tx, k, job); err != nil {
-			return err
-		}
 		return m.evaluate(ctx, tx, st, k, job, false)
 	})
 }
@@ -431,7 +426,7 @@ func (m *Module) endItem(ctx context.Context, tx bun.Tx, st *txState, k *Kind, j
 		jobCopy := *job
 		st.onCommit(func(ctx context.Context) { k.Observer.ItemEnded(ctx, jobCopy, status) })
 	}
-	return m.releaseWaiters(ctx, tx, k, job, []string{item.ID})
+	return nil
 }
 
 // Failure is how a Job is failed.
@@ -576,12 +571,6 @@ func (m *Module) Retry(ctx context.Context, jobID string, itemIDs []string) (int
 			}
 			return nil
 		}
-		// Retrying an item retries the failed items that wait on it too.
-		if len(itemIDs) > 0 && k.WaitsOn != nil {
-			if items, err = m.withFailedWaiters(ctx, tx, k, job, items); err != nil {
-				return err
-			}
-		}
 		if job.Status == models.JobStatusCompleted {
 			if key, ok := k.DuplicateKey(job); ok {
 				if err := acquireDupLock(ctx, tx, job.JobType, key); err != nil {
@@ -620,37 +609,4 @@ func (m *Module) Retry(ctx context.Context, jobID string, itemIDs []string) (int
 		return nil
 	})
 	return n, err
-}
-
-// withFailedWaiters adds to items the failed items of the Job that, by the
-// kind's rule, wait on one of them.
-func (m *Module) withFailedWaiters(ctx context.Context, tx bun.Tx, k *Kind, job *models.Job, items []models.JobItem) ([]models.JobItem, error) {
-	in := make(map[string]bool, len(items))
-	ids := make([]string, len(items))
-	for i, it := range items {
-		in[it.ID] = true
-		ids[i] = it.ID
-	}
-	edges, err := k.WaitsOn(ctx, tx, WaitQuery{JobID: job.ID, Awaited: ids})
-	if err != nil {
-		return nil, fmt.Errorf("waits on: %w", err)
-	}
-	var more []string
-	for _, e := range edges {
-		if !in[e.ItemID] {
-			in[e.ItemID] = true
-			more = append(more, e.ItemID)
-		}
-	}
-	if len(more) == 0 {
-		return items, nil
-	}
-	var waiters []models.JobItem
-	if err := tx.NewSelect().Model(&waiters).
-		Where("job_id = ? AND id IN (?) AND status = 'failed'", job.ID, bun.List(more)).
-		Order("created_at", "id").
-		Scan(ctx); err != nil {
-		return nil, fmt.Errorf("load failed waiters: %w", err)
-	}
-	return append(items, waiters...), nil
 }

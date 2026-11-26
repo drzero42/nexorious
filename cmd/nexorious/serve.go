@@ -532,17 +532,17 @@ func newInsertOnlyRiverConfig(obs *observability.Providers) *river.Config {
 	}
 }
 
-// recoverLifecycleAtStartup runs before River starts: it settles the River
+// recoverLifecycleAtStartup runs before River starts: it reclaims the River
 // jobs a dead process left running, then applies the recovery rule. A failing
 // step is logged and River is started anyway. Both steps tolerate being run
 // again before a start succeeds. A restart never notifies, so no maintenance
 // event is emitted here.
 func recoverLifecycleAtStartup(ctx context.Context, lc *joblifecycle.Module) {
-	n, err := lc.Settle(ctx)
+	n, err := lc.ReclaimRunning(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "startup: settle running river jobs failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(ctx, "startup: reclaim running river jobs failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	} else if n > 0 {
-		slog.InfoContext(ctx, "startup: settled river jobs left running", "count", n)
+		slog.InfoContext(ctx, "startup: reclaimed river jobs left running", "count", n)
 	}
 	res, err := lc.Recover(ctx)
 	if err != nil {

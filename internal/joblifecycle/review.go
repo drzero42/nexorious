@@ -189,9 +189,6 @@ func (m *Module) Skip(ctx context.Context, itemID string) error {
 			jobCopy := *job
 			st.onCommit(func(ctx context.Context) { k.Observer.ItemEnded(ctx, jobCopy, models.JobItemStatusSkipped) })
 		}
-		if err := m.releaseWaiters(ctx, tx, k, job, []string{item.ID}); err != nil {
-			return err
-		}
 		return m.evaluate(ctx, tx, st, k, job, true)
 	})
 }

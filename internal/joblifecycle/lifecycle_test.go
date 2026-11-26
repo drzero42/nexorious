@@ -775,7 +775,7 @@ func TestRecoveryLeavesOtherKindsAlone(t *testing.T) {
 		`INSERT INTO river_job (kind, args, state, attempt, max_attempts, attempted_at, queue, priority) VALUES ('igdb_match', '{"job_item_id":"si-1"}', 'running', 1, 1, now(), 'default', 1)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Settle(ctx); err != nil {
+	if _, err := m.ReclaimRunning(ctx); err != nil {
 		t.Fatal(err)
 	}
 	res, err := m.Recover(ctx)
@@ -786,11 +786,11 @@ func TestRecoveryLeavesOtherKindsAlone(t *testing.T) {
 		t.Errorf("sync job = %s", s)
 	}
 	if n := countRiver(t, "igdb_match", riverRunning); n != 1 {
-		t.Errorf("sync river job settled")
+		t.Errorf("sync river job reclaimed")
 	}
 }
 
-func TestSettle(t *testing.T) {
+func TestReclaimRunning(t *testing.T) {
 	m, _ := newTestModule(t)
 	ctx := context.Background()
 	user := insertUser(t)
@@ -805,9 +805,9 @@ func TestSettle(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	n, err := m.Settle(ctx)
+	n, err := m.ReclaimRunning(ctx)
 	if err != nil || n != 3 {
-		t.Fatalf("settle = %d %v", n, err)
+		t.Fatalf("reclaim = %d %v", n, err)
 	}
 	for i, want := range []string{riverRetryable, riverDiscarded, riverCancelled} {
 		if s := riverState(t, *its[i].RiverJobID); s != want {
@@ -821,8 +821,8 @@ func TestSettle(t *testing.T) {
 		t.Fatalf("recover = %+v %v", res, err)
 	}
 	// Both steps again: nothing changes.
-	if n, _ := m.Settle(ctx); n != 0 {
-		t.Errorf("second settle moved %d", n)
+	if n, _ := m.ReclaimRunning(ctx); n != 0 {
+		t.Errorf("second reclaim moved %d", n)
 	}
 	if res, _ := m.Recover(ctx); res.Failed+res.Requeued != 0 {
 		t.Errorf("second recover = %+v", res)
@@ -848,5 +848,45 @@ func TestRecoveryQueuesUnownedItemWithoutRiverJob(t *testing.T) {
 	got := loadItems(t, jobID)[0]
 	if got.RiverJobID == nil || riverState(t, *got.RiverJobID) != riverAvailable {
 		t.Fatalf("item not given a river job: %v", got.RiverJobID)
+	}
+}
+
+func TestAwaitReviewDivertsToNextStage(t *testing.T) {
+	m, _ := newTestModule(t)
+	ctx := context.Background()
+	jobID, its := mustCreateWithItems(t, m, insertUser(t), 1)
+	err := m.AwaitReview(ctx, its[0].ID, *its[0].RiverJobID, Review{
+		Divert: func(context.Context, bun.Tx) (river.JobArgs, error) {
+			return fakeItemArgs{JobItemID: its[0].ID}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := loadItems(t, jobID)[0]
+	if got.Status != models.JobItemStatusPending || got.RiverJobID == nil || *got.RiverJobID == *its[0].RiverJobID {
+		t.Fatalf("item = %+v, want pending with a new owner", got)
+	}
+}
+
+func TestReclaimRunningDeletesRemovedPeriodicKinds(t *testing.T) {
+	m, _ := newTestModule(t)
+	ctx := context.Background()
+	for _, kind := range append([]string{"cleanup_old_jobs"}, removedRiverKinds...) {
+		if _, err := testDB.ExecContext(ctx,
+			`INSERT INTO river_job (kind, args, max_attempts, state) VALUES (?, '{}', 1, 'available')`, kind); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := m.ReclaimRunning(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range removedRiverKinds {
+		if c := countRiver(t, kind); c != 0 {
+			t.Errorf("%s rows left: %d", kind, c)
+		}
+	}
+	if c := countRiver(t, "cleanup_old_jobs"); c != 1 {
+		t.Errorf("another kind's row was deleted")
 	}
 }

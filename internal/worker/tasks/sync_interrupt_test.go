@@ -195,13 +195,13 @@ func TestDispatchSync_RerunAfterInterrupt_NoDuplicates(t *testing.T) {
 		t.Errorf("igdb_match River jobs: want 1 (the re-run gives the item no second one), got %d", n)
 	}
 
-	// Settle the one item; the Job then completes.
+	// End the one item; the Job then completes.
 	var itemID string
 	if err := testDB.NewRaw(`SELECT id FROM job_items WHERE job_id = ?`, jobID).Scan(bg, &itemID); err != nil {
 		t.Fatal(err)
 	}
 	if err := lc.EndItem(bg, itemID, itemOwner(t, itemID), joblifecycle.ItemResult{Status: models.JobItemStatusCompleted}); err != nil {
-		t.Fatalf("settle item: %v", err)
+		t.Fatalf("end item: %v", err)
 	}
 	if status, _ := loadJobState(t, jobID); status != "completed" {
 		t.Errorf("job status: want completed, got %q", status)

@@ -93,7 +93,7 @@ _Avoid_: inheriting, the parent's match
 
 **Settle**:
 After a sync's search matches an External game with confidence, its same-title games of that sync that wait in Pending review without a decision take that match by precedent, and their items are completed. Only a match is taken: a game whose precedent is a skip stays in review.
-_Avoid_: the lifecycle module's startup settle of River jobs left running (`joblifecycle.Settle`), a different thing with the same name until #1451
+_Avoid_: reclaiming River jobs left running at startup (`joblifecycle.ReclaimRunning`), which was also called settle before #1451
 
 **Unmatched**:
 An External game that is not skipped and points to no IGDB game, and has no item in Pending review: for instance one unskipped before it was ever matched. It waits for the user to Rematch it, or for the next sync to match it while it is still in the storefront library, or to take the decision of a same-title game that has one.
