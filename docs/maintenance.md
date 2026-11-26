@@ -9,7 +9,7 @@ reference — what each task does and why — not an implementation guide.
 
 ## Sync history pruning
 
-Removes `sync_changes` entries older than the configured retention period
+Removes `changes` entries older than the configured retention period
 (default: 90 days, configurable via `SYNC_HISTORY_RETENTION_DAYS`) to keep the
 sync history table from growing unboundedly while preserving recent history for
 the Sync History UI.
