@@ -42,7 +42,7 @@ The sync system reads and writes these core tables:
 | `external_game_platforms` | Platform slugs and per-platform playtime for each ExternalGame |
 | `jobs` | One row per sync run; tracks status and lifecycle |
 | `job_items` | One row per game per sync run; tracks matching progress |
-| `sync_changes` | Changelog entries written by Stage 1 and Stage 3; backs the Sync History UI |
+| `changes` | Changelog entries written by Stage 1 and Stage 3; backs the Sync History UI |
 | `games` | IGDB master catalogue; new rows are inserted when a match is found |
 | `user_games` | The user's canonical library; one row per user + IGDB game |
 | `user_game_platforms` | One row per user + game + platform + storefront combination |
@@ -61,7 +61,7 @@ Not all storefronts provide playtime. When a storefront does not provide playtim
 
 ### Sync Changes
 
-`sync_changes` records what happened to a user's library during each sync run. Each row captures one event:
+`changes` records what happened to a user's library during each sync run. Each row captures one event:
 
 | Column | Type | Notes |
 |---|---|---|
@@ -182,7 +182,7 @@ The `DispatchSyncWorker` runs once per sync job. It:
    - Accumulates each game's `external_id` into an in-memory set of fetched IDs
    - Adds a job item for every game that is not skipped, with its Stage 2 River job, in one transaction through the module. A game the Job already has an item for gets none, so a dispatch that runs again gives no item a second River job. A skipped game gets no job item, only a `skipped` change. A new game gets no decision here, also when it is an edition of a skipped game: its item takes the skip in Stage 2 (see [Editions](#editions))
    - A database error while adding the items is returned to River, which runs the dispatch again; it does not fail the sync
-4. After all batches complete, the sweeps run: platform rows not seen in this fetch are removed, and every `external_games` row for this user and storefront still marked available whose `external_id` was not fetched is marked `is_available = false` with a `removed` entry in `sync_changes`. Each game is one transaction (Job row share lock, then the game, then the `removed` row only when this run changed it), so a sweep that runs twice writes one row.
+4. After all batches complete, the sweeps run: platform rows not seen in this fetch are removed, and every `external_games` row for this user and storefront still marked available whose `external_id` was not fetched is marked `is_available = false` with a `removed` entry in `changes`. Each game is one transaction (Job row share lock, then the game, then the `removed` row only when this run changed it), so a sweep that runs twice writes one row.
    The sweep is skipped when the fetch returned no games at all while at least one game is still marked available for this storefront. An empty reply is far more likely a privacy setting, an upstream glitch or a changed response shape than a library that really went to zero, so the job fails instead (`sync.failed`) and nothing is marked removed. If the library really is empty, reset the storefront's sync data or disconnect it.
 
 5. Marks the dispatch done, with `last_synced_at` and the cleared credentials flag in the same transaction. The module then evaluates completion; an empty library completes here.
@@ -234,11 +234,11 @@ Both item workers act only on an item whose recorded River job they are, so a la
 One `UserGameWorker` job runs per game, handed on by Stage 2.
 
 1. If `is_skipped` is true: record a `skipped` change and finish the item as `skipped`, in one transaction, and stop
-2. In one transaction, after the module checked that this River job still owns the item, the **library write** (`externalgame.WriteToLibrary`, shared with rematch and unskip), the item's `sync_changes` rows and the item's completion:
+2. In one transaction, after the module checked that this River job still owns the item, the **library write** (`externalgame.WriteToLibrary`, shared with rematch and unskip), the item's `changes` rows and the item's completion:
    - Lock the `external_games` row (`FOR UPDATE`) and read `resolved_igdb_id` and `is_skipped` again under the lock. A writer that loaded the game before a rematch committed writes the rematch's match, never the old one; a game skipped meanwhile is handled as in step 1
    - Ensure the `games` row, then `usergame.Acquire` (`ModeUpsert`) on every row in `external_game_platforms`: one `user_games` row per user + IGDB game ID, and one `user_game_platforms` row per `(user_game_id, platform, storefront)` with `external_game_id` set. On conflict the ownership rank guard applies (never downgrade ownership status), and `hours_played` is updated only if the incoming value is greater
    - Set `external_games.updated_at` and `library_written_at`
-   - Write `added` (new user game), `status_changed` (ownership upgrade) or `already_in_library` to `sync_changes`
+   - Write `added` (new user game), `status_changed` (ownership upgrade) or `already_in_library` to `changes`
    - A game with no match, no platform rows, or that `Acquire` refuses fails the item. A database error is returned to River, which retries; on the last attempt the item fails with it
 3. After commit, if IGDB is configured and the `games` row has no description, an immediate metadata fetch is enqueued for that game. This ensures newly added games have cover art and full IGDB data within seconds rather than waiting for the next scheduled bulk refresh. The enqueue is fire-and-forget and non-fatal — the periodic bulk refresh (see [docs/maintenance.md](maintenance.md) § "Metadata refresh") remains the safety net.
 
@@ -292,9 +292,9 @@ The user searches IGDB and picks a match, for a game in review, an unmatched gam
 3. Removes the platform links of every edition. Every user game this leaves with no links from outside the set is orphaned, except the user game of the new match: without `orphan_action` the request is refused with 409 `orphan_action required`; `keep` keeps them, `remove` deletes them.
 4. Sets the match on every edition and clears `is_skipped` on them.
 5. Writes each edition to the library. One with no platform rows is not written; the match is still recorded.
-6. Completes, in that Job, every open item of the set (the game's own one is in Pending review by step 2), cancelling their River jobs. For each it writes the `sync_changes` rows the worker would have (`added` at most once, when a write created the user game). A worker of another edition that was running is refused before it writes.
+6. Completes, in that Job, every open item of the set (the game's own one is in Pending review by step 2), cancelling their River jobs. For each it writes the `changes` rows the worker would have (`added` at most once, when a write created the user game). A worker of another edition that was running is refused before it writes.
 
-Items in a Job that is not active are left alone, and a rematch outside an active sync writes no `sync_changes`. The immediate metadata fetch is queued after commit.
+Items in a Job that is not active are left alone, and a rematch outside an active sync writes no `changes` rows. The immediate metadata fetch is queued after commit.
 
 ### One edition alone
 
@@ -302,7 +302,7 @@ Items in a Job that is not active are left alone, and a rematch outside an activ
 
 For all three the whole set is still locked in id order, only the given game is changed, and on an entry of one edition the option changes nothing.
 
-- **Rematch** completes only the game's own open item; the Job lookup is the Job in which that item is open. The 409 while that item is `pending` is unchanged. Two editions on the same platform and storefront share one library link (`user_game_platforms` is unique on user game, platform and storefront), held by one of them (`external_game_id`). So, in order: if the set is matched and not skipped and the leaving edition holds a link, the staying editions are first written to the library again; the library write updates an existing link row's `external_game_id`, so a staying edition on that platform and storefront takes the row over, with its dates and hours. A staying edition without platforms takes nothing. The rewrite writes no `sync_changes`, and stamps the staying editions' `library_written_at` as the next sync would. Then the orphan rule applies to the library games the leaving edition still links to (a link a staying edition holds counts as a link from outside), and the leaving edition is unlinked, matched, unskipped and written.
+- **Rematch** completes only the game's own open item; the Job lookup is the Job in which that item is open. The 409 while that item is `pending` is unchanged. Two editions on the same platform and storefront share one library link (`user_game_platforms` is unique on user game, platform and storefront), held by one of them (`external_game_id`). So, in order: if the set is matched and not skipped and the leaving edition holds a link, the staying editions are first written to the library again; the library write updates an existing link row's `external_game_id`, so a staying edition on that platform and storefront takes the row over, with its dates and hours. A staying edition without platforms takes nothing. The rewrite writes no `changes` rows, and stamps the staying editions' `library_written_at` as the next sync would. Then the orphan rule applies to the library games the leaving edition still links to (a link a staying edition holds counts as a link from outside), and the leaving edition is unlinked, matched, unskipped and written.
 - **Skip** sets the skip on the given game and skips only its own open items, in each active Job that holds one. Nothing is unlinked; a staying edition takes over a link it shares with the skipped one, as in a Rematch, so its entry keeps showing the library game. In a set that is already skipped there is no rewrite.
 - **Unskip** clears the skip on the given game and, if it is matched, writes it to the library. It touches no items.
 
