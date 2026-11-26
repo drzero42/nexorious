@@ -351,6 +351,59 @@ describe('ExternalGamesSection', () => {
     );
   });
 
+  // The library game's only link is this set's, but the server decides: a
+  // rematch onto the game already matched unlinks nothing, so it asks nothing.
+  it.each([
+    { name: 'onto the game already matched, asks nothing', orphan: false, want: [' '] },
+    { name: 'the server asks, opens keep or remove', orphan: true, want: [' ', ' remove'] },
+  ])('rematches all editions $name', async ({ orphan, want }) => {
+    const rematches: string[] = [];
+    server.use(
+      http.get(`${API_URL}/sync/steam/external-games`, () =>
+        HttpResponse.json([
+          game({
+            id: 'eg-1',
+            title: 'Solo',
+            sync_status: 'matched',
+            resolved_igdb_id: 7,
+            igdb_title: 'Solo IGDB',
+            has_user_game: true,
+            user_game_other_platform_count: 0,
+          }),
+        ]),
+      ),
+      http.post(`${API_URL}/games/search/igdb`, () =>
+        HttpResponse.json({ games: [{ igdb_id: 7, title: 'Solo Again', platforms: [] }] }),
+      ),
+      http.post(`${API_URL}/sync/external-games/:id/rematch`, async ({ request }) => {
+        const url = new URL(request.url);
+        const body = (await request.json()) as { orphan_action: string };
+        rematches.push(`${url.search} ${body.orphan_action}`);
+        if (orphan && body.orphan_action === '') {
+          return HttpResponse.json(
+            { message: 'orphan_action required: game would lose its only storefront link' },
+            { status: 409 },
+          );
+        }
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    render(<ExternalGamesSection storefront={SyncStorefront.STEAM} />);
+
+    await userEvent.click(await screen.findByText('Matched (1)'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Change Match' }));
+    await userEvent.click(await within(await screen.findByRole('dialog')).findByText('Solo Again'));
+
+    await waitFor(() => expect(rematches).toEqual([' ']));
+    if (orphan) {
+      const question = await screen.findByRole('alertdialog');
+      await userEvent.click(within(question).getByRole('button', { name: /Remove/ }));
+    } else {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    }
+    await waitFor(() => expect(rematches).toEqual(want));
+  });
+
   it('offers no edition choice when matching an entry of one edition', async () => {
     server.use(
       http.get(`${API_URL}/sync/steam/external-games`, () =>

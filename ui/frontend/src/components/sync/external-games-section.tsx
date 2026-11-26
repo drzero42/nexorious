@@ -221,22 +221,16 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
     );
   }
 
+  // handleSelect always lets the server decide whether a library game would
+  // be left with no link: only it knows a rematch onto the game already
+  // matched unlinks nothing, and which edition keeps a shared link.
   function handleSelect({ game, editionId }: Matching, candidate: IGDBGameCandidate) {
     setMatching(null);
-    const req: RematchRequest = {
+    sendRematch({
       id: editionId ?? game.id,
       igdbId: candidate.igdb_id,
       onlyThisEdition: editionId !== null,
-    };
-    // The entry's orphan fields are for the whole set; for one edition the
-    // server says whether it would orphan a library game.
-    const wouldOrphan =
-      !req.onlyThisEdition && game.has_user_game && game.user_game_other_platform_count === 0;
-    if (wouldOrphan) {
-      setPendingRematch(req);
-    } else {
-      sendRematch(req);
-    }
+    });
   }
 
   function handleSkip(game: ExternalGame) {

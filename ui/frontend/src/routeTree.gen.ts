@@ -9,65 +9,72 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as PublicRouteImport } from './routes/_public'
-import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as PublicLoginRouteImport } from './routes/_public/login'
-import { Route as AuthenticatedWishlistRouteImport } from './routes/_authenticated/wishlist'
-import { Route as AuthenticatedTagsRouteImport } from './routes/_authenticated/tags'
-import { Route as AuthenticatedReviewRouteImport } from './routes/_authenticated/review'
-import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
-import { Route as AuthenticatedLibraryHealthRouteImport } from './routes/_authenticated/library-health'
-import { Route as AuthenticatedImportExportRouteImport } from './routes/_authenticated/import-export'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
+import { Route as PublicRouteImport } from './routes/_public'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
-import { Route as AuthenticatedSyncIndexRouteImport } from './routes/_authenticated/sync/index'
-import { Route as AuthenticatedPoolsIndexRouteImport } from './routes/_authenticated/pools/index'
-import { Route as AuthenticatedJobsIndexRouteImport } from './routes/_authenticated/jobs/index'
-import { Route as AuthenticatedGamesIndexRouteImport } from './routes/_authenticated/games/index'
+import { Route as AuthenticatedImportExportRouteImport } from './routes/_authenticated/import-export'
+import { Route as AuthenticatedLibraryHealthRouteImport } from './routes/_authenticated/library-health'
+import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedReviewRouteImport } from './routes/_authenticated/review'
+import { Route as AuthenticatedTagsRouteImport } from './routes/_authenticated/tags'
+import { Route as AuthenticatedWishlistRouteImport } from './routes/_authenticated/wishlist'
+import { Route as PublicLoginRouteImport } from './routes/_public/login'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
-import { Route as AuthenticatedSyncStorefrontRouteImport } from './routes/_authenticated/sync/$storefront'
-import { Route as AuthenticatedPoolsIdRouteImport } from './routes/_authenticated/pools/$id'
-import { Route as AuthenticatedJobsIdRouteImport } from './routes/_authenticated/jobs/$id'
-import { Route as AuthenticatedHelpSlugRouteImport } from './routes/_authenticated/help/$slug'
-import { Route as AuthenticatedGamesAddRouteImport } from './routes/_authenticated/games/add'
-import { Route as AuthenticatedGamesIdRouteImport } from './routes/_authenticated/games/$id'
-import { Route as AuthenticatedAdminMaintenanceRouteImport } from './routes/_authenticated/admin/maintenance'
 import { Route as AuthenticatedAdminBackupsRouteImport } from './routes/_authenticated/admin/backups'
-import { Route as AuthenticatedGamesAddIndexRouteImport } from './routes/_authenticated/games/add.index'
-import { Route as AuthenticatedGamesIdIndexRouteImport } from './routes/_authenticated/games/$id.index'
-import { Route as AuthenticatedAdminUsersIndexRouteImport } from './routes/_authenticated/admin/users/index'
+import { Route as AuthenticatedAdminMaintenanceRouteImport } from './routes/_authenticated/admin/maintenance'
+import { Route as AuthenticatedGamesIndexRouteImport } from './routes/_authenticated/games/index'
+import { Route as AuthenticatedGamesIdRouteImport } from './routes/_authenticated/games/$id'
+import { Route as AuthenticatedGamesAddRouteImport } from './routes/_authenticated/games/add'
+import { Route as AuthenticatedHelpSlugRouteImport } from './routes/_authenticated/help/$slug'
+import { Route as AuthenticatedJobsIndexRouteImport } from './routes/_authenticated/jobs/index'
+import { Route as AuthenticatedJobsIdRouteImport } from './routes/_authenticated/jobs/$id'
+import { Route as AuthenticatedPoolsIndexRouteImport } from './routes/_authenticated/pools/index'
+import { Route as AuthenticatedPoolsIdRouteImport } from './routes/_authenticated/pools/$id'
+import { Route as AuthenticatedSyncIndexRouteImport } from './routes/_authenticated/sync/index'
+import { Route as AuthenticatedSyncStorefrontRouteImport } from './routes/_authenticated/sync/$storefront'
 import { Route as AuthenticatedAdminActivityIndexRouteImport } from './routes/_authenticated/admin/activity/index'
-import { Route as AuthenticatedGamesAddConfirmRouteImport } from './routes/_authenticated/games/add.confirm'
-import { Route as AuthenticatedGamesIdEditRouteImport } from './routes/_authenticated/games/$id.edit'
-import { Route as AuthenticatedAdminUsersNewRouteImport } from './routes/_authenticated/admin/users/new'
+import { Route as AuthenticatedAdminUsersIndexRouteImport } from './routes/_authenticated/admin/users/index'
 import { Route as AuthenticatedAdminUsersIdRouteImport } from './routes/_authenticated/admin/users/$id'
+import { Route as AuthenticatedAdminUsersNewRouteImport } from './routes/_authenticated/admin/users/new'
+import { Route as AuthenticatedGamesIdIndexRouteImport } from './routes/_authenticated/games/$id.index'
+import { Route as AuthenticatedGamesIdEditRouteImport } from './routes/_authenticated/games/$id.edit'
+import { Route as AuthenticatedGamesAddIndexRouteImport } from './routes/_authenticated/games/add.index'
+import { Route as AuthenticatedGamesAddConfirmRouteImport } from './routes/_authenticated/games/add.confirm'
 
-const PublicRoute = PublicRouteImport.update({
-  id: '/_public',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const PublicRoute = PublicRouteImport.update({
+  id: '/_public',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PublicLoginRoute = PublicLoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => PublicRoute,
-} as any)
-const AuthenticatedWishlistRoute = AuthenticatedWishlistRouteImport.update({
-  id: '/wishlist',
-  path: '/wishlist',
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedTagsRoute = AuthenticatedTagsRouteImport.update({
-  id: '/tags',
-  path: '/tags',
+const AuthenticatedImportExportRoute =
+  AuthenticatedImportExportRouteImport.update({
+    id: '/import-export',
+    path: '/import-export',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedLibraryHealthRoute =
+  AuthenticatedLibraryHealthRouteImport.update({
+    id: '/library-health',
+    path: '/library-health',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedReviewRoute = AuthenticatedReviewRouteImport.update({
@@ -75,36 +82,56 @@ const AuthenticatedReviewRoute = AuthenticatedReviewRouteImport.update({
   path: '/review',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
+const AuthenticatedTagsRoute = AuthenticatedTagsRouteImport.update({
+  id: '/tags',
+  path: '/tags',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedLibraryHealthRoute =
-  AuthenticatedLibraryHealthRouteImport.update({
-    id: '/library-health',
-    path: '/library-health',
+const AuthenticatedWishlistRoute = AuthenticatedWishlistRouteImport.update({
+  id: '/wishlist',
+  path: '/wishlist',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const PublicLoginRoute = PublicLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => PublicRoute,
+} as any)
+const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedAdminBackupsRoute =
+  AuthenticatedAdminBackupsRouteImport.update({
+    id: '/admin/backups',
+    path: '/admin/backups',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedImportExportRoute =
-  AuthenticatedImportExportRouteImport.update({
-    id: '/import-export',
-    path: '/import-export',
+const AuthenticatedAdminMaintenanceRoute =
+  AuthenticatedAdminMaintenanceRouteImport.update({
+    id: '/admin/maintenance',
+    path: '/admin/maintenance',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
+const AuthenticatedGamesIndexRoute = AuthenticatedGamesIndexRouteImport.update({
+  id: '/games/',
+  path: '/games/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedSyncIndexRoute = AuthenticatedSyncIndexRouteImport.update({
-  id: '/sync/',
-  path: '/sync/',
+const AuthenticatedGamesIdRoute = AuthenticatedGamesIdRouteImport.update({
+  id: '/games/$id',
+  path: '/games/$id',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedPoolsIndexRoute = AuthenticatedPoolsIndexRouteImport.update({
-  id: '/pools/',
-  path: '/pools/',
+const AuthenticatedGamesAddRoute = AuthenticatedGamesAddRouteImport.update({
+  id: '/games/add',
+  path: '/games/add',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedHelpSlugRoute = AuthenticatedHelpSlugRouteImport.update({
+  id: '/help/$slug',
+  path: '/help/$slug',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedJobsIndexRoute = AuthenticatedJobsIndexRouteImport.update({
@@ -112,14 +139,24 @@ const AuthenticatedJobsIndexRoute = AuthenticatedJobsIndexRouteImport.update({
   path: '/jobs/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedGamesIndexRoute = AuthenticatedGamesIndexRouteImport.update({
-  id: '/games/',
-  path: '/games/',
+const AuthenticatedJobsIdRoute = AuthenticatedJobsIdRouteImport.update({
+  id: '/jobs/$id',
+  path: '/jobs/$id',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
-  id: '/admin/',
-  path: '/admin/',
+const AuthenticatedPoolsIndexRoute = AuthenticatedPoolsIndexRouteImport.update({
+  id: '/pools/',
+  path: '/pools/',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedPoolsIdRoute = AuthenticatedPoolsIdRouteImport.update({
+  id: '/pools/$id',
+  path: '/pools/$id',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSyncIndexRoute = AuthenticatedSyncIndexRouteImport.update({
+  id: '/sync/',
+  path: '/sync/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedSyncStorefrontRoute =
@@ -128,54 +165,11 @@ const AuthenticatedSyncStorefrontRoute =
     path: '/sync/$storefront',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedPoolsIdRoute = AuthenticatedPoolsIdRouteImport.update({
-  id: '/pools/$id',
-  path: '/pools/$id',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedJobsIdRoute = AuthenticatedJobsIdRouteImport.update({
-  id: '/jobs/$id',
-  path: '/jobs/$id',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedHelpSlugRoute = AuthenticatedHelpSlugRouteImport.update({
-  id: '/help/$slug',
-  path: '/help/$slug',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedGamesAddRoute = AuthenticatedGamesAddRouteImport.update({
-  id: '/games/add',
-  path: '/games/add',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedGamesIdRoute = AuthenticatedGamesIdRouteImport.update({
-  id: '/games/$id',
-  path: '/games/$id',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedAdminMaintenanceRoute =
-  AuthenticatedAdminMaintenanceRouteImport.update({
-    id: '/admin/maintenance',
-    path: '/admin/maintenance',
+const AuthenticatedAdminActivityIndexRoute =
+  AuthenticatedAdminActivityIndexRouteImport.update({
+    id: '/admin/activity/',
+    path: '/admin/activity/',
     getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedAdminBackupsRoute =
-  AuthenticatedAdminBackupsRouteImport.update({
-    id: '/admin/backups',
-    path: '/admin/backups',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedGamesAddIndexRoute =
-  AuthenticatedGamesAddIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedGamesAddRoute,
-  } as any)
-const AuthenticatedGamesIdIndexRoute =
-  AuthenticatedGamesIdIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedGamesIdRoute,
   } as any)
 const AuthenticatedAdminUsersIndexRoute =
   AuthenticatedAdminUsersIndexRouteImport.update({
@@ -183,23 +177,11 @@ const AuthenticatedAdminUsersIndexRoute =
     path: '/admin/users/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedAdminActivityIndexRoute =
-  AuthenticatedAdminActivityIndexRouteImport.update({
-    id: '/admin/activity/',
-    path: '/admin/activity/',
+const AuthenticatedAdminUsersIdRoute =
+  AuthenticatedAdminUsersIdRouteImport.update({
+    id: '/admin/users/$id',
+    path: '/admin/users/$id',
     getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedGamesAddConfirmRoute =
-  AuthenticatedGamesAddConfirmRouteImport.update({
-    id: '/confirm',
-    path: '/confirm',
-    getParentRoute: () => AuthenticatedGamesAddRoute,
-  } as any)
-const AuthenticatedGamesIdEditRoute =
-  AuthenticatedGamesIdEditRouteImport.update({
-    id: '/edit',
-    path: '/edit',
-    getParentRoute: () => AuthenticatedGamesIdRoute,
   } as any)
 const AuthenticatedAdminUsersNewRoute =
   AuthenticatedAdminUsersNewRouteImport.update({
@@ -207,11 +189,29 @@ const AuthenticatedAdminUsersNewRoute =
     path: '/admin/users/new',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedAdminUsersIdRoute =
-  AuthenticatedAdminUsersIdRouteImport.update({
-    id: '/admin/users/$id',
-    path: '/admin/users/$id',
-    getParentRoute: () => AuthenticatedRoute,
+const AuthenticatedGamesIdIndexRoute =
+  AuthenticatedGamesIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedGamesIdRoute,
+  } as any)
+const AuthenticatedGamesIdEditRoute =
+  AuthenticatedGamesIdEditRouteImport.update({
+    id: '/edit',
+    path: '/edit',
+    getParentRoute: () => AuthenticatedGamesIdRoute,
+  } as any)
+const AuthenticatedGamesAddIndexRoute =
+  AuthenticatedGamesAddIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedGamesAddRoute,
+  } as any)
+const AuthenticatedGamesAddConfirmRoute =
+  AuthenticatedGamesAddConfirmRouteImport.update({
+    id: '/confirm',
+    path: '/confirm',
+    getParentRoute: () => AuthenticatedGamesAddRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -418,11 +418,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_public': {
-      id: '/_public'
-      path: ''
+    '/': {
+      id: '/'
+      path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof PublicRouteImport
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -432,53 +432,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
+    '/_public': {
+      id: '/_public'
+      path: ''
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof PublicRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_public/login': {
-      id: '/_public/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof PublicLoginRouteImport
-      parentRoute: typeof PublicRoute
-    }
-    '/_authenticated/wishlist': {
-      id: '/_authenticated/wishlist'
-      path: '/wishlist'
-      fullPath: '/wishlist'
-      preLoaderRoute: typeof AuthenticatedWishlistRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/tags': {
-      id: '/_authenticated/tags'
-      path: '/tags'
-      fullPath: '/tags'
-      preLoaderRoute: typeof AuthenticatedTagsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/review': {
-      id: '/_authenticated/review'
-      path: '/review'
-      fullPath: '/review'
-      preLoaderRoute: typeof AuthenticatedReviewRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/profile': {
-      id: '/_authenticated/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof AuthenticatedProfileRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/library-health': {
-      id: '/_authenticated/library-health'
-      path: '/library-health'
-      fullPath: '/library-health'
-      preLoaderRoute: typeof AuthenticatedLibraryHealthRouteImport
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/import-export': {
@@ -488,95 +453,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedImportExportRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/dashboard': {
-      id: '/_authenticated/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+    '/_authenticated/library-health': {
+      id: '/_authenticated/library-health'
+      path: '/library-health'
+      fullPath: '/library-health'
+      preLoaderRoute: typeof AuthenticatedLibraryHealthRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/sync/': {
-      id: '/_authenticated/sync/'
-      path: '/sync'
-      fullPath: '/sync/'
-      preLoaderRoute: typeof AuthenticatedSyncIndexRouteImport
+    '/_authenticated/profile': {
+      id: '/_authenticated/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AuthenticatedProfileRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/pools/': {
-      id: '/_authenticated/pools/'
-      path: '/pools'
-      fullPath: '/pools/'
-      preLoaderRoute: typeof AuthenticatedPoolsIndexRouteImport
+    '/_authenticated/review': {
+      id: '/_authenticated/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof AuthenticatedReviewRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/jobs/': {
-      id: '/_authenticated/jobs/'
-      path: '/jobs'
-      fullPath: '/jobs/'
-      preLoaderRoute: typeof AuthenticatedJobsIndexRouteImport
+    '/_authenticated/tags': {
+      id: '/_authenticated/tags'
+      path: '/tags'
+      fullPath: '/tags'
+      preLoaderRoute: typeof AuthenticatedTagsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/games/': {
-      id: '/_authenticated/games/'
-      path: '/games'
-      fullPath: '/games/'
-      preLoaderRoute: typeof AuthenticatedGamesIndexRouteImport
+    '/_authenticated/wishlist': {
+      id: '/_authenticated/wishlist'
+      path: '/wishlist'
+      fullPath: '/wishlist'
+      preLoaderRoute: typeof AuthenticatedWishlistRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/_public/login': {
+      id: '/_public/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof PublicLoginRouteImport
+      parentRoute: typeof PublicRoute
     }
     '/_authenticated/admin/': {
       id: '/_authenticated/admin/'
       path: '/admin'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/sync/$storefront': {
-      id: '/_authenticated/sync/$storefront'
-      path: '/sync/$storefront'
-      fullPath: '/sync/$storefront'
-      preLoaderRoute: typeof AuthenticatedSyncStorefrontRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/pools/$id': {
-      id: '/_authenticated/pools/$id'
-      path: '/pools/$id'
-      fullPath: '/pools/$id'
-      preLoaderRoute: typeof AuthenticatedPoolsIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/jobs/$id': {
-      id: '/_authenticated/jobs/$id'
-      path: '/jobs/$id'
-      fullPath: '/jobs/$id'
-      preLoaderRoute: typeof AuthenticatedJobsIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/help/$slug': {
-      id: '/_authenticated/help/$slug'
-      path: '/help/$slug'
-      fullPath: '/help/$slug'
-      preLoaderRoute: typeof AuthenticatedHelpSlugRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/games/add': {
-      id: '/_authenticated/games/add'
-      path: '/games/add'
-      fullPath: '/games/add'
-      preLoaderRoute: typeof AuthenticatedGamesAddRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/games/$id': {
-      id: '/_authenticated/games/$id'
-      path: '/games/$id'
-      fullPath: '/games/$id'
-      preLoaderRoute: typeof AuthenticatedGamesIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/maintenance': {
-      id: '/_authenticated/admin/maintenance'
-      path: '/admin/maintenance'
-      fullPath: '/admin/maintenance'
-      preLoaderRoute: typeof AuthenticatedAdminMaintenanceRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/backups': {
@@ -586,25 +509,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminBackupsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/games/add/': {
-      id: '/_authenticated/games/add/'
-      path: '/'
-      fullPath: '/games/add/'
-      preLoaderRoute: typeof AuthenticatedGamesAddIndexRouteImport
-      parentRoute: typeof AuthenticatedGamesAddRoute
+    '/_authenticated/admin/maintenance': {
+      id: '/_authenticated/admin/maintenance'
+      path: '/admin/maintenance'
+      fullPath: '/admin/maintenance'
+      preLoaderRoute: typeof AuthenticatedAdminMaintenanceRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/games/$id/': {
-      id: '/_authenticated/games/$id/'
-      path: '/'
-      fullPath: '/games/$id/'
-      preLoaderRoute: typeof AuthenticatedGamesIdIndexRouteImport
-      parentRoute: typeof AuthenticatedGamesIdRoute
+    '/_authenticated/games/': {
+      id: '/_authenticated/games/'
+      path: '/games'
+      fullPath: '/games/'
+      preLoaderRoute: typeof AuthenticatedGamesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/admin/users/': {
-      id: '/_authenticated/admin/users/'
-      path: '/admin/users'
-      fullPath: '/admin/users/'
-      preLoaderRoute: typeof AuthenticatedAdminUsersIndexRouteImport
+    '/_authenticated/games/$id': {
+      id: '/_authenticated/games/$id'
+      path: '/games/$id'
+      fullPath: '/games/$id'
+      preLoaderRoute: typeof AuthenticatedGamesIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/games/add': {
+      id: '/_authenticated/games/add'
+      path: '/games/add'
+      fullPath: '/games/add'
+      preLoaderRoute: typeof AuthenticatedGamesAddRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/help/$slug': {
+      id: '/_authenticated/help/$slug'
+      path: '/help/$slug'
+      fullPath: '/help/$slug'
+      preLoaderRoute: typeof AuthenticatedHelpSlugRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/jobs/': {
+      id: '/_authenticated/jobs/'
+      path: '/jobs'
+      fullPath: '/jobs/'
+      preLoaderRoute: typeof AuthenticatedJobsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/jobs/$id': {
+      id: '/_authenticated/jobs/$id'
+      path: '/jobs/$id'
+      fullPath: '/jobs/$id'
+      preLoaderRoute: typeof AuthenticatedJobsIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/pools/': {
+      id: '/_authenticated/pools/'
+      path: '/pools'
+      fullPath: '/pools/'
+      preLoaderRoute: typeof AuthenticatedPoolsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/pools/$id': {
+      id: '/_authenticated/pools/$id'
+      path: '/pools/$id'
+      fullPath: '/pools/$id'
+      preLoaderRoute: typeof AuthenticatedPoolsIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sync/': {
+      id: '/_authenticated/sync/'
+      path: '/sync'
+      fullPath: '/sync/'
+      preLoaderRoute: typeof AuthenticatedSyncIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sync/$storefront': {
+      id: '/_authenticated/sync/$storefront'
+      path: '/sync/$storefront'
+      fullPath: '/sync/$storefront'
+      preLoaderRoute: typeof AuthenticatedSyncStorefrontRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/activity/': {
@@ -614,25 +593,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminActivityIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/games/add/confirm': {
-      id: '/_authenticated/games/add/confirm'
-      path: '/confirm'
-      fullPath: '/games/add/confirm'
-      preLoaderRoute: typeof AuthenticatedGamesAddConfirmRouteImport
-      parentRoute: typeof AuthenticatedGamesAddRoute
-    }
-    '/_authenticated/games/$id/edit': {
-      id: '/_authenticated/games/$id/edit'
-      path: '/edit'
-      fullPath: '/games/$id/edit'
-      preLoaderRoute: typeof AuthenticatedGamesIdEditRouteImport
-      parentRoute: typeof AuthenticatedGamesIdRoute
-    }
-    '/_authenticated/admin/users/new': {
-      id: '/_authenticated/admin/users/new'
-      path: '/admin/users/new'
-      fullPath: '/admin/users/new'
-      preLoaderRoute: typeof AuthenticatedAdminUsersNewRouteImport
+    '/_authenticated/admin/users/': {
+      id: '/_authenticated/admin/users/'
+      path: '/admin/users'
+      fullPath: '/admin/users/'
+      preLoaderRoute: typeof AuthenticatedAdminUsersIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/users/$id': {
@@ -641,6 +606,41 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/users/$id'
       preLoaderRoute: typeof AuthenticatedAdminUsersIdRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/users/new': {
+      id: '/_authenticated/admin/users/new'
+      path: '/admin/users/new'
+      fullPath: '/admin/users/new'
+      preLoaderRoute: typeof AuthenticatedAdminUsersNewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/games/$id/': {
+      id: '/_authenticated/games/$id/'
+      path: '/'
+      fullPath: '/games/$id/'
+      preLoaderRoute: typeof AuthenticatedGamesIdIndexRouteImport
+      parentRoute: typeof AuthenticatedGamesIdRoute
+    }
+    '/_authenticated/games/$id/edit': {
+      id: '/_authenticated/games/$id/edit'
+      path: '/edit'
+      fullPath: '/games/$id/edit'
+      preLoaderRoute: typeof AuthenticatedGamesIdEditRouteImport
+      parentRoute: typeof AuthenticatedGamesIdRoute
+    }
+    '/_authenticated/games/add/': {
+      id: '/_authenticated/games/add/'
+      path: '/'
+      fullPath: '/games/add/'
+      preLoaderRoute: typeof AuthenticatedGamesAddIndexRouteImport
+      parentRoute: typeof AuthenticatedGamesAddRoute
+    }
+    '/_authenticated/games/add/confirm': {
+      id: '/_authenticated/games/add/confirm'
+      path: '/confirm'
+      fullPath: '/games/add/confirm'
+      preLoaderRoute: typeof AuthenticatedGamesAddConfirmRouteImport
+      parentRoute: typeof AuthenticatedGamesAddRoute
     }
   }
 }
