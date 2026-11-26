@@ -69,6 +69,28 @@ func editionsOpenItemJobs(ctx context.Context, db bun.IDB, userID, id string) ([
 	return jobIDs, nil
 }
 
+// openItem is an open item of a set of editions in one Job.
+type openItem struct {
+	ID             string `bun:"id"`
+	ExternalGameID string `bun:"external_game_id"`
+	Status         string `bun:"status"`
+}
+
+// editionsOpenItems returns the open items (pending or in Pending review) of
+// the External games editions in the Job jobID, in id order.
+func editionsOpenItems(ctx context.Context, db bun.IDB, jobID string, editions []string) ([]openItem, error) {
+	var items []openItem
+	if err := db.NewRaw(`
+		SELECT id, external_game_id, status FROM job_items
+		WHERE job_id = ? AND external_game_id IN (?) AND status IN (?, ?)
+		ORDER BY id`,
+		jobID, bun.List(editions), models.JobItemStatusPending, models.JobItemStatusPendingReview,
+	).Scan(ctx, &items); err != nil {
+		return nil, fmt.Errorf("load the editions' items: %w", err)
+	}
+	return items, nil
+}
+
 // rematchUnlinkEditions removes the platform links of a set of editions and
 // applies the orphan rule to every user game their links sit on: one left with
 // no links from outside the set is orphaned, unless it is the user game of the
@@ -220,19 +242,10 @@ func rematchEditions(ctx context.Context, tx bun.Tx, userID, id string, igdbID i
 	}
 	ids := externalgame.IDs(set)
 
-	var items []struct {
-		ID             string `bun:"id"`
-		ExternalGameID string `bun:"external_game_id"`
-		Status         string `bun:"status"`
-	}
+	var items []openItem
 	if jobID != "" {
-		if err := tx.NewRaw(`
-			SELECT id, external_game_id, status FROM job_items
-			WHERE job_id = ? AND external_game_id IN (?) AND status IN ('pending', 'pending_review')
-			ORDER BY id`,
-			jobID, bun.List(ids),
-		).Scan(ctx, &items); err != nil {
-			return nil, fmt.Errorf("load the editions' items: %w", err)
+		if items, err = editionsOpenItems(ctx, tx, jobID, ids); err != nil {
+			return nil, err
 		}
 	}
 	for _, it := range items {

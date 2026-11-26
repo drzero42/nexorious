@@ -1298,16 +1298,9 @@ func skipEditions(ctx context.Context, tx bun.Tx, userID, id, jobID string) ([]s
 	if jobID == "" {
 		return nil, nil
 	}
-	var items []struct {
-		ID             string `bun:"id"`
-		ExternalGameID string `bun:"external_game_id"`
-	}
-	if err := tx.NewRaw(`
-		SELECT id, external_game_id FROM job_items
-		WHERE job_id = ? AND external_game_id IN (?) AND status IN ('pending', 'pending_review')`,
-		jobID, bun.List(editions),
-	).Scan(ctx, &items); err != nil {
-		return nil, fmt.Errorf("load the editions' items: %w", err)
+	items, err := editionsOpenItems(ctx, tx, jobID, editions)
+	if err != nil {
+		return nil, err
 	}
 	ids := make([]string, 0, len(items))
 	for _, it := range items {

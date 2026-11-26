@@ -23,18 +23,24 @@ import (
 // items) is built from these helpers, so they cannot disagree on which games
 // form a set.
 
+// keyColumn is a column of the key, with its SQL type.
+type keyColumn struct{ name, sqlType string }
+
 // titleColumns make two External games same-title games.
-var titleColumns = []string{"user_id", "storefront", "title"}
+var titleColumns = []keyColumn{{"user_id", "text"}, {"storefront", "text"}, {"title", "text"}}
 
 // decisionColumns hold a game's decision: its match and its skip.
-var decisionColumns = []string{"resolved_igdb_id", "is_skipped"}
+var decisionColumns = []keyColumn{{"resolved_igdb_id", "integer"}, {"is_skipped", "boolean"}}
+
+// editionColumns is the whole key: the title columns, then the decision.
+var editionColumns = slices.Concat(titleColumns, decisionColumns)
 
 // SameTitle is the SQL condition that the External games aliased a and b are
 // same-title games: same user, storefront and title.
 func SameTitle(a, b string) string {
 	conds := make([]string, 0, len(titleColumns))
 	for _, c := range titleColumns {
-		conds = append(conds, fmt.Sprintf("%s.%s = %s.%s", a, c, b, c))
+		conds = append(conds, fmt.Sprintf("%s.%s = %s.%s", a, c.name, b, c.name))
 	}
 	return "(" + strings.Join(conds, " AND ") + ")"
 }
@@ -44,7 +50,7 @@ func SameTitle(a, b string) string {
 func SameEdition(a, b string) string {
 	conds := []string{SameTitle(a, b)}
 	for _, c := range decisionColumns {
-		conds = append(conds, fmt.Sprintf("%s.%s IS NOT DISTINCT FROM %s.%s", a, c, b, c))
+		conds = append(conds, fmt.Sprintf("%s.%s IS NOT DISTINCT FROM %s.%s", a, c.name, b, c.name))
 	}
 	return "(" + strings.Join(conds, " AND ") + ")"
 }
@@ -53,9 +59,9 @@ func SameEdition(a, b string) string {
 // sets of editions, for GROUP BY and PARTITION BY (both treat NULLs as equal,
 // as SameEdition does).
 func EditionKey(a string) string {
-	cols := make([]string, 0, len(titleColumns)+len(decisionColumns))
-	for _, c := range slices.Concat(titleColumns, decisionColumns) {
-		cols = append(cols, a+"."+c)
+	cols := make([]string, 0, len(editionColumns))
+	for _, c := range editionColumns {
+		cols = append(cols, a+"."+c.name)
 	}
 	return strings.Join(cols, ", ")
 }
@@ -68,22 +74,47 @@ var ErrEditionsChanged = errors.New("the game's editions changed while they were
 // lockEditionsTries bounds how often LockEditions tries again.
 const lockEditionsTries = 3
 
-// editionState is what makes a game a member of its set of editions.
-type editionState struct {
-	UserID         string `bun:"user_id"`
-	Storefront     string `bun:"storefront"`
-	Title          string `bun:"title"`
-	ResolvedIGDBID *int32 `bun:"resolved_igdb_id"`
-	IsSkipped      bool   `bun:"is_skipped"`
+// editionState is what makes a game a member of its set of editions: its
+// values of editionColumns, in order, read as text (NULL stays NULL).
+type editionState []sql.NullString
+
+// readEditionState reads the state of the user's External game id, without a
+// lock.
+func readEditionState(ctx context.Context, db bun.IDB, userID, id string) (editionState, error) {
+	cols := make([]string, len(editionColumns))
+	st := make(editionState, len(editionColumns))
+	dest := make([]any, len(editionColumns))
+	for i, c := range editionColumns {
+		cols[i] = c.name + "::text"
+		dest[i] = &st[i]
+	}
+	err := db.NewRaw(
+		`SELECT `+strings.Join(cols, ", ")+` FROM external_games WHERE id = ? AND user_id = ?`, id, userID,
+	).Scan(ctx, dest...)
+	return st, err
 }
 
-// stateRow binds a state as a one-row relation aliased k, for SameEdition.
-const stateRow = `(SELECT ?::text AS user_id, ?::text AS storefront, ?::text AS title,
-	?::integer AS resolved_igdb_id, ?::boolean AS is_skipped) k`
-
+// args binds the state to the placeholders of editionsOf.
 func (s editionState) args() []any {
-	return []any{s.UserID, s.Storefront, s.Title, s.ResolvedIGDBID, s.IsSkipped}
+	args := make([]any, len(s))
+	for i, v := range s {
+		if v.Valid {
+			args[i] = v.String
+		}
+	}
+	return args
 }
+
+// editionsOf selects, as eg, the External games in the set of editions of a
+// bound editionState.
+var editionsOf = func() string {
+	cols := make([]string, len(editionColumns))
+	for i, c := range editionColumns {
+		cols[i] = "?::" + c.sqlType + " AS " + c.name
+	}
+	return `FROM external_games eg, (SELECT ` + strings.Join(cols, ", ") + `) k
+		WHERE ` + SameEdition("eg", "k")
+}()
 
 // errRelock rolls back a try of LockEditions.
 var errRelock = errors.New("editions changed; lock again")
@@ -102,11 +133,8 @@ var errRelock = errors.New("editions changed; lock again")
 // back before the next, so locks are always taken in id order.
 func LockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.ExternalGame, []models.ExternalGame, error) {
 	for range lockEditionsTries {
-		var st editionState
-		if err := tx.NewRaw(
-			`SELECT user_id, storefront, title, resolved_igdb_id, is_skipped FROM external_games WHERE id = ? AND user_id = ?`,
-			id, userID,
-		).Scan(ctx, &st); err != nil {
+		st, err := readEditionState(ctx, tx, userID, id)
+		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return models.ExternalGame{}, nil, ErrNotFound
 			}
@@ -114,11 +142,10 @@ func LockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.Ext
 		}
 
 		var set []models.ExternalGame
-		err := tx.RunInTx(ctx, nil, func(ctx context.Context, sp bun.Tx) error {
+		err = tx.RunInTx(ctx, nil, func(ctx context.Context, sp bun.Tx) error {
 			set = nil
 			if err := sp.NewRaw(`
-				SELECT eg.* FROM external_games eg, `+stateRow+`
-				WHERE `+SameEdition("eg", "k")+`
+				SELECT eg.* `+editionsOf+`
 				ORDER BY eg.id
 				FOR UPDATE OF eg`,
 				st.args()...,
@@ -127,8 +154,7 @@ func LockEditions(ctx context.Context, tx bun.Tx, userID, id string) (models.Ext
 			}
 			var again []string
 			if err := sp.NewRaw(`
-				SELECT eg.id FROM external_games eg, `+stateRow+`
-				WHERE `+SameEdition("eg", "k")+`
+				SELECT eg.id `+editionsOf+`
 				ORDER BY eg.id`,
 				st.args()...,
 			).Scan(ctx, &again); err != nil && !errors.Is(err, sql.ErrNoRows) {

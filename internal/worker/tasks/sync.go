@@ -747,8 +747,14 @@ func (w *IGDBMatchWorker) completeSameTitleReviews(ctx context.Context, item *mo
 				done = append(done, wg.ItemID)
 			case errors.Is(err, errNoPrecedent):
 			default:
+				// The library write refuses a game it cannot write (validation);
+				// anything else is a database failure.
+				cat := logging.CategoryDB
+				if cannotWrite(err) {
+					cat = logging.CategoryValidation
+				}
 				slog.WarnContext(ctx, "igdb_match: completing a same-title review failed; its item stays in review",
-					logging.KeyExternalGameID, wg.GameID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+					logging.KeyExternalGameID, wg.GameID, logging.KeyErr, err, logging.Cat(cat))
 			}
 		}
 		return done, nil
