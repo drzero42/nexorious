@@ -643,11 +643,17 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 	)
 
 	if decision.Confident {
-		bestID := decision.ResolvedID
+		best := matching.Candidate{ID: decision.ResolvedID}
+		for _, c := range cands {
+			if c.ID == best.ID {
+				best = c
+				break
+			}
+		}
 		// The write stage writes whatever the game has after the own write.
 		var wroteMatch bool
 		err := w.toWrite(ctx, rj, item.ID, func(ctx context.Context, tx bun.Tx) (err error) {
-			wroteMatch, err = writeConfidentMatch(ctx, tx, eg, bestID)
+			wroteMatch, err = writeConfidentMatch(ctx, tx, eg, best)
 			return err
 		})
 		if err != nil {
@@ -668,15 +674,21 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 
 // writeConfidentMatch is the own write of a confident match: the game takes
 // an edition's decision made during the search if there is one (precedent
-// first), otherwise the search's match bestID. It reports whether it wrote
-// bestID. The write is guarded so a rematch or Skip that committed during the
-// search wins (#1338).
-func writeConfidentMatch(ctx context.Context, tx bun.Tx, eg *models.ExternalGame, bestID int32) (bool, error) {
+// first), otherwise the search's match best. It reports whether it wrote
+// best. The write is guarded so a rematch or Skip that committed during the
+// search wins (#1338). A games row it creates takes best's IGDB title, not the
+// storefront's (#1455).
+func writeConfidentMatch(ctx context.Context, tx bun.Tx, eg *models.ExternalGame, best matching.Candidate) (bool, error) {
 	took, err := externalgame.TakePrecedent(ctx, tx, eg.ID)
 	if err != nil || took {
 		return false, err
 	}
-	if err := externalgame.EnsureGameRow(ctx, tx, bestID, eg.Title); err != nil {
+	bestID := best.ID
+	title := best.Title
+	if title == "" {
+		title = eg.Title
+	}
+	if err := externalgame.EnsureGameRow(ctx, tx, bestID, title); err != nil {
 		return false, err
 	}
 	res, err := tx.NewRaw(

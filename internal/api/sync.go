@@ -28,6 +28,7 @@ import (
 	"github.com/drzero42/nexorious/internal/logging"
 	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
+	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/usergame"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -261,6 +262,7 @@ type SyncHandler struct {
 	gogClient              GOGClient
 	humbleClient           HumbleClient
 	amazonGamesClient      AmazonGamesClient
+	igdbClient             *igdb.Client     // nil or unconfigured: a Rematch stubs with the storefront title
 	amazonLoginClock       func() time.Time // nil: time.Now
 	amazonSignOutTimeout   time.Duration    // 0: amazonSignOutLimit
 	amazonSignOuts         sync.WaitGroup   // device sign-outs still running after a disconnect
@@ -269,8 +271,8 @@ type SyncHandler struct {
 // NewSyncHandler constructs a SyncHandler.
 // riverClient inserts the immediate metadata fetch after a rematch or an
 // unskip, which is not Job work; lc owns the sync Jobs.
-func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], lc *joblifecycle.Module, steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient, amazonGames AmazonGamesClient) *SyncHandler {
-	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, lc: lc, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble, amazonGamesClient: amazonGames}
+func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], lc *joblifecycle.Module, steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient, amazonGames AmazonGamesClient, igdbClient *igdb.Client) *SyncHandler {
+	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, lc: lc, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble, amazonGamesClient: amazonGames, igdbClient: igdbClient}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
