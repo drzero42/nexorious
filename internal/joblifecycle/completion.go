@@ -44,8 +44,8 @@ func (m *Module) evaluate(ctx context.Context, tx bun.Tx, st *txState, k *Kind, 
 		}
 		return nil
 	case c.Pending > 0:
-		// Only pending items without an owner and nothing in review: cannot
-		// arise for a kind whose items do not wait. Recovery queues them.
+		// Only pending items without an owner and nothing in review: orphans
+		// (from an older version, or a defect). Recovery queues them.
 		return nil
 	}
 	first := job.CompletedAt == nil

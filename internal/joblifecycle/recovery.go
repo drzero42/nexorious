@@ -37,15 +37,15 @@ type RecoveryResult struct {
 // removedRiverKinds are periodic River kinds of older versions that no
 // longer have a worker (the orphan rescue and the stale sweep, which the
 // recovery rule replaced). A row queued before the upgrade would sit in the
-// queue for ever; Settle deletes them.
+// queue for ever; ReclaimRunning deletes them.
 var removedRiverKinds = []string{"rescue_orphaned_pending_items", "cleanup_stale_jobs"}
 
-// Settle moves River jobs a dead process left running, of every River kind
+// ReclaimRunning moves River jobs a dead process left running, of every River kind
 // the lifecycle uses, to a state River acts on: cancelled if they had been
 // signalled to stop, retryable if they have attempts left, discarded if not.
 // It also deletes River jobs of removed periodic kinds. Run it at startup
 // only, before River starts: then nothing is running.
-func (m *Module) Settle(ctx context.Context) (int, error) {
+func (m *Module) ReclaimRunning(ctx context.Context) (int, error) {
 	if _, err := m.db.NewRaw(`DELETE FROM river_job WHERE kind IN (?)`, bun.List(removedRiverKinds)).Exec(ctx); err != nil {
 		return 0, fmt.Errorf("delete river jobs of removed kinds: %w", err)
 	}
@@ -63,7 +63,7 @@ func (m *Module) Settle(ctx context.Context) (int, error) {
 		bun.List(m.RiverKinds()),
 	).Exec(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("settle running river jobs: %w", err)
+		return 0, fmt.Errorf("reclaim running river jobs: %w", err)
 	}
 	n, _ := res.RowsAffected() //nolint:errcheck // advisory count
 	return int(n), nil
@@ -153,23 +153,10 @@ func (m *Module) recoverJob(ctx context.Context, tx bun.Tx, st *txState, jobID s
 	if err != nil {
 		return err
 	}
-	var ownerless []string
-	for _, it := range items {
-		if it.RiverJobID == nil {
-			ownerless = append(ownerless, it.ID)
-		}
-	}
-	mayWait, err := m.waitable(ctx, tx, k, job, ownerless)
-	if err != nil {
-		return err
-	}
 
 	for i := range items {
 		it := &items[i]
 		if it.RiverJobID == nil {
-			if mayWait[it.ID] {
-				continue // waiting on another item, which is allowed (invariant 3)
-			}
 			rid, err := findLive(ctx, tx, k.ItemRiverKinds, "job_item_id", it.ID)
 			if err != nil {
 				return err

@@ -550,7 +550,7 @@ func TestSync_OneEditionMatchesConfidently_SettlesTheOther(t *testing.T) {
 // Settle only gives a match: when the oldest decision of the title is a skip
 // (it can only have appeared in a race), the game waiting in review is left as
 // it is and its item stays in review.
-func TestSettle_OldestDecisionIsASkip_LeavesTheGameInReview(t *testing.T) {
+func TestReclaimRunning_OldestDecisionIsASkip_LeavesTheGameInReview(t *testing.T) {
 	ctx := context.Background()
 	userID := edSetup(t)
 	lc := newTestLC(t)

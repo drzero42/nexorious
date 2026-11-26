@@ -145,7 +145,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 
 	if jobID != "" {
-		_, err = h.lc.CompleteByRematch(ctx, jobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
+		_, err = h.lc.CompleteItems(ctx, jobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
 			return rematchEditions(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, job.ID)
 		})
 		if errors.Is(err, joblifecycle.ErrJobNotActive) || errors.Is(err, joblifecycle.ErrGone) {

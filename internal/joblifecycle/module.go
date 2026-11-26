@@ -14,7 +14,7 @@
 //
 // The module also writes river_job directly in two places: Cancel and Fail
 // cancel a Job's queued River jobs with one set-based UPDATE before signalling
-// the running ones through River, and the startup settle step (Settle) moves
+// the running ones through River, and the startup step ReclaimRunning moves
 // River jobs a dead process left running back to a state River acts on.
 //
 // Kinds are registered on an instance, not globally, so tests register fake
@@ -145,10 +145,6 @@ type Kind struct {
 	HasEffects func(o Outcome) bool
 	// Observer is optional.
 	Observer Observer
-	// WaitsOn says which items wait on which other item (docs/job-lifecycle.md,
-	// "Items that wait on another item"). It is read-only and runs in the
-	// module's transaction. Nil means the kind's items never wait.
-	WaitsOn func(ctx context.Context, tx bun.Tx, q WaitQuery) ([]WaitEdge, error)
 }
 
 func (k *Kind) hasEffects(o Outcome) bool {

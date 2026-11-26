@@ -714,7 +714,7 @@ func writeConfidentMatch(ctx context.Context, tx bun.Tx, eg *models.ExternalGame
 // with its item in review. Best effort: it runs after the match committed, and
 // a failure is logged and leaves the items in review.
 func (w *IGDBMatchWorker) completeSameTitleReviews(ctx context.Context, item *models.JobItem, eg *models.ExternalGame) {
-	n, err := w.LC.CompleteByRematch(ctx, item.JobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
+	n, err := w.LC.CompleteItems(ctx, item.JobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
 		waiting, err := externalgame.UndecidedSameTitleInReview(ctx, tx, job.ID, eg.ID)
 		if err != nil {
 			return nil, err
