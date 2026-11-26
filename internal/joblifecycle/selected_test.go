@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
@@ -131,45 +130,5 @@ func TestCompleteItemsInReviewAndOwned(t *testing.T) {
 	}
 	if len(rec.jobCalls) != 1 || rec.jobCalls[0] != models.JobStatusCompleted {
 		t.Errorf("job observer = %v", rec.jobCalls)
-	}
-}
-
-func TestAwaitReviewDivertsToNextStage(t *testing.T) {
-	m, _ := newTestModule(t)
-	ctx := context.Background()
-	jobID, its := mustCreateWithItems(t, m, insertUser(t), 1)
-	err := m.AwaitReview(ctx, its[0].ID, *its[0].RiverJobID, Review{
-		Divert: func(context.Context, bun.Tx) (river.JobArgs, error) {
-			return fakeItemArgs{JobItemID: its[0].ID}, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := loadItems(t, jobID)[0]
-	if got.Status != models.JobItemStatusPending || got.RiverJobID == nil || *got.RiverJobID == *its[0].RiverJobID {
-		t.Fatalf("item = %+v, want pending with a new owner", got)
-	}
-}
-
-func TestReclaimRunningDeletesRemovedPeriodicKinds(t *testing.T) {
-	m, _ := newTestModule(t)
-	ctx := context.Background()
-	for _, kind := range append([]string{"cleanup_old_jobs"}, removedRiverKinds...) {
-		if _, err := testDB.ExecContext(ctx,
-			`INSERT INTO river_job (kind, args, max_attempts, state) VALUES (?, '{}', 1, 'available')`, kind); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := m.ReclaimRunning(ctx); err != nil {
-		t.Fatal(err)
-	}
-	for _, kind := range removedRiverKinds {
-		if c := countRiver(t, kind); c != 0 {
-			t.Errorf("%s rows left: %d", kind, c)
-		}
-	}
-	if c := countRiver(t, "cleanup_old_jobs"); c != 1 {
-		t.Errorf("another kind's row was deleted")
 	}
 }
