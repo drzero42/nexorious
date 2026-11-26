@@ -196,6 +196,21 @@ type externalGameResponse struct {
 	Platforms                  []string `bun:"-"                              json:"platforms"`
 	StoreLink                  *string  `bun:"store_link"                     json:"-"`
 	StoreURL                   *string  `bun:"-"                              json:"store_url"`
+	// EditionsJSON is the entry's editions as the list query aggregates them;
+	// Editions is what the client gets, with store_url built (#1452).
+	EditionsJSON []byte                      `bun:"editions_json" json:"-"`
+	Editions     []externalGameEditionResult `bun:"-"             json:"editions"`
+}
+
+// externalGameEditionResult is one edition of a storefront list entry, so a
+// client can name it for a decision on that edition alone (#1452).
+type externalGameEditionResult struct {
+	ID          string   `json:"id"`
+	ExternalID  string   `json:"external_id"`
+	Platforms   []string `json:"platforms"`
+	StoreLink   *string  `json:"store_link,omitempty"`
+	StoreURL    *string  `json:"store_url"`
+	IsAvailable bool     `json:"is_available"`
 }
 
 type steamConnectResponse struct {
@@ -1234,12 +1249,18 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	id := c.Param("id")
+	onlyThis := onlyThisEdition(c)
 	ctx := context.Background()
 
 	// A plain read, no lock: the Jobs in which the game or one of its
-	// editions has an open item. Each is entered through the module, which
-	// locks the Job row before the editions (one lock order everywhere).
-	jobIDs, err := externalgame.EditionsOpenItemJobs(ctx, h.db, userID, id)
+	// editions has an open item (with the option: the game itself). Each is
+	// entered through the module, which locks the Job row before the editions
+	// (one lock order everywhere).
+	findJobs := externalgame.EditionsOpenItemJobs
+	if onlyThis {
+		findJobs = externalgame.OwnOpenItemJobs
+	}
+	jobIDs, err := findJobs(ctx, h.db, userID, id)
 	if err != nil {
 		slog.ErrorContext(c.Request().Context(), "sync: skip game: find items", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
@@ -1248,7 +1269,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	flagged := false
 	for _, jobID := range jobIDs {
 		_, err := h.lc.SkipItems(ctx, jobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
-			return skipEditions(ctx, tx, userID, id, job.ID)
+			return skipEditions(ctx, tx, userID, id, job.ID, onlyThis)
 		})
 		switch {
 		case err == nil:
@@ -1261,7 +1282,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	}
 	if !flagged {
 		if err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-			_, err := skipEditions(ctx, tx, userID, id, "")
+			_, err := skipEditions(ctx, tx, userID, id, "", onlyThis)
 			return err
 		}); err != nil {
 			return skipHTTPError(c, err, id)
@@ -1284,12 +1305,20 @@ func skipHTTPError(c *echo.Context, err error, id string) error {
 // transaction for that Job and returns the set's open items in it, for the
 // module to skip; the game's 'skipped' row is written only when the game's own
 // item is among them (its editions get none).
-func skipEditions(ctx context.Context, tx bun.Tx, userID, id, jobID string) ([]string, error) {
+//
+// With onlyThis it skips the given game alone and returns only its own items.
+// Nothing is unlinked, but the editions that stay first take over the links
+// they share with it (handOverSharedLinks), so their entry keeps showing the
+// library game (#1452).
+func skipEditions(ctx context.Context, tx bun.Tx, userID, id, jobID string, onlyThis bool) ([]string, error) {
 	eg, set, err := lockEditions(ctx, tx, userID, id)
 	if err != nil {
 		return nil, abortHTTP(err)
 	}
-	editions := externalgame.GameIDs(set)
+	editions, staying := decisionScope(eg, set, onlyThis)
+	if err := handOverSharedLinks(ctx, tx, userID, eg, staying); err != nil {
+		return nil, err
+	}
 	if _, err := tx.NewRaw(
 		`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id IN (?)`, bun.List(editions),
 	).Exec(ctx); err != nil {
@@ -1354,6 +1383,19 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 				games[i].StoreURL = &url
 			}
 		}
+		if err := json.Unmarshal(games[i].EditionsJSON, &games[i].Editions); err != nil {
+			slog.ErrorContext(c.Request().Context(), "sync: list external games: decode editions", logging.KeyErr, err, logging.KeyExternalGameID, games[i].ID, logging.Cat(logging.CategoryDB))
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list external games")
+		}
+		for j := range games[i].Editions {
+			e := &games[i].Editions[j]
+			if e.StoreLink != nil {
+				if url, ok := buildStoreURL(games[i].Storefront, *e.StoreLink); ok {
+					e.StoreURL = &url
+				}
+				e.StoreLink = nil
+			}
+		}
 	}
 	return c.JSON(http.StatusOK, games)
 }
@@ -1365,6 +1407,8 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 // is the set's representative; a set with an edition in flight is hidden. Its
 // platforms are those of all editions. failed_job_item_id is the newest
 // item of the first retryable edition, only while the entry shows as failed.
+// editions_json lists every edition of the set in id order, each with its own
+// platforms and store link (#1452).
 //
 // The orphan fields are per set, matching rematch's orphan check: links of any
 // edition, "other" meaning outside the set; with the set on several user
@@ -1389,7 +1433,19 @@ var externalGameListQuery = syncEditionSets(`eg.user_id = ? AND eg.storefront = 
 	            FROM external_game_platforms egp
 	            WHERE egp.external_game_id = ANY(s.ids)),
 	           '') AS platforms_csv,
-	       r.store_link
+	       r.store_link,
+	       (SELECT json_agg(json_build_object(
+	                   'id', e.id,
+	                   'external_id', e.external_id,
+	                   'platforms', COALESCE(
+	                       (SELECT json_agg(egp.platform ORDER BY egp.platform)
+	                        FROM external_game_platforms egp
+	                        WHERE egp.external_game_id = e.id),
+	                       '[]'::json),
+	                   'store_link', e.store_link,
+	                   'is_available', e.is_available)
+	               ORDER BY e.id)
+	        FROM edition_rows e WHERE e.rep_id = s.rep_id) AS editions_json
 	FROM edition_sets s
 	JOIN edition_rows r ON r.id = s.rep_id
 	LEFT JOIN games g ON g.id = r.resolved_igdb_id

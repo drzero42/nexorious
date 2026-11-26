@@ -60,7 +60,7 @@ func TestRematchExternalGame(t *testing.T) {
 	c := New(srv.URL)
 
 	// without orphan_action: body must have igdb_id but NOT orphan_action
-	if err := c.RematchExternalGame(t.Context(), "k", "eg-42", 1234, ""); err != nil {
+	if err := c.RematchExternalGame(t.Context(), "k", "eg-42", 1234, "", false); err != nil {
 		t.Fatalf("RematchExternalGame (no orphan): %v", err)
 	}
 	if len(receivedBodies) != 1 {
@@ -75,7 +75,7 @@ func TestRematchExternalGame(t *testing.T) {
 	}
 
 	// with orphan_action: body must have both
-	if err := c.RematchExternalGame(t.Context(), "k", "eg-42", 5678, "remove"); err != nil {
+	if err := c.RematchExternalGame(t.Context(), "k", "eg-42", 5678, "remove", false); err != nil {
 		t.Fatalf("RematchExternalGame (with orphan): %v", err)
 	}
 	if len(receivedBodies) != 2 {
@@ -113,23 +113,27 @@ func TestRetryFailedExternalGames(t *testing.T) {
 }
 
 func TestSkipExternalGame(t *testing.T) {
-	called := false
+	var queries []string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/sync/ignored/eg-99", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		called = true
+		queries = append(queries, r.URL.RawQuery)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.SkipExternalGame(t.Context(), "k", "eg-99"); err != nil {
+	if err := c.SkipExternalGame(t.Context(), "k", "eg-99", false); err != nil {
 		t.Fatalf("SkipExternalGame: %v", err)
 	}
-	if !called {
-		t.Error("handler was not called")
+	if err := c.SkipExternalGame(t.Context(), "k", "eg-99", true); err != nil {
+		t.Fatalf("SkipExternalGame (only this edition): %v", err)
+	}
+	// Without the option the request carries no query: it acts on the set.
+	if len(queries) != 2 || queries[0] != "" || queries[1] != "only_this_edition=true" {
+		t.Errorf("queries = %q, want [\"\" \"only_this_edition=true\"]", queries)
 	}
 }

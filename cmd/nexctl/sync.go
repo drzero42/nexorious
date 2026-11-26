@@ -450,54 +450,81 @@ func newSyncResetCmd() *cobra.Command {
 	}
 }
 
-// resolveExternalRef resolves an external game by UUID or title from the given
-// storefront's external-game list. UUID matching is exact; title matching is
-// case-insensitive. When multiple titles match on a non-interactive session it
-// returns an error listing candidates; on an interactive session it presents a
-// numbered picker.
-func resolveExternalRef(cmd *cobra.Command, c *cliclient.Client, key, sf, ref string) (*cliclient.ExternalGame, error) {
-	games, err := clientops.FindExternalGamesByRef(cmd.Context(), c, key, sf, ref)
-	if err != nil {
-		return nil, err
+// resolveExternalRef resolves an external-game ref from the given storefront's
+// list to the id a decision is sent to (clientops.ResolveExternalDecision).
+// UUID matching is exact, against entries and their editions; title matching is
+// case-insensitive. When the ref is ambiguous, on a non-interactive session it
+// returns an error listing the choices; on an interactive session it presents
+// a numbered picker. With onlyThisEdition the choices are editions, else
+// entries; each line tells them apart by id, storefront id and platforms.
+func resolveExternalRef(cmd *cobra.Command, c *cliclient.Client, key, sf, ref string, onlyThisEdition bool) (clientops.ExternalTarget, error) {
+	target, cands, err := clientops.ResolveExternalDecision(cmd.Context(), c, key, sf, ref, onlyThisEdition)
+	if err != nil || cands == nil {
+		return target, err
 	}
-	switch len(games) {
-	case 0:
-		return nil, fmt.Errorf("no external game matching %q", ref)
-	case 1:
-		return &games[0], nil
-	}
-	// Convert to []*cliclient.ExternalGame for pickExternalGame
-	ptrs := make([]*cliclient.ExternalGame, len(games))
-	for i := range games {
-		ptrs[i] = &games[i]
-	}
+	choices := externalChoices(cands)
 	if interactive(cmd) {
-		return pickExternalGame(cmd, ptrs)
+		return pickExternalChoice(cmd, choices)
+	}
+	what := "external games"
+	if onlyThisEdition {
+		what = "editions"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%q matches %d external games; re-run with an id:", ref, len(games))
-	for i := range games {
-		fmt.Fprintf(&b, "\n  %s  %s", games[i].ID, games[i].Title)
+	fmt.Fprintf(&b, "%q matches %d %s; re-run with an id:", ref, len(choices), what)
+	for _, ch := range choices {
+		fmt.Fprintf(&b, "\n  %s", ch.line)
 	}
-	return nil, fmt.Errorf("%s", b.String())
+	return clientops.ExternalTarget{}, fmt.Errorf("%s", b.String())
 }
 
-func pickExternalGame(cmd *cobra.Command, games []*cliclient.ExternalGame) (*cliclient.ExternalGame, error) {
-	out := cmd.OutOrStdout()
-	for i, eg := range games {
-		fmt.Fprintf(out, "%2d) %s\n", i+1, eg.Title)
+// externalChoice is one line of a choice between entries or editions.
+type externalChoice struct {
+	target clientops.ExternalTarget
+	line   string
+}
+
+// externalChoices formats the candidates of an ambiguous ref: a line has the
+// id, the storefront's id, the platforms and the title (with the IGDB title).
+func externalChoices(cands []clientops.ExternalCandidate) []externalChoice {
+	out := make([]externalChoice, len(cands))
+	for i, cand := range cands {
+		title := cand.Game.Title
+		if cand.Game.IgdbTitle != nil {
+			title += " -> " + *cand.Game.IgdbTitle
+		}
+		out[i] = externalChoice{
+			target: clientops.ExternalTarget{ID: cand.ID, Title: cand.Game.Title},
+			line:   externalChoiceLine(cand.ID, cand.ExternalID, cand.Platforms, title),
+		}
 	}
-	fmt.Fprint(out, "Select a game [1]: ")
+	return out
+}
+
+func externalChoiceLine(id, externalID string, platforms []string, title string) string {
+	plats := strings.Join(platforms, ",")
+	if plats == "" {
+		plats = "-"
+	}
+	return fmt.Sprintf("%s  %s  %s  %s", id, externalID, plats, title)
+}
+
+func pickExternalChoice(cmd *cobra.Command, choices []externalChoice) (clientops.ExternalTarget, error) {
+	out := cmd.OutOrStdout()
+	for i, ch := range choices {
+		fmt.Fprintf(out, "%2d) %s\n", i+1, ch.line)
+	}
+	fmt.Fprint(out, "Select [1]: ")
 	line, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n') //nolint:errcheck // empty/EOF -> default selection
 	choice := strings.TrimSpace(line)
 	if choice == "" {
-		return games[0], nil
+		return choices[0].target, nil
 	}
 	n, err := strconv.Atoi(choice)
-	if err != nil || n < 1 || n > len(games) {
-		return nil, fmt.Errorf("invalid selection %q", choice)
+	if err != nil || n < 1 || n > len(choices) {
+		return clientops.ExternalTarget{}, fmt.Errorf("invalid selection %q", choice)
 	}
-	return games[n-1], nil
+	return choices[n-1].target, nil
 }
 
 func newSyncResolveCmd() *cobra.Command {
@@ -510,7 +537,14 @@ Works on any game in the storefront's list: one in Pending review, an
 unmatched one (for example after unskipping it), or a matched one whose
 match is wrong. The game and its other editions are written to the library
 at once. The server refuses while a sync is still working on the game;
-run it again once the sync is done.`,
+run it again once the sync is done.
+
+With --only-this-edition only the edition the ref names is rematched; the
+other editions keep their match and their library game. Give an edition's
+id, or a title with one edition; for any other title nexctl lists the
+editions to choose from (id, storefront id, platforms). This takes two
+same-title games apart; rematching the edition back onto the others' match
+puts them together again.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
@@ -534,11 +568,12 @@ run it again once the sync is done.`,
 			if err != nil {
 				return err
 			}
-			eg, err := resolveExternalRef(cmd, c, p.Key, sf, args[1])
+			only := flagBool(cmd, "only-this-edition")
+			eg, err := resolveExternalRef(cmd, c, p.Key, sf, args[1], only)
 			if err != nil {
 				return err
 			}
-			if err := c.RematchExternalGame(cmd.Context(), p.Key, eg.ID, igdbID, orphanAction); err != nil {
+			if err := c.RematchExternalGame(cmd.Context(), p.Key, eg.ID, igdbID, orphanAction, only); err != nil {
 				return fmt.Errorf("resolve failed: %w", err)
 			}
 			fmt.Fprintf(out, "resolved %s -> igdb %d\n", eg.Title, igdbID)
@@ -547,14 +582,23 @@ run it again once the sync is done.`,
 	}
 	cmd.Flags().Int("igdb-id", 0, "IGDB game id to match to (required)")
 	cmd.Flags().String("orphan-action", "", "keep or remove: what to do with a library game the rematch would leave with no storefront link")
+	cmd.Flags().Bool("only-this-edition", false, "rematch only the edition the ref names, not its other editions")
 	return cmd
 }
 
 func newSyncSkipCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "skip <storefront> <ref>",
-		Short: "Mark an external game as skipped",
-		Args:  cobra.ExactArgs(2),
+		Short: "Skip an external game and its editions",
+		Long: `Skip an external game and its other editions: the sync leaves them
+unmatched, and any open review item of theirs ends. A skip does not remove
+the game from the library.
+
+With --only-this-edition only the edition the ref names is skipped, for
+example one platform of a package the storefront sells for several. Give an
+edition's id, or a title with one edition; for any other title nexctl lists
+the editions to choose from (id, storefront id, platforms).`,
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			p, _, err := resolveProfile(cmd)
@@ -566,12 +610,17 @@ func newSyncSkipCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			eg, err := resolveExternalRef(cmd, c, p.Key, sf, args[1])
+			only := flagBool(cmd, "only-this-edition")
+			eg, err := resolveExternalRef(cmd, c, p.Key, sf, args[1], only)
 			if err != nil {
 				return err
 			}
 			in := bufio.NewReader(cmd.InOrStdin())
-			ok, err := cliui.Confirm(in, out, fmt.Sprintf("Skip %s?", eg.Title), flagBool(cmd, "yes"))
+			prompt := fmt.Sprintf("Skip %s?", eg.Title)
+			if only {
+				prompt = fmt.Sprintf("Skip the edition %s of %s?", eg.ID, eg.Title)
+			}
+			ok, err := cliui.Confirm(in, out, prompt, flagBool(cmd, "yes"))
 			if err != nil {
 				return err
 			}
@@ -579,13 +628,14 @@ func newSyncSkipCmd() *cobra.Command {
 				fmt.Fprintln(out, "Aborted.")
 				return nil
 			}
-			if err := c.SkipExternalGame(cmd.Context(), p.Key, eg.ID); err != nil {
+			if err := c.SkipExternalGame(cmd.Context(), p.Key, eg.ID, only); err != nil {
 				return fmt.Errorf("skip failed: %w", err)
 			}
 			fmt.Fprintf(out, "skipped %s\n", eg.Title)
 			return nil
 		},
 	}
+	cmd.Flags().Bool("only-this-edition", false, "skip only the edition the ref names, not its other editions")
 	return cmd
 }
 
@@ -693,13 +743,13 @@ func newSyncReviewCmd() *cobra.Command {
 						sel = n
 					}
 					chosen := results.Games[sel-1]
-					if rematchErr := c.RematchExternalGame(cmd.Context(), p.Key, eg.ID, chosen.IgdbID, ""); rematchErr != nil {
+					if rematchErr := c.RematchExternalGame(cmd.Context(), p.Key, eg.ID, chosen.IgdbID, "", false); rematchErr != nil {
 						fmt.Fprintf(out, "rematch error: %v%s\n", rematchErr, rematchErrHint(rematchErr))
 						continue
 					}
 					fmt.Fprintf(out, "resolved %s -> igdb %d\n", eg.Title, chosen.IgdbID)
 				case "k":
-					if skipErr := c.SkipExternalGame(cmd.Context(), p.Key, eg.ID); skipErr != nil {
+					if skipErr := c.SkipExternalGame(cmd.Context(), p.Key, eg.ID, false); skipErr != nil {
 						fmt.Fprintf(out, "skip error: %v\n", skipErr)
 						continue
 					}

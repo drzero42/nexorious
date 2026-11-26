@@ -205,6 +205,18 @@ Most games match to IGDB automatically. The ones Nexorious isn't sure about land
 
 A sync won't be treated as fully done while items still need review, so it's worth clearing the list now and then.
 
+#### Games with more than one edition
+
+Some stores list a game more than once: PlayStation Store has separate PS4 and PS5 versions, for example. Copies of a game with the same title on the same store, matched to the same game (or skipped together), are its **editions**. They show as one entry, and matching, skipping or unskipping it applies to all of them.
+
+When an entry has more than one edition, you can pick one edition instead. The match dialog, **Skip** and **Unskip** then ask whether to act on **All editions** (the default) or a single edition, each listed with its platforms, the store's ID for it and a link to its store page. In the Matched list, entries with more than one edition also have a **Skip** button for this.
+
+- **Two different games with the same title.** If two different games share a title on one store, Nexorious first treats them as one game. Open the entry, choose the edition that is the other game, and match it to the right game. It becomes its own entry with its own library game. Entries that share a title show their platforms and store ID under the title, so you can tell them apart.
+- **One edition you don't want.** If a store sells a game for several platforms in one package and you don't care about one of them, skip that edition alone. It moves to Skipped as its own entry and the others stay as they are. Skipping doesn't remove anything from your library. If that platform is already on the game in your library, remove it there.
+- **Putting them back together.** Match the edition back to the same game as the others, or unskip it, and it joins their entry again.
+
+One edition stays separate only while it has a match or a skip of its own. A copy with neither takes on the decision of the oldest copy with the same title the next time it's synced. That decision might be the one you just made. So decide every edition you mean to keep separate. An edition you unskip alone that has no match is skipped again at the next sync. The dialogs warn you when that can happen.
+
 ### When credentials expire
 
 Store sessions don't last forever. When a storefront's credentials stop working, its card shows a credentials error and you'll need to reconnect it — re-enter the token or run the sign-in flow again. You can also have Nexorious notify you when this happens (see below).
