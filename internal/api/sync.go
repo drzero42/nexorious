@@ -268,11 +268,41 @@ type SyncHandler struct {
 	amazonSignOuts         sync.WaitGroup   // device sign-outs still running after a disconnect
 }
 
+// SyncDeps holds the dependencies of a SyncHandler. A storefront client left
+// nil is fine for a handler whose routes never reach that storefront (tests).
+type SyncDeps struct {
+	Encrypter *crypto.Encrypter
+	DB        *bun.DB
+	// River inserts the immediate metadata fetch after a rematch or an
+	// unskip, which is not Job work.
+	River *river.Client[pgx.Tx]
+	// Lifecycle owns the sync Jobs.
+	Lifecycle        *joblifecycle.Module
+	Steam            SteamClient
+	PlaystationStore PlaystationStoreClient
+	EpicGamesStore   EpicGamesStoreClient
+	GOG              GOGClient
+	Humble           HumbleClient
+	AmazonGames      AmazonGamesClient
+	// IGDB, nil or unconfigured: a Rematch stubs with the storefront title.
+	IGDB *igdb.Client
+}
+
 // NewSyncHandler constructs a SyncHandler.
-// riverClient inserts the immediate metadata fetch after a rematch or an
-// unskip, which is not Job work; lc owns the sync Jobs.
-func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], lc *joblifecycle.Module, steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient, amazonGames AmazonGamesClient, igdbClient *igdb.Client) *SyncHandler {
-	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, lc: lc, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble, amazonGamesClient: amazonGames, igdbClient: igdbClient}
+func NewSyncHandler(d SyncDeps) *SyncHandler {
+	return &SyncHandler{
+		encrypter:              d.Encrypter,
+		db:                     d.DB,
+		riverClient:            d.River,
+		lc:                     d.Lifecycle,
+		steamClient:            d.Steam,
+		playstationStoreClient: d.PlaystationStore,
+		epicGamesStoreClient:   d.EpicGamesStore,
+		gogClient:              d.GOG,
+		humbleClient:           d.Humble,
+		amazonGamesClient:      d.AmazonGames,
+		igdbClient:             d.IGDB,
+	}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
