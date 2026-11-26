@@ -1175,6 +1175,19 @@ type ExternalGame struct {
 	FailedJobItemID            *string  `json:"failed_job_item_id"`
 	Platforms                  []string `json:"platforms"`
 	StoreURL                   *string  `json:"store_url"`
+	// Editions lists the entry's editions in id order, at least one; an
+	// older server sends none (#1452).
+	Editions []ExternalGameEdition `json:"editions"`
+}
+
+// ExternalGameEdition is one edition of an ExternalGame entry: the id a
+// decision on that edition alone is sent to.
+type ExternalGameEdition struct {
+	ID          string   `json:"id"`
+	ExternalID  string   `json:"external_id"`
+	Platforms   []string `json:"platforms"`
+	StoreURL    *string  `json:"store_url"`
+	IsAvailable bool     `json:"is_available"`
 }
 
 // SetupBackupManifest is the manifest sub-object of a setup-zone backup entry.

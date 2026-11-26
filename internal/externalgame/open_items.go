@@ -19,13 +19,28 @@ import (
 // review): the Job holding the game's own item first, then the newest. It is
 // a plain read, without locks.
 func EditionsOpenItemJobs(ctx context.Context, db bun.IDB, userID, id string) ([]string, error) {
+	return openItemJobs(ctx, db, userID, id, SameEdition("eg", "g"))
+}
+
+// OwnOpenItemJobs returns the active Jobs in which the user's External game id
+// itself has an open item (pending or in Pending review), newest first: the
+// Jobs a decision on that edition alone touches (#1452). It is a plain read,
+// without locks.
+func OwnOpenItemJobs(ctx context.Context, db bun.IDB, userID, id string) ([]string, error) {
+	return openItemJobs(ctx, db, userID, id, "eg.id = g.id")
+}
+
+// openItemJobs returns the active Jobs with an open item of an External game
+// eg that meets cond against the user's game g, the Job holding g's own item
+// first, then the newest.
+func openItemJobs(ctx context.Context, db bun.IDB, userID, id, cond string) ([]string, error) {
 	var jobIDs []string
 	err := db.NewRaw(`
 		SELECT ji.job_id FROM job_items ji
 		JOIN jobs j ON j.id = ji.job_id
 		JOIN external_games eg ON eg.id = ji.external_game_id
 		JOIN external_games g ON g.id = ? AND g.user_id = ?
-		WHERE `+SameEdition("eg", "g")+`
+		WHERE `+cond+`
 		  AND ji.status IN (?, ?)
 		  AND j.status IN (?, ?)
 		GROUP BY ji.job_id
@@ -35,7 +50,7 @@ func EditionsOpenItemJobs(ctx context.Context, db bun.IDB, userID, id string) ([
 		models.JobStatusPending, models.JobStatusProcessing,
 	).Scan(ctx, &jobIDs)
 	if err != nil {
-		return nil, fmt.Errorf("find the Jobs with open items of the editions: %w", err)
+		return nil, fmt.Errorf("find the Jobs with open items: %w", err)
 	}
 	return jobIDs, nil
 }

@@ -277,3 +277,147 @@ func TestSyncResolveUnmatchedGameByTitle(t *testing.T) {
 		t.Fatal("rematch not received")
 	}
 }
+
+const editionUUID = "22222222-2222-2222-2222-222222222222"
+
+// serveEditionSets registers the steam list with one "Spider-Man" entry of
+// two editions (reviewUUID is the representative) and, with second, another
+// single-edition "Spider-Man" entry.
+func serveEditionSets(mux *http.ServeMux, second bool) {
+	entries := []map[string]any{
+		{"id": reviewUUID, "storefront": "steam", "external_id": "100", "title": "Spider-Man", "sync_status": "matched",
+			"platforms": []string{"pc-linux", "pc-windows"},
+			"editions": []map[string]any{
+				{"id": reviewUUID, "external_id": "100", "platforms": []string{"pc-windows"}},
+				{"id": editionUUID, "external_id": "200", "platforms": []string{"pc-linux"}},
+			}},
+	}
+	if second {
+		entries = append(entries, map[string]any{
+			"id": "33333333-3333-3333-3333-333333333333", "storefront": "steam", "external_id": "300", "title": "Spider-Man", "sync_status": "matched",
+			"platforms": []string{"pc-windows"},
+			"editions":  []map[string]any{{"id": "33333333-3333-3333-3333-333333333333", "external_id": "300", "platforms": []string{"pc-windows"}}},
+		})
+	}
+	mux.HandleFunc("/api/sync/steam/external-games", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(entries)
+	})
+}
+
+// runSync runs nexctl with args against a stub that records each decision
+// request as "METHOD path?query".
+func runSync(t *testing.T, second bool, args ...string) (requests []string, out string, err error) {
+	t.Helper()
+	mux := http.NewServeMux()
+	serveSyncConfigs(mux, "steam")
+	serveEditionSets(mux, second)
+	record := func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
+		w.WriteHeader(http.StatusNoContent)
+	}
+	mux.HandleFunc("/api/sync/external-games/", record)
+	mux.HandleFunc("/api/sync/ignored/", record)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs(args)
+	err = root.Execute()
+	return requests, buf.String(), err
+}
+
+// With --only-this-edition the request goes to the edition's id as given,
+// never the entry's, with the option.
+func TestSyncOnlyThisEdition_SendsTheEditionsID(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"resolve, edition id", []string{"sync", "resolve", "steam", editionUUID, "--igdb-id", "5", "--only-this-edition"},
+			"POST /api/sync/external-games/" + editionUUID + "/rematch?only_this_edition=true"},
+		{"resolve, representative's id", []string{"sync", "resolve", "steam", reviewUUID, "--igdb-id", "5", "--only-this-edition"},
+			"POST /api/sync/external-games/" + reviewUUID + "/rematch?only_this_edition=true"},
+		{"skip, edition id", []string{"sync", "skip", "steam", editionUUID, "-y", "--only-this-edition"},
+			"POST /api/sync/ignored/" + editionUUID + "?only_this_edition=true"},
+		{"resolve without the option, edition id", []string{"sync", "resolve", "steam", editionUUID, "--igdb-id", "5"},
+			"POST /api/sync/external-games/" + editionUUID + "/rematch?"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reqs, out, err := runSync(t, false, tc.args...)
+			if err != nil {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			if len(reqs) != 1 || reqs[0] != tc.want {
+				t.Fatalf("requests = %q, want [%q]", reqs, tc.want)
+			}
+		})
+	}
+}
+
+// A title of an entry with more than one edition, or of several entries, is
+// refused off a terminal with the option, listing the editions with id,
+// storefront id and platforms.
+func TestSyncOnlyThisEdition_AmbiguousTitle_ListsTheEditions(t *testing.T) {
+	for _, second := range []bool{false, true} {
+		for _, args := range [][]string{
+			{"sync", "resolve", "steam", "spider-man", "--igdb-id", "5", "--only-this-edition"},
+			{"sync", "skip", "steam", "spider-man", "-y", "--only-this-edition"},
+		} {
+			t.Run(fmt.Sprintf("%s second=%v", args[1], second), func(t *testing.T) {
+				reqs, _, err := runSync(t, second, args...)
+				if err == nil || len(reqs) != 0 {
+					t.Fatalf("err %v, requests %q: want a refusal and no request", err, reqs)
+				}
+				for _, want := range []string{editionUUID + "  200  pc-linux", reviewUUID + "  100  pc-windows"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error lacks %q:\n%v", want, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// Without the option, a title of several entries lists the entries with
+// enough to tell them apart.
+func TestSyncResolve_TitleOfSeveralEntries_ListsThemApart(t *testing.T) {
+	_, _, err := runSync(t, true, "sync", "resolve", "steam", "spider-man", "--igdb-id", "5")
+	if err == nil {
+		t.Fatal("want a refusal")
+	}
+	for _, want := range []string{reviewUUID + "  100  pc-linux,pc-windows", "33333333-3333-3333-3333-333333333333  300  pc-windows"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q:\n%v", want, err)
+		}
+	}
+}
+
+// An older server lists no editions: --only-this-edition is refused, since it
+// would act on the whole set.
+func TestSyncOnlyThisEdition_OlderServer_Refused(t *testing.T) {
+	mux := http.NewServeMux()
+	serveSyncConfigs(mux, "steam")
+	serveExternalGames(mux, "steam", reviewUUID, "Tunic")
+	mux.HandleFunc("/api/sync/ignored/", func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("a request was sent")
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"sync", "skip", "steam", reviewUUID, "-y", "--only-this-edition"})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "upgrade") {
+		t.Fatalf("err = %v, want the older-server refusal", err)
+	}
+}

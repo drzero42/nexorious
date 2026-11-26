@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IGDBSearch } from '@/components/games/igdb-search';
-import type { IGDBGameCandidate } from '@/types';
+import { EditionChoice } from './edition-choice';
+import type { ExternalGameEdition, IGDBGameCandidate } from '@/types';
 
 interface IGDBMatchDialogProps {
   open: boolean;
@@ -14,6 +15,15 @@ interface IGDBMatchDialogProps {
    * (issue #615).
    */
   externalGameId?: string;
+  /**
+   * The editions of the sync entry being matched. With more than one, the
+   * dialog offers to rematch all of them (the default) or one alone (#1452).
+   * Absent for import review.
+   */
+  editions?: ExternalGameEdition[];
+  /** The chosen edition's id, or null for all editions. */
+  editionId?: string | null;
+  onEditionChange?: (editionId: string | null) => void;
 }
 
 export function IGDBMatchDialog({
@@ -23,6 +33,9 @@ export function IGDBMatchDialog({
   onClose,
   onSelect,
   externalGameId,
+  editions,
+  editionId = null,
+  onEditionChange,
 }: IGDBMatchDialogProps) {
   return (
     <Dialog
@@ -35,6 +48,14 @@ export function IGDBMatchDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
+        {editions && editions.length > 1 && onEditionChange && (
+          <EditionChoice
+            name="rematch-edition"
+            editions={editions}
+            value={editionId}
+            onChange={onEditionChange}
+          />
+        )}
         <IGDBSearch
           onSelect={onSelect}
           autoFocus

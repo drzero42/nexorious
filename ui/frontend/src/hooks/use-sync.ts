@@ -502,7 +502,8 @@ export function useExternalGames(platform: SyncStorefront, options?: { refetchIn
 export function useSkipExternalGame() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => syncApi.skipExternalGame(id),
+    mutationFn: ({ id, onlyThisEdition }: { id: string; onlyThisEdition?: boolean }) =>
+      syncApi.skipExternalGame(id, onlyThisEdition),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.all });
       // The review badge follows the storefront list (#1338).
@@ -520,7 +521,8 @@ export function useSkipExternalGame() {
 export function useUnskipExternalGame() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => syncApi.unskipExternalGame(id),
+    mutationFn: ({ id, onlyThisEdition }: { id: string; onlyThisEdition?: boolean }) =>
+      syncApi.unskipExternalGame(id, onlyThisEdition),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.all });
       // The review badge follows the storefront list (#1338).
@@ -558,17 +560,21 @@ export function useRematchExternalGame() {
       id,
       igdbId,
       orphanAction,
+      onlyThisEdition,
     }: {
       id: string;
       igdbId: number;
       orphanAction?: 'keep' | 'remove';
-    }) => syncApi.rematchExternalGame(id, igdbId, orphanAction),
+      onlyThisEdition?: boolean;
+    }) => syncApi.rematchExternalGame(id, igdbId, orphanAction, onlyThisEdition),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.all });
       // The review badge follows the storefront list (#1338).
       queryClient.invalidateQueries({ queryKey: jobsKeys.pendingReviewCount() });
     },
     onError: (err: Error) => {
+      // The caller asks keep or remove and repeats the request.
+      if (syncApi.isOrphanActionRequired(err)) return;
       toast.error(err.message ?? 'Failed to rematch game');
     },
   });

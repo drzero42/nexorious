@@ -2,7 +2,7 @@
 
 Rematching an External game used to reset the game's newest Job item to `pending` and queue a worker, even when that item belonged to a sync Job that ended long ago. Unskip created a new one-item sync Job. Both made a user's edit to one game look like a sync: an item changed inside an ended Job, or a second active sync Job appeared for the storefront and announced "sync completed".
 
-We decided that rematch and unskip write the library directly, in the request's own transaction, using the same library write the sync worker uses. They do not create Jobs or items and do not queue item work. The only items a rematch touches are the open items of the game and its editions in an active Job ([ADR 0008](0008-derived-editions.md)): they are completed in the same transaction, because the user's choice settles every edition.
+We decided that rematch and unskip write the library directly, in the request's own transaction, using the same library write the sync worker uses. They do not create Jobs or items and do not queue item work. The only items a rematch touches are the open items of the game and its editions in an active Job ([ADR 0008](0008-derived-editions.md)): they are completed in the same transaction, because the user's choice settles every edition. A rematch of one edition alone (`only_this_edition=true`, #1452) completes only that game's own open item; the other editions are not decided by it.
 
 ## Considered options
 

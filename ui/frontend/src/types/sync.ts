@@ -174,6 +174,17 @@ export interface ExternalGame {
   failed_job_item_id: string | null;
   platforms: string[];
   store_url: string | null;
+  /** The entry's editions in id order, at least one (#1452). */
+  editions: ExternalGameEdition[];
+}
+
+/** One edition of an ExternalGame entry: the id a decision on it alone goes to. */
+export interface ExternalGameEdition {
+  id: string;
+  external_id: string;
+  platforms: string[];
+  store_url: string | null;
+  is_available: boolean;
 }
 
 // Amazon Games Auth Types

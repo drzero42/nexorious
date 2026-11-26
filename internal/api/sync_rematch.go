@@ -23,7 +23,54 @@ import (
 // sync work (#1338, ADR 0002): they write the library in the request's own
 // transaction with the same library write the sync worker uses, and create no
 // Job, no item and no River job. Rematch, Skip and Unskip act on every edition
-// of the game they are given, through any edition's id (#1449).
+// of the game they are given, through any edition's id (#1449). With the
+// option only_this_edition=true they act on the given edition alone (#1452):
+// the whole set is still locked, but only that game is changed and only its
+// own open items are touched.
+
+// onlyThisEdition reads the only_this_edition query parameter: only "true"
+// sets it; anything else acts on the whole set.
+func onlyThisEdition(c *echo.Context) bool {
+	return c.QueryParam("only_this_edition") == "true"
+}
+
+// decisionScope is the External games a decision changes: the given game
+// alone with the option, else its whole set. The rest of the set stays.
+func decisionScope(eg models.ExternalGame, set []models.ExternalGame, onlyThis bool) (changed, staying []string) {
+	if !onlyThis {
+		return externalgame.GameIDs(set), nil
+	}
+	for _, g := range set {
+		if g.ID != eg.ID {
+			staying = append(staying, g.ID)
+		}
+	}
+	return []string{eg.ID}, staying
+}
+
+// handOverSharedLinks writes the editions that stay to the library again
+// before the game eg leaves its set, when the set is matched and not skipped
+// and eg holds a link: a staying edition on the same platform and storefront
+// then takes over the link row eg holds (the write sets its external_game_id),
+// so unlinking eg does not delete it and the staying library game keeps it
+// (#1452). A staying edition without platforms takes nothing. The rewrite
+// writes no diff rows.
+func handOverSharedLinks(ctx context.Context, tx bun.Tx, userID string, eg models.ExternalGame, staying []string) error {
+	if len(staying) == 0 || eg.ResolvedIGDBID == nil || eg.IsSkipped {
+		return nil
+	}
+	var holds bool
+	if err := tx.NewRaw(
+		`SELECT EXISTS (SELECT 1 FROM user_game_platforms WHERE external_game_id = ?)`, eg.ID,
+	).Scan(ctx, &holds); err != nil {
+		return fmt.Errorf("find the game's links: %w", err)
+	}
+	if !holds {
+		return nil
+	}
+	_, err := writeEditions(ctx, tx, userID, staying)
+	return err
+}
 
 // errSyncStillWorking is the 409 while a sync worker may be writing the game.
 const errSyncStillWorking = "a sync is still working on this game"
@@ -111,14 +158,16 @@ func writeEditions(ctx context.Context, tx bun.Tx, userID string, ids []string) 
 }
 
 // HandleRematchExternalGame handles POST /api/sync/external-games/:id/rematch:
-// it re-resolves an External game and its editions to a new IGDB id and writes
-// them to the library, all in one transaction (#1338).
+// it re-resolves an External game and its editions (or, with
+// only_this_edition=true, the game alone) to a new IGDB id and writes them to
+// the library, all in one transaction (#1338).
 func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	id := c.Param("id")
+	onlyThis := onlyThisEdition(c)
 	ctx := context.Background()
 	reqCtx := c.Request().Context()
 
@@ -131,10 +180,15 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 
 	// A plain read, no lock: the active Job in which the game or one of its
-	// editions has an open item, preferring the game's own. Then everything
-	// runs in the module's transaction for that Job: the Job row lock first,
-	// then the editions, as a sync worker does, so the two cannot deadlock.
-	jobIDs, err := externalgame.EditionsOpenItemJobs(ctx, h.db, userID, id)
+	// editions has an open item, preferring the game's own (with the option:
+	// the game's own only). Then everything runs in the module's transaction
+	// for that Job: the Job row lock first, then the editions, as a sync
+	// worker does, so the two cannot deadlock.
+	findJobs := externalgame.EditionsOpenItemJobs
+	if onlyThis {
+		findJobs = externalgame.OwnOpenItemJobs
+	}
+	jobIDs, err := findJobs(ctx, h.db, userID, id)
 	if err != nil {
 		slog.ErrorContext(reqCtx, "sync: rematch: find items", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to rematch external game")
@@ -146,7 +200,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 
 	if jobID != "" {
 		_, err = h.lc.CompleteItems(ctx, jobID, func(ctx context.Context, tx bun.Tx, job *models.Job) ([]string, error) {
-			return rematchEditions(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, job.ID)
+			return rematchEditions(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, job.ID, onlyThis)
 		})
 		if errors.Is(err, joblifecycle.ErrJobNotActive) || errors.Is(err, joblifecycle.ErrGone) {
 			jobID, err = "", nil // ended meanwhile: no items to touch
@@ -154,7 +208,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 	if jobID == "" && err == nil {
 		err = h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-			_, err := rematchEditions(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, "")
+			_, err := rematchEditions(ctx, tx, userID, id, body.IGDBID, body.OrphanAction, "", onlyThis)
 			return err
 		})
 	}
@@ -186,12 +240,18 @@ func abortHTTP(err error) error {
 // transaction for that Job and returns the items to complete there, with their
 // diff rows written: every open item of the set in that Job. It refuses (409)
 // while the given game's own item is pending: the sync is not done with it.
-func rematchEditions(ctx context.Context, tx bun.Tx, userID, id string, igdbID int, orphanAction, jobID string) ([]string, error) {
+//
+// With onlyThis it re-resolves the given game alone and completes only its
+// own items. The editions that stay keep their library game: they take over
+// the links they share with the leaving game first (handOverSharedLinks), so
+// the orphan rule, applied to the leaving game alone, counts their links as
+// links from outside.
+func rematchEditions(ctx context.Context, tx bun.Tx, userID, id string, igdbID int, orphanAction, jobID string, onlyThis bool) ([]string, error) {
 	eg, set, err := lockEditions(ctx, tx, userID, id)
 	if err != nil {
 		return nil, abortHTTP(err)
 	}
-	ids := externalgame.GameIDs(set)
+	ids, staying := decisionScope(eg, set, onlyThis)
 
 	var items []externalgame.OpenItem
 	if jobID != "" {
@@ -208,10 +268,13 @@ func rematchEditions(ctx context.Context, tx bun.Tx, userID, id string, igdbID i
 	if err := externalgame.EnsureGameRow(ctx, tx, int32(igdbID), eg.Title); err != nil { //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 		return nil, err
 	}
+	if err := handOverSharedLinks(ctx, tx, userID, eg, staying); err != nil {
+		return nil, err
+	}
 	if err := rematchUnlinkEditions(ctx, tx, userID, ids, igdbID, orphanAction); err != nil {
 		return nil, abortHTTP(err)
 	}
-	// Every edition takes the match and is unskipped.
+	// Every edition changed takes the match and is unskipped.
 	if _, err := tx.NewRaw(
 		`UPDATE external_games SET resolved_igdb_id = ?, is_skipped = false, updated_at = now() WHERE id IN (?)`,
 		igdbID, bun.List(ids),
@@ -246,17 +309,18 @@ func rematchEditions(ctx context.Context, tx bun.Tx, userID, id string, igdbID i
 	return done, nil
 }
 
-// HandleUnskipGame handles POST /api/sync/external-games/:id/unskip. It clears
-// the skip on an External game and its editions; matched editions are written
-// to the library at once. Unmatched ones are not written, and show as
-// unmatched until the user matches them or the next sync does (#1338). All of
-// it is one transaction.
+// HandleUnskipGame handles DELETE /api/sync/ignored/:id. It clears the skip on
+// an External game and its editions (with only_this_edition=true, on the game
+// alone); matched ones are written to the library at once. Unmatched ones are
+// not written, and show as unmatched until the user matches them or the next
+// sync does (#1338). All of it is one transaction. It touches no items.
 func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	id := c.Param("id")
+	onlyThis := onlyThisEdition(c)
 	ctx := context.Background()
 	reqCtx := c.Request().Context()
 
@@ -266,7 +330,7 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		if err != nil {
 			return err
 		}
-		ids := externalgame.GameIDs(set)
+		ids, _ := decisionScope(eg, set, onlyThis)
 		if _, err := tx.NewRaw(
 			`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE id IN (?)`, bun.List(ids),
 		).Exec(ctx); err != nil {

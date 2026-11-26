@@ -40,7 +40,7 @@ _Avoid_: candidate (a game in a pool not yet in its Queue), suggestion, IGDB can
 The IGDB game the user chose for an item in Pending review. Resolving lets the item end. In a sync the choice is made by a Rematch.
 
 **Skip**:
-The user's decision not to add a game to the library. It ends the game's Open item; in a sync it also stands for later syncs, until the user removes it.
+The user's decision not to add a game to the library. It ends the game's Open item; in a sync it also stands for later syncs, until the user removes it. In a sync it applies to the game's whole Set of editions, or to one Edition alone when the user asks.
 
 **Ended**:
 A Job or Job item whose work is over: completed, failed, skipped (items only), or cancelled. Nothing acts on it again unless the user asks for a Retry. A Job item that has not ended is **Open**.
@@ -76,11 +76,11 @@ An External game of the same user and storefront with the same title as another,
 _Avoid_: duplicate, related game
 
 **Edition**:
-The editions of an External game are the External games of the same user and storefront that have the same title, the same match and the same skip. Nothing stores which games are editions: two games are editions for as long as they agree. A sync gives a game without a decision the decision of the oldest same-title game that has one; Rematch, Skip and Unskip act on every edition; the storefront list shows the editions as one entry.
+The editions of an External game are the External games of the same user and storefront that have the same title, the same match and the same skip. Nothing stores which games are editions: two games are editions for as long as they agree. A sync gives a game without a decision the decision of the oldest same-title game that has one; Rematch, Skip and Unskip act on every edition unless the user decides one edition alone, which makes it differ and so leaves the set; the storefront list shows the editions as one entry.
 _Avoid_: child game, parent, sibling, family
 
 **Set of editions**:
-An External game together with all its Editions. Rematch, Skip and Unskip act on the whole set, the storefront list shows it as one entry, and the review badge counts it once.
+An External game together with all its Editions. Rematch, Skip and Unskip act on the whole set unless the user decides one edition alone, the storefront list shows it as one entry, and the review badge counts it once.
 _Avoid_: family, group, duplicates
 
 **Decision**:
@@ -100,11 +100,11 @@ An External game that is not skipped and points to no IGDB game, and has no item
 _Avoid_: pending review (an item in a Job waiting for the user; an Unmatched game is waiting for nothing)
 
 **Rematch**:
-Choosing or changing which IGDB game an External game points to. The library is updated at once; a Rematch is not a Job.
+Choosing or changing which IGDB game an External game points to. The library is updated at once; a Rematch is not a Job. It applies to the game's Set of editions, or to one Edition alone when the user asks: two same-title games are taken apart that way.
 _Avoid_: resolve (a Resolution is the choice; in a sync, the Rematch is the act that makes it)
 
 **Unskip**:
-Removing a Skip from an External game. A matched game is written to the Library at once; one that was never matched becomes Unmatched.
+Removing a Skip from an External game and its Editions, or from one Edition alone when the user asks. A matched game is written to the Library at once; one that was never matched becomes Unmatched.
 _Avoid_: unignore, restore (undoes an Ignore in Library health)
 
 ## Import and export

@@ -9,7 +9,7 @@ We decided to derive which External games belong together instead of storing it 
 Every External game has its own match and its own skip. Two games are editions for as long as they agree. The key is defined once, in `internal/externalgame`, and every query that needs it is built from that definition. Four rules make editions behave as one game:
 
 1. **Precedent.** When a sync works on a game without a decision, and a same-title game has one, the game takes the match and the skip of the oldest such game (`created_at`, then id) and is not searched. The copy is made once.
-2. **Fan-out.** Rematch, Skip and Unskip act on every edition of the game they are given, through any edition's id, and lock the editions in id order.
+2. **Fan-out.** Rematch, Skip and Unskip act on every edition of the game they are given, through any edition's id, and lock the editions in id order. Asked to (`only_this_edition=true`, #1452), they act on the given edition alone, still locking the whole set.
 3. **One row.** The storefront list and the review badge show a set of editions as one entry. It needs review, has failed or is hidden as in flight when any edition does.
 4. **Settle.** When a search matches a game with confidence, its same-title games of that sync waiting in Pending review without a decision take that match and their items are completed. This is best effort.
 
@@ -30,4 +30,6 @@ Every External game has its own match and its own skip. Two games are editions f
 - Settle runs after the matched edition's transition has committed. If it fails, the other editions stay in review for the user, and a needs-review notification can go out for an item that settle then completes.
 - No item waits on another item any more, so the waiting rules in `internal/joblifecycle` have no user (#1451).
 - `external_games.parent_id` is dropped. The down migration brings the column back empty, so a downgrade loses the families.
+- Taking a set apart is a difference in match or skip and nothing more (#1452). A Rematch or Skip of one edition alone makes it differ, so it is its own entry; deciding it back to what the others have makes it one of them again. There is no split or merge operation and nothing is stored about either. A game is kept apart only while it has a decision: an undecided edition beside one decided alone takes the oldest same-title decision when the sync next works on it, which may be the one just made. Keeping an undecided game apart would need a stored flag, and would be a new decision.
+- Two editions on one platform and storefront share one library link, held by one of them. Before an edition leaves its set by a Rematch or Skip alone, the editions that stay are written to the library again, so one of them takes the shared link over and its library game is not orphaned. The link keeps the larger of the two editions' hours: playtime on a shared link is not taken apart.
 - Places that still show one entry per edition (`GET /api/sync/ignored`, the sync status count, a sync's change lists) are tracked in #1438 and #1443.

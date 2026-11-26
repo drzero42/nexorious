@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, ApiErrorException } from './client';
 import type {
   SyncConfig,
   SyncConfigUpdateData,
@@ -545,23 +545,47 @@ export async function getExternalGames(platform: SyncStorefront): Promise<Extern
   return response;
 }
 
-export async function skipExternalGame(id: string): Promise<void> {
-  await api.post(`/sync/ignored/${id}`);
+// The query parameters of a decision on one edition alone (#1452); without
+// them a Rematch, Skip or Unskip acts on the edition's whole set.
+function editionParams(onlyThisEdition?: boolean) {
+  return onlyThisEdition ? { only_this_edition: true } : undefined;
 }
 
-export async function unskipExternalGame(id: string): Promise<void> {
-  await api.delete(`/sync/ignored/${id}`);
+export async function skipExternalGame(id: string, onlyThisEdition?: boolean): Promise<void> {
+  await api.post(`/sync/ignored/${id}`, undefined, { params: editionParams(onlyThisEdition) });
+}
+
+export async function unskipExternalGame(id: string, onlyThisEdition?: boolean): Promise<void> {
+  await api.delete(`/sync/ignored/${id}`, { params: editionParams(onlyThisEdition) });
 }
 
 export async function rematchExternalGame(
   id: string,
   igdbId: number,
   orphanAction?: 'keep' | 'remove',
+  onlyThisEdition?: boolean,
 ): Promise<void> {
-  await api.post(`/sync/external-games/${id}/rematch`, {
-    igdb_id: igdbId,
-    orphan_action: orphanAction ?? '',
-  });
+  await api.post(
+    `/sync/external-games/${id}/rematch`,
+    {
+      igdb_id: igdbId,
+      orphan_action: orphanAction ?? '',
+    },
+    { params: editionParams(onlyThisEdition) },
+  );
+}
+
+/**
+ * Whether a Rematch was refused because it would leave a library game with no
+ * storefront link and no orphan_action was given. The route has other 409s, so
+ * this one is told apart by the start of its message, as nexctl does.
+ */
+export function isOrphanActionRequired(err: unknown): boolean {
+  return (
+    err instanceof ApiErrorException &&
+    err.status === 409 &&
+    err.message.startsWith('orphan_action required')
+  );
 }
 
 export async function resetSyncData(platform: SyncStorefront): Promise<void> {
