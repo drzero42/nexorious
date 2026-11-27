@@ -32,7 +32,7 @@ func NexoriousCSV() Config {
 			Column: &StatusColumn{
 				Column:   "play_status",
 				ValueMap: playStatusIdentityMap(),
-				Default:  psNotStarted,
+				Default:  enum.PlayStatusNotStarted,
 			},
 		},
 		Platform: PlatformConfig{
@@ -52,11 +52,11 @@ func NexoriousCSV() Config {
 
 // playStatusIdentityMap maps every play status to itself: Nexorious's own
 // export writes play_status verbatim.
-func playStatusIdentityMap() map[string]string {
+func playStatusIdentityMap() map[string]enum.PlayStatus {
 	all := enum.AllPlayStatuses()
-	m := make(map[string]string, len(all))
+	m := make(map[string]enum.PlayStatus, len(all))
 	for _, s := range all {
-		m[s] = s
+		m[s] = enum.PlayStatus(s)
 	}
 	return m
 }

@@ -1,5 +1,7 @@
 package csvmap
 
+import "github.com/drzero42/nexorious/internal/enum"
+
 // Darkadia returns the preset Config for a Darkadia CSV export (the now-defunct
 // game tracker). Darkadia is a one-row-per-copy format: a game's identity and
 // game-level attributes live on its first (named) row; blank-Name rows continue
@@ -37,14 +39,14 @@ func Darkadia() Config {
 		Status: StatusConfig{
 			Flags: &StatusFlags{
 				Rules: []FlagRule{
-					{Column: "Dominated", Truthy: []string{"1"}, Status: psDominated},
-					{Column: "Mastered", Truthy: []string{"1"}, Status: psMastered},
-					{Column: "Finished", Truthy: []string{"1"}, Status: psCompleted},
-					{Column: "Shelved", Truthy: []string{"1"}, Status: psDropped},
-					{Column: "Playing", Truthy: []string{"1"}, Status: psInProgress},
-					{Column: "Played", Truthy: []string{"1"}, Status: psShelved},
+					{Column: "Dominated", Truthy: []string{"1"}, Status: enum.PlayStatusDominated},
+					{Column: "Mastered", Truthy: []string{"1"}, Status: enum.PlayStatusMastered},
+					{Column: "Finished", Truthy: []string{"1"}, Status: enum.PlayStatusCompleted},
+					{Column: "Shelved", Truthy: []string{"1"}, Status: enum.PlayStatusDropped},
+					{Column: "Playing", Truthy: []string{"1"}, Status: enum.PlayStatusInProgress},
+					{Column: "Played", Truthy: []string{"1"}, Status: enum.PlayStatusShelved},
 				},
-				Default: psNotStarted,
+				Default: enum.PlayStatusNotStarted,
 			},
 		},
 		Rating:   &RatingConfig{Scale: 5, Truncate: true},

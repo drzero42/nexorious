@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
 
@@ -176,31 +178,29 @@ func buildMerged(rows [][]string, idx map[string]int, cfg Config) []importmodel.
 }
 
 // extractStatus resolves the shelf-derived play_status and the wishlist flag from
-// the status column (scalar or JSON-keys). A value mapped to WishlistStatus sets
-// wishlisted; the remaining mapped values are play_status candidates, resolved by
+// the status column (scalar or JSON-keys). A value listed in Wishlist sets
+// wishlisted; the mapped values are play_status candidates, resolved by
 // Precedence (first listed present wins), else the single candidate (scalar
 // case), else Default.
-func extractStatus(rec []string, idx map[string]int, cfg Config) (status string, wishlisted bool) {
+func extractStatus(rec []string, idx map[string]int, cfg Config) (status enum.PlayStatus, wishlisted bool) {
 	if cfg.Status.Column == nil {
-		return psNotStarted, false
+		return enum.PlayStatusNotStarted, false
 	}
 	sc := cfg.Status.Column
 	def := sc.Default
 	if def == "" {
-		def = psNotStarted
+		def = enum.PlayStatusNotStarted
 	}
-	present := map[string]string{} // normalized source value -> mapped play_status
+	present := map[string]enum.PlayStatus{} // normalized source value -> mapped play_status
 	for _, v := range decodeKeys(cell(rec, idx, sc.Column), sc.Format) {
 		nv := normKey(v)
-		mapped, ok := sc.ValueMap[nv]
-		if !ok {
-			continue
-		}
-		if mapped == WishlistStatus {
+		if slices.ContainsFunc(sc.Wishlist, func(w string) bool { return normKey(w) == nv }) {
 			wishlisted = true
 			continue
 		}
-		present[nv] = mapped
+		if mapped, ok := sc.ValueMap[nv]; ok {
+			present[nv] = mapped
+		}
 	}
 	// When Precedence is set, a mapped candidate must appear in it to be chosen;
 	// a candidate absent from Precedence falls through to Default. List every
@@ -345,12 +345,12 @@ func extractHours(rec []string, idx map[string]int, cfg Config) *float64 {
 }
 
 // statusRank orders completion tiers so the highest across play-log entries wins.
-var statusRank = map[string]int{psCompleted: 1, psMastered: 2, psDominated: 3}
+var statusRank = map[enum.PlayStatus]int{enum.PlayStatusCompleted: 1, enum.PlayStatusMastered: 2, enum.PlayStatusDominated: 3}
 
 // extractPlayLog sums the seconds field into hours_played and maps the highest
 // recognized completion tier to a play_status. Non-array/blank/malformed input,
 // zero seconds, and unrecognized tiers yield nil hours / "" tier respectively.
-func extractPlayLog(rec []string, idx map[string]int, cfg Config) (hours *float64, tierStatus string) {
+func extractPlayLog(rec []string, idx map[string]int, cfg Config) (hours *float64, tierStatus enum.PlayStatus) {
 	pl := cfg.PlayLog
 	if pl == nil {
 		return nil, ""

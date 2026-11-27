@@ -1,5 +1,7 @@
 package csvmap
 
+import "github.com/drzero42/nexorious/internal/enum"
+
 // Grouvee returns the preset Config for a Grouvee CSV export. Grouvee exports an
 // IGDB id per row (direct match, #1022). Its shelves and platforms columns are
 // JSON objects whose keys carry the data, and its dates column is a JSON play-log
@@ -20,24 +22,24 @@ func Grouvee() Config {
 			Column: &StatusColumn{
 				Column: "shelves",
 				Format: FormatJSONKeys,
-				ValueMap: map[string]string{
-					"playing":   psInProgress,
-					"played":    psCompleted,
-					"backlog":   psNotStarted,
-					"wish list": WishlistStatus,
+				ValueMap: map[string]enum.PlayStatus{
+					"playing": enum.PlayStatusInProgress,
+					"played":  enum.PlayStatusCompleted,
+					"backlog": enum.PlayStatusNotStarted,
 				},
+				Wishlist:   []string{"wish list"},
 				Precedence: []string{"playing", "played", "backlog"},
-				Default:    psNotStarted,
+				Default:    enum.PlayStatusNotStarted,
 			},
 		},
 		PlayLog: &PlayLogConfig{
 			Column:          "dates",
 			SecondsField:    "seconds_played",
 			CompletionField: "level_of_completion",
-			CompletionMap: map[string]string{
-				"main story":          psCompleted,
-				"main story + extras": psMastered,
-				"100% completion":     psDominated,
+			CompletionMap: map[string]enum.PlayStatus{
+				"main story":          enum.PlayStatusCompleted,
+				"main story + extras": enum.PlayStatusMastered,
+				"100% completion":     enum.PlayStatusDominated,
 			},
 		},
 		Platform: PlatformConfig{

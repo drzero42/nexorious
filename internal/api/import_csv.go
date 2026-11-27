@@ -64,15 +64,11 @@ func buildCSVConfig(m csvMapping) (csvmap.Config, error) {
 	}
 
 	if m.Status.Column != "" {
-		vm := make(map[string]string, len(m.Status.ValueMap))
-		for k, v := range m.Status.ValueMap {
-			vm[strings.ToLower(strings.TrimSpace(k))] = v
+		sc, err := buildStatusColumn(m.Status.Column, m.Status.ValueMap)
+		if err != nil {
+			return csvmap.Config{}, err
 		}
-		cfg.Status.Column = &csvmap.StatusColumn{
-			Column:   m.Status.Column,
-			ValueMap: vm,
-			Default:  string(enum.PlayStatusNotStarted),
-		}
+		cfg.Status.Column = sc
 	}
 
 	if m.Columns.Platform != "" {
@@ -97,6 +93,35 @@ func buildCSVConfig(m csvMapping) (csvmap.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// csvWishlistTarget is the value_map target that marks a source value as
+// wishlisted rather than giving it a play status.
+const csvWishlistTarget = "wishlisted"
+
+// buildStatusColumn translates the mapping's value_map: a value mapped to
+// csvWishlistTarget goes to Wishlist, any other target must be a valid play
+// status. An invalid target is an error, so a bad mapping is rejected before
+// the import starts.
+func buildStatusColumn(column string, valueMap map[string]string) (*csvmap.StatusColumn, error) {
+	sc := &csvmap.StatusColumn{
+		Column:   column,
+		ValueMap: make(map[string]enum.PlayStatus, len(valueMap)),
+		Default:  enum.PlayStatusNotStarted,
+	}
+	for k, v := range valueMap {
+		key := strings.ToLower(strings.TrimSpace(k))
+		if v == csvWishlistTarget {
+			sc.Wishlist = append(sc.Wishlist, key)
+			continue
+		}
+		ps := enum.PlayStatus(v)
+		if !ps.Valid() {
+			return nil, fmt.Errorf("status value %q maps to unknown play status %q", k, v)
+		}
+		sc.ValueMap[key] = ps
+	}
+	return sc, nil
 }
 
 const csvDistinctCap = 50
@@ -256,7 +281,10 @@ func suggestedToCSVMapping(s csvmap.SuggestedMapping) csvMapping {
 	m.Columns.Tags = s.Columns.Tags
 	m.Columns.Loved = s.Columns.Loved
 	m.Status.Column = s.Status.Column
-	m.Status.ValueMap = s.Status.ValueMap
+	m.Status.ValueMap = make(map[string]string, len(s.Status.ValueMap))
+	for k, v := range s.Status.ValueMap {
+		m.Status.ValueMap[k] = string(v)
+	}
 	m.RatingScale = s.RatingScale
 	m.MergeByTitle = s.MergeByTitle
 	return m

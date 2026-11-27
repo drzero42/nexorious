@@ -6,6 +6,8 @@
 // behaviour (#1014).
 package csvmap
 
+import "github.com/drzero42/nexorious/internal/enum"
+
 // ColumnFormat selects how a configured column's cell is read.
 type ColumnFormat string
 
@@ -51,27 +53,24 @@ type StatusConfig struct {
 // StatusColumn derives play_status from a single column (scalar or JSON-keys).
 type StatusColumn struct {
 	Column     string
-	Format     ColumnFormat      // "" scalar (default) | "json-keys"
-	ValueMap   map[string]string // normalized source value -> play_status, or WishlistStatus
-	Precedence []string          // normalized source values, highest priority first
-	Default    string            // empty/unmapped -> this; "" falls back to "not_started"
+	Format     ColumnFormat               // "" scalar (default) | "json-keys"
+	ValueMap   map[string]enum.PlayStatus // normalized source value -> play_status
+	Wishlist   []string                   // normalized source values that set is_wishlisted instead of a play_status
+	Precedence []string                   // normalized source values, highest priority first
+	Default    enum.PlayStatus            // empty/unmapped -> this; "" falls back to "not_started"
 }
-
-// WishlistStatus is the reserved ValueMap target that flags is_wishlisted rather
-// than setting play_status. play_status is then derived from the remaining values.
-const WishlistStatus = "wishlisted"
 
 // StatusFlags derives play_status from ordered boolean-flag columns (Darkadia).
 type StatusFlags struct {
 	Rules   []FlagRule // first matching rule (in order) wins
-	Default string
+	Default enum.PlayStatus
 }
 
 // FlagRule is one ordered (column is truthy -> status) rule.
 type FlagRule struct {
 	Column string
 	Truthy []string // values meaning "set", e.g. {"1"}
-	Status string
+	Status enum.PlayStatus
 }
 
 // PlatformConfig selects how ownership entries are derived. At most one of Simple / Tables.
@@ -157,8 +156,8 @@ type DurationConfig struct {
 // play-session objects (Grouvee's "dates"). A recognized CompletionField value
 // overrides the shelf-derived play_status. Mutually exclusive with Duration.
 type PlayLogConfig struct {
-	Column          string            // JSON-array column of session objects
-	SecondsField    string            // numeric field; summed across entries, ÷3600 -> hours_played
-	CompletionField string            // completion-tier field
-	CompletionMap   map[string]string // normalized tier -> play_status; unrecognized ignored
+	Column          string                     // JSON-array column of session objects
+	SecondsField    string                     // numeric field; summed across entries, ÷3600 -> hours_played
+	CompletionField string                     // completion-tier field
+	CompletionMap   map[string]enum.PlayStatus // normalized tier -> play_status; unrecognized ignored
 }

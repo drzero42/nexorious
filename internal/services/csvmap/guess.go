@@ -3,6 +3,8 @@ package csvmap
 import (
 	"strings"
 	"unicode"
+
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 // SuggestedMapping is a best-effort, frontend-shaped guess of how a CSV's
@@ -23,8 +25,8 @@ type SuggestedMapping struct {
 		Loved        string `json:"loved"`
 	} `json:"columns"`
 	Status struct {
-		Column   string            `json:"column"`
-		ValueMap map[string]string `json:"value_map"`
+		Column   string                     `json:"column"`
+		ValueMap map[string]enum.PlayStatus `json:"value_map"`
 	} `json:"status"`
 	RatingScale  int  `json:"rating_scale"`
 	MergeByTitle bool `json:"merge_by_title"`
@@ -88,7 +90,7 @@ func GuessColumns(header []string) SuggestedMapping {
 	var m SuggestedMapping
 	m.MergeByTitle = true
 	m.RatingScale = 5
-	m.Status.ValueMap = map[string]string{}
+	m.Status.ValueMap = map[string]enum.PlayStatus{}
 
 	norms := make([]string, len(header))
 	for i, h := range header {
@@ -136,30 +138,30 @@ func GuessRatingScale(max float64) int {
 
 // statusSynonyms maps a normalized source status value to a play_status. Values
 // not present here fall back to "not_started".
-var statusSynonyms = map[string]string{
-	"completed": psCompleted, "complete": psCompleted, "beaten": psCompleted,
-	"finished": psCompleted, "done": psCompleted, "100": psCompleted, "100percent": psCompleted,
-	"inprogress": psInProgress, "playing": psInProgress, "started": psInProgress,
-	"current": psInProgress, "ongoing": psInProgress,
-	"notstarted": psNotStarted, "backlog": psNotStarted, "unplayed": psNotStarted,
-	"neverplayed": psNotStarted, "tobeplayed": psNotStarted, "tbp": psNotStarted, "wishlist": psNotStarted, // wishlisted = unplayed here; is_wishlisted flag handled separately
-	"dropped": psDropped, "abandoned": psDropped, "quit": psDropped, "gaveup": psDropped,
-	"shelved": psShelved, "onhold": psShelved, "hold": psShelved, "paused": psShelved, "suspended": psShelved,
-	"mastered": psMastered, "platinum": psMastered, "perfected": psMastered,
-	"dominated": psDominated,
-	"replay":    psReplay, "replaying": psReplay, "revisiting": psReplay,
+var statusSynonyms = map[string]enum.PlayStatus{
+	"completed": enum.PlayStatusCompleted, "complete": enum.PlayStatusCompleted, "beaten": enum.PlayStatusCompleted,
+	"finished": enum.PlayStatusCompleted, "done": enum.PlayStatusCompleted, "100": enum.PlayStatusCompleted, "100percent": enum.PlayStatusCompleted,
+	"inprogress": enum.PlayStatusInProgress, "playing": enum.PlayStatusInProgress, "started": enum.PlayStatusInProgress,
+	"current": enum.PlayStatusInProgress, "ongoing": enum.PlayStatusInProgress,
+	"notstarted": enum.PlayStatusNotStarted, "backlog": enum.PlayStatusNotStarted, "unplayed": enum.PlayStatusNotStarted,
+	"neverplayed": enum.PlayStatusNotStarted, "tobeplayed": enum.PlayStatusNotStarted, "tbp": enum.PlayStatusNotStarted, "wishlist": enum.PlayStatusNotStarted, // wishlisted = unplayed here; is_wishlisted flag handled separately
+	"dropped": enum.PlayStatusDropped, "abandoned": enum.PlayStatusDropped, "quit": enum.PlayStatusDropped, "gaveup": enum.PlayStatusDropped,
+	"shelved": enum.PlayStatusShelved, "onhold": enum.PlayStatusShelved, "hold": enum.PlayStatusShelved, "paused": enum.PlayStatusShelved, "suspended": enum.PlayStatusShelved,
+	"mastered": enum.PlayStatusMastered, "platinum": enum.PlayStatusMastered, "perfected": enum.PlayStatusMastered,
+	"dominated": enum.PlayStatusDominated,
+	"replay":    enum.PlayStatusReplay, "replaying": enum.PlayStatusReplay, "revisiting": enum.PlayStatusReplay,
 }
 
 // GuessStatusValueMap maps each distinct source value to a guessed play_status,
 // keyed by the raw source value (matching the dialog's value-row keys). Values
 // with no synonym map to "not_started".
-func GuessStatusValueMap(distinct []string) map[string]string {
-	out := make(map[string]string, len(distinct))
+func GuessStatusValueMap(distinct []string) map[string]enum.PlayStatus {
+	out := make(map[string]enum.PlayStatus, len(distinct))
 	for _, v := range distinct {
 		if ps, ok := statusSynonyms[normalizeHeader(v)]; ok {
 			out[v] = ps
 		} else {
-			out[v] = psNotStarted
+			out[v] = enum.PlayStatusNotStarted
 		}
 	}
 	return out

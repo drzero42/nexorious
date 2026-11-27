@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
 
@@ -138,7 +139,7 @@ func TestDarkadia_ToleratesRaggedRowsAndEmbeddedNewline(t *testing.T) {
 func TestDarkadia_PlayStatusPrecedence(t *testing.T) {
 	cases := []struct {
 		on   map[string]string
-		want string
+		want enum.PlayStatus
 	}{
 		{map[string]string{"Owned": "1"}, "not_started"},
 		{map[string]string{"Owned": "1", "Played": "1"}, "shelved"},

@@ -1,5 +1,7 @@
 package csvmap
 
+import "github.com/drzero42/nexorious/internal/enum"
+
 // Completionator returns the preset Config for a Completionator CSV export.
 // Completionator quote-wraps every field (with unescaped embedded quotes) and
 // exports Windows-1252; ReadRecords handles both. Play-status comes from the
@@ -21,11 +23,11 @@ func Completionator() Config {
 		Status: StatusConfig{
 			Column: &StatusColumn{
 				Column: "Progress Status",
-				ValueMap: map[string]string{
-					"finished":   psCompleted,
-					"incomplete": psNotStarted,
+				ValueMap: map[string]enum.PlayStatus{
+					"finished":   enum.PlayStatusCompleted,
+					"incomplete": enum.PlayStatusNotStarted,
 				},
-				Default: psNotStarted,
+				Default: enum.PlayStatusNotStarted,
 			},
 		},
 		Platform: PlatformConfig{

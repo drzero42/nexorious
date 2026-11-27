@@ -1,10 +1,14 @@
 // Package importmodel defines the canonical, source-neutral game shape that
-// every import mapper produces and the import pipeline consumes. It is a leaf
-// package (no internal dependencies) so mappers and the upload handler can both
+// every import mapper produces and the import pipeline consumes. It depends only on
+// the leaf package internal/enum, so mappers and the upload handler can both
 // reference it without an import cycle.
 package importmodel
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/drzero42/nexorious/internal/enum"
+)
 
 // ErrInvalidSignature is the shared sentinel a mapper returns (wrapped) when a
 // file is the wrong shape for that source. The generic upload handler turns
@@ -14,17 +18,17 @@ var ErrInvalidSignature = errors.New("file does not match the expected source fo
 // Game is the consolidated, Nexorious-shaped payload for one imported game. It
 // is marshalled verbatim into job_item.source_metadata.
 type Game struct {
-	Title          string     `json:"title"`
-	IGDBID         *int32     `json:"igdb_id,omitempty"` // when set (>0), import hydrates directly and skips title matching
-	PlayStatus     string     `json:"play_status"`
-	IsLoved        bool       `json:"is_loved"`
-	IsWishlisted   bool       `json:"is_wishlisted,omitempty"`
-	PersonalRating *int32     `json:"personal_rating,omitempty"`
-	PersonalNotes  *string    `json:"personal_notes,omitempty"`
-	CreatedAt      string     `json:"created_at,omitempty"` // "2006-01-02" or ""
-	Platforms      []Platform `json:"platforms"`
-	Tags           []string   `json:"tags,omitempty"`
-	HoursPlayed    *float64   `json:"hours_played,omitempty"`
+	Title          string          `json:"title"`
+	IGDBID         *int32          `json:"igdb_id,omitempty"` // when set (>0), import hydrates directly and skips title matching
+	PlayStatus     enum.PlayStatus `json:"play_status"`
+	IsLoved        bool            `json:"is_loved"`
+	IsWishlisted   bool            `json:"is_wishlisted,omitempty"`
+	PersonalRating *int32          `json:"personal_rating,omitempty"`
+	PersonalNotes  *string         `json:"personal_notes,omitempty"`
+	CreatedAt      string          `json:"created_at,omitempty"` // "2006-01-02" or ""
+	Platforms      []Platform      `json:"platforms"`
+	Tags           []string        `json:"tags,omitempty"`
+	HoursPlayed    *float64        `json:"hours_played,omitempty"`
 }
 
 // Platform is one consolidated (platform, storefront, acquired_date) ownership entry.

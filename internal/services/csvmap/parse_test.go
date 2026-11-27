@@ -8,6 +8,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
 
@@ -110,7 +111,7 @@ func TestParse_Status(t *testing.T) {
 		Columns: ColumnMap{Title: "Name"},
 		Status: StatusConfig{Column: &StatusColumn{
 			Column:   "Shelf",
-			ValueMap: map[string]string{"playing": "in_progress", "beaten": "completed"},
+			ValueMap: map[string]enum.PlayStatus{"playing": "in_progress", "beaten": "completed"},
 			Default:  "not_started",
 		}},
 	}
@@ -119,7 +120,7 @@ func TestParse_Status(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	want := []string{"in_progress", "completed", "not_started", "not_started"}
+	want := []enum.PlayStatus{"in_progress", "completed", "not_started", "not_started"}
 	for i, w := range want {
 		if games[i].PlayStatus != w {
 			t.Fatalf("game %d: want status %q, got %q", i, w, games[i].PlayStatus)
@@ -314,7 +315,7 @@ func mergeCfg() Config {
 	return Config{
 		Columns:  ColumnMap{Title: "Name", Rating: "R"},
 		Rating:   &RatingConfig{Scale: 5},
-		Status:   StatusConfig{Column: &StatusColumn{Column: "S", ValueMap: map[string]string{"playing": "in_progress", "done": "completed"}, Default: "not_started"}},
+		Status:   StatusConfig{Column: &StatusColumn{Column: "S", ValueMap: map[string]enum.PlayStatus{"playing": "in_progress", "done": "completed"}, Default: "not_started"}},
 		Platform: PlatformConfig{Simple: &PlatformSimple{PlatformColumn: "Plat", StorefrontColumn: "Store"}},
 		Grouping: GroupingConfig{MergeByTitle: true},
 	}
@@ -517,10 +518,11 @@ func TestExtractStatus_JSONShelvesAndWishlist(t *testing.T) {
 		Columns: ColumnMap{Title: "name"},
 		Status: StatusConfig{Column: &StatusColumn{
 			Column: "shelves", Format: FormatJSONKeys,
-			ValueMap: map[string]string{
+			ValueMap: map[string]enum.PlayStatus{
 				"playing": "in_progress", "played": "completed",
-				"backlog": "not_started", "wish list": WishlistStatus,
+				"backlog": "not_started",
 			},
+			Wishlist:   []string{"wish list"},
 			Precedence: []string{"playing", "played", "backlog"},
 			Default:    "not_started",
 		}},
@@ -528,7 +530,7 @@ func TestExtractStatus_JSONShelvesAndWishlist(t *testing.T) {
 	idx := map[string]int{"shelves": 0}
 	cases := []struct {
 		shelves  string
-		wantStat string
+		wantStat enum.PlayStatus
 		wantWish bool
 	}{
 		{`{"Playing": {}}`, "in_progress", false},
@@ -554,7 +556,7 @@ func TestExtractStatus_ScalarUnchanged(t *testing.T) {
 		Columns: ColumnMap{Title: "name"},
 		Status: StatusConfig{Column: &StatusColumn{
 			Column:   "Progress Status",
-			ValueMap: map[string]string{"finished": "completed", "incomplete": "not_started"},
+			ValueMap: map[string]enum.PlayStatus{"finished": "completed", "incomplete": "not_started"},
 			Default:  "not_started",
 		}},
 	}
@@ -662,7 +664,7 @@ func TestExtractPlayLog(t *testing.T) {
 		Columns: ColumnMap{Title: "name"},
 		PlayLog: &PlayLogConfig{
 			Column: "dates", SecondsField: "seconds_played", CompletionField: "level_of_completion",
-			CompletionMap: map[string]string{
+			CompletionMap: map[string]enum.PlayStatus{
 				"main story": "completed", "main story + extras": "mastered", "100% completion": "dominated",
 			},
 		},

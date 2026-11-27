@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
 
@@ -151,7 +152,7 @@ func TestParse_SkipsNamelessEntryButKeepsValidOnes(t *testing.T) {
 }
 
 func TestMapCompletionStatus(t *testing.T) {
-	cases := map[string]string{
+	cases := map[string]enum.PlayStatus{
 		"unplayed":        "not_started",
 		"in_progress":     "in_progress",
 		"paused":          "shelved",

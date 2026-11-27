@@ -162,7 +162,8 @@ func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFi
 	// only when it creates the row; an existing row is left untouched. Its
 	// ON CONFLICT DO UPDATE also covers two items resolving to the same game:
 	// the second takes the merge path.
-	ps := coercePlayStatus(ctx, &payload.PlayStatus)
+	playStatus := string(payload.PlayStatus)
+	ps := coercePlayStatus(ctx, &playStatus)
 	createdAt := parseDateOnly(payload.CreatedAt)
 
 	// Game-level HoursPlayed goes on the first platform only.
