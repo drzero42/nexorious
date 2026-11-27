@@ -68,7 +68,7 @@ type ImportItemWorker struct {
 type importGameData struct {
 	IGDBID         int32                `json:"igdb_id"`
 	Title          string               `json:"title"`
-	PlayStatus     *string              `json:"play_status"`
+	PlayStatus     *enum.PlayStatus     `json:"play_status"`
 	PersonalRating *int                 `json:"personal_rating"`
 	IsLoved        bool                 `json:"is_loved"`
 	IsWishlisted   bool                 `json:"is_wishlisted"`
@@ -125,12 +125,16 @@ type importTagData struct {
 // nil for an invalid (or already-nil) value, so callers leave the column unset
 // and let the user_games.play_status NOT NULL DEFAULT 'not_started' apply. All
 // import paths use this to validate play_status uniformly.
-func coercePlayStatus(ctx context.Context, s *string) *string {
-	if s != nil && !enum.PlayStatus(*s).Valid() {
-		slog.WarnContext(ctx, "import: invalid play_status, treating as unset", "value", *s, logging.Cat(logging.CategoryValidation))
+func coercePlayStatus(ctx context.Context, s *enum.PlayStatus) *string {
+	if s == nil {
 		return nil
 	}
-	return s
+	if !s.Valid() {
+		slog.WarnContext(ctx, "import: invalid play_status, treating as unset", "value", string(*s), logging.Cat(logging.CategoryValidation))
+		return nil
+	}
+	v := string(*s)
+	return &v
 }
 
 // Work imports one game of a nexorious export. The games row and cover art
