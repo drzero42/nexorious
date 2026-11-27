@@ -71,6 +71,10 @@ _Avoid_: service (the Storefront you connect), refresh, import (a one-off from a
 A game as it appears in a connected storefront's library, matched to at most one IGDB game.
 _Avoid_: storefront game
 
+**External id**:
+The storefront's own identifier for an External game, such as a Steam appid. A sync uses it to recognise the game again; it is not the External game's id, which Nexorious assigns.
+_Avoid_: external game id (the External game's own id)
+
 **Same-title game**:
 An External game of the same user and storefront with the same title as another, whatever its match and skip. Same-title games that also agree on their Decision are Editions of each other; the others are not, but a game without a Decision can take one of theirs as its Precedent.
 _Avoid_: duplicate, related game
