@@ -9,7 +9,7 @@
 //
 // It also holds the library write (WriteToLibrary, WriteMatched) and the
 // ingest side of a sync (Seen, AutoMatch, MatchUnderLock, PrunePlatforms,
-// MarkDeparted). The writes left outside it are the store-link update of the
+// MarkUnavailable). The writes left outside it are the store-link update of the
 // store-link refresh and the deletes of a storefront reset and the admin
 // reset; they move in with the last step of #1412.
 package externalgame

@@ -11,10 +11,6 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// The ingest side of a sync (#1471): what the dispatch and the match worker
-// write to External games. The callers keep the Job glue (the share lock on
-// the active Job, the changes rows and the item transitions).
-
 // Sighting is one game as a storefront listed it at a sync.
 type Sighting struct {
 	UserID          string
@@ -114,10 +110,10 @@ func PrunePlatforms(ctx context.Context, db bun.IDB, id string, keep []string) e
 	return nil
 }
 
-// MarkDeparted marks the External game id unavailable: the storefront no
+// MarkUnavailable marks the External game id unavailable: the storefront no
 // longer lists it. It reports whether it changed the row, so a caller writes
 // its 'removed' row once.
-func MarkDeparted(ctx context.Context, db bun.IDB, id string) (bool, error) {
+func MarkUnavailable(ctx context.Context, db bun.IDB, id string) (bool, error) {
 	res, err := db.NewRaw(
 		`UPDATE external_games SET is_available = false, updated_at = now() WHERE id = ? AND is_available = true`, id,
 	).Exec(ctx)
@@ -135,15 +131,15 @@ func MarkDeparted(ctx context.Context, db bun.IDB, id string) (bool, error) {
 // rematch or Skip that committed during the search wins (#1338). A games row
 // it creates takes igdbTitle, the IGDB title, not the storefront's (#1455);
 // storefrontTitle is the title the caller read before the search.
-func AutoMatch(ctx context.Context, tx bun.Tx, id, storefrontTitle string, igdbID int32, igdbTitle string) (bool, error) {
-	took, err := TakePrecedent(ctx, tx, id)
+func AutoMatch(ctx context.Context, db bun.IDB, id, storefrontTitle string, igdbID int32, igdbTitle string) (bool, error) {
+	took, err := TakePrecedent(ctx, db, id)
 	if err != nil || took {
 		return false, err
 	}
-	if err := ensureGameRow(ctx, tx, igdbID, igdbTitle, storefrontTitle); err != nil {
+	if err := ensureGameRow(ctx, db, igdbID, igdbTitle, storefrontTitle); err != nil {
 		return false, err
 	}
-	res, err := tx.NewRaw(
+	res, err := db.NewRaw(
 		`UPDATE external_games eg SET resolved_igdb_id = ?, updated_at = now() WHERE eg.id = ? AND `+Undecided("eg"),
 		igdbID, id,
 	).Exec(ctx)

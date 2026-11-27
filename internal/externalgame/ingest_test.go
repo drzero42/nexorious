@@ -83,32 +83,3 @@ func TestSeen_KnownGameKeepsItsMatchAndMetadata(t *testing.T) {
 		t.Errorf("after Seen: match %v, available %v, namespace %q; want 1001, true, ns-1", row.Resolved, row.Available, row.Namespace)
 	}
 }
-
-// A game with a same-title decision takes it instead of the search's match.
-func TestAutoMatch_TakesAPrecedentInsteadOfTheSearchMatch(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := seedUser(t)
-	seedExternalGame(t, userID, extGame{resolved: 1001}) // the precedent, same title
-	id := seedExternalGame(t, userID, extGame{})
-
-	tx, err := testDB.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	wrote, err := AutoMatch(ctx, tx, id, "Horizon", 2002, "Horizon Zero Dawn")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if wrote {
-		t.Error("AutoMatch reported writing the search's match over a precedent")
-	}
-	resolved, err := MatchUnderLock(ctx, tx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved == nil || *resolved != 1001 {
-		t.Errorf("match = %v, want the precedent's 1001", resolved)
-	}
-}

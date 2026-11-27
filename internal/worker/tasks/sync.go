@@ -359,7 +359,7 @@ func (w *DispatchSyncWorker) sweep(ctx context.Context, p DispatchSyncArgs, fetc
 			if err := shareLockActiveJob(ctx, tx, p.JobID); err != nil {
 				return err
 			}
-			changed, err := externalgame.MarkDeparted(ctx, tx, eg.ID)
+			changed, err := externalgame.MarkUnavailable(ctx, tx, eg.ID)
 			if err != nil || !changed {
 				return err
 			}
