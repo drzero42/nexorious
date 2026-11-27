@@ -34,6 +34,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/usergame"
 )
 
@@ -104,11 +105,11 @@ func WriteToLibrary(ctx context.Context, db bun.IDB, userID, externalGameID stri
 	}
 
 	storefrontSlug := eg.Storefront
-	ownership := "owned"
+	ownership := enum.OwnershipOwned
 	if eg.OwnershipStatus != nil {
-		ownership = *eg.OwnershipStatus
+		ownership = enum.OwnershipStatus(*eg.OwnershipStatus)
 	} else if eg.IsSubscription {
-		ownership = "subscription"
+		ownership = enum.OwnershipSubscription
 	}
 	plats := make([]usergame.PlatformInput, 0, len(egPlatforms))
 	for _, egp := range egPlatforms {

@@ -250,13 +250,13 @@ func (w *ImportItemWorker) platformInputs(ctx context.Context, pds []importPlatf
 			}
 		}
 
-		ownership := pd.OwnershipStatus
-		if ownership == nil || !enum.OwnershipStatus(*ownership).Valid() {
-			if ownership != nil {
-				slog.WarnContext(ctx, "import_item: invalid ownership_status, defaulting to owned", "value", *ownership)
+		ownership := enum.OwnershipOwned
+		if pd.OwnershipStatus != nil {
+			if s := enum.OwnershipStatus(*pd.OwnershipStatus); s.Valid() {
+				ownership = s
+			} else {
+				slog.WarnContext(ctx, "import_item: invalid ownership_status, defaulting to owned", "value", *pd.OwnershipStatus)
 			}
-			owned := string(enum.OwnershipOwned)
-			ownership = &owned
 		}
 
 		plats = append(plats, usergame.PlatformInput{
@@ -264,7 +264,7 @@ func (w *ImportItemWorker) platformInputs(ctx context.Context, pds []importPlatf
 			Storefront:      storefrontPtr,
 			IsAvailable:     pd.IsAvailable, // nil ⇒ Acquire defaults to true
 			HoursPlayed:     pd.HoursPlayed,
-			OwnershipStatus: ownership,
+			OwnershipStatus: &ownership,
 			AcquiredDate:    parseFlexibleDate(pd.AcquiredDate),
 			// SyncFromSource intentionally omitted (false) — imports are not storefront syncs.
 		})

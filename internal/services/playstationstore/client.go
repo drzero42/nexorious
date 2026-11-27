@@ -16,6 +16,7 @@ import (
 	psnsdk "github.com/sizovilya/go-psn-api"
 	"golang.org/x/time/rate"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/observability"
 )
@@ -308,9 +309,9 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 			}
 
 			isSub := g.SubscriptionService == "PS_PLUS"
-			ownership := "owned"
+			ownership := enum.OwnershipOwned
 			if isSub {
-				ownership = "subscription"
+				ownership = enum.OwnershipSubscription
 			}
 
 			result[g.TitleID] = ExternalGameEntry{
@@ -340,7 +341,7 @@ type ExternalGameEntry struct {
 	Title           string
 	Platforms       []string // single element per entry; PSN creates one ExternalGame per title ID
 	PlaytimeHours   float64
-	OwnershipStatus string
+	OwnershipStatus enum.OwnershipStatus
 	IsSubscription  bool
 }
 

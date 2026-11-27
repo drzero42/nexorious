@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/logging"
 )
 
@@ -46,7 +47,7 @@ type ExternalGameEntry struct {
 	Title           string
 	Namespace       string
 	CatalogItemID   string
-	OwnershipStatus string // always "owned"
+	OwnershipStatus enum.OwnershipStatus // always owned
 }
 
 // sessionPrefix names the private per-operation directories under workDir.
@@ -222,7 +223,7 @@ func parseLegendaryList(out []byte) ([]ExternalGameEntry, error) {
 			Title:           r.AppTitle,
 			Namespace:       r.Metadata.Namespace,
 			CatalogItemID:   r.CatalogItemID,
-			OwnershipStatus: "owned",
+			OwnershipStatus: enum.OwnershipOwned,
 		})
 	}
 	return entries, nil

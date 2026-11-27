@@ -1,6 +1,10 @@
 package usergame
 
-import "time"
+import (
+	"time"
+
+	"github.com/drzero42/nexorious/internal/enum"
+)
 
 type AcquireMode int
 
@@ -31,7 +35,7 @@ type PlatformInput struct {
 	Platform        *string
 	Storefront      *string
 	HoursPlayed     *float64
-	OwnershipStatus *string
+	OwnershipStatus *enum.OwnershipStatus
 	IsAvailable     *bool
 	AcquiredDate    *time.Time
 	// ClearAcquiredDate instructs UpdatePlatform to set acquired_date to NULL.
@@ -93,6 +97,6 @@ type PlatformChange struct {
 	Storefront        string
 	Created           bool
 	OwnershipUpgraded bool
-	OldOwnership      *string
-	NewOwnership      *string
+	OldOwnership      *enum.OwnershipStatus
+	NewOwnership      *enum.OwnershipStatus
 }

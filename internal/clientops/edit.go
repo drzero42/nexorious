@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 // EditOpts is one game edit. Each *Set flag distinguishes "set to the zero
@@ -33,7 +34,7 @@ func EditOne(ctx context.Context, c *cliclient.Client, key string, u *cliclient.
 		if err := ValidatePlatform(ctx, c, key, pl); err != nil {
 			return err
 		}
-		if err := c.AddPlatform(ctx, key, u.ID, cliclient.PlatformInput{Platform: pl, Storefront: sf, OwnershipStatus: "owned"}); err != nil {
+		if err := c.AddPlatform(ctx, key, u.ID, cliclient.PlatformInput{Platform: pl, Storefront: sf, OwnershipStatus: string(enum.OwnershipOwned)}); err != nil {
 			return fmt.Errorf("add platform: %w", err)
 		}
 	}

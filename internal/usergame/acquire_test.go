@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 func i32ptr(i int32) *int32 { return &i }
@@ -201,13 +202,13 @@ func TestAcquire_MergeKeepsMaxHoursAndUpgradesOwnership(t *testing.T) {
 	u := seedUser(t)
 	seedGame(t, 400, "Tunic")
 	_, err := Acquire(context.Background(), testDB, AcquireParams{UserID: u, GameID: 400, Mode: ModeUpsert,
-		Platforms: []PlatformInput{{Platform: strptr("pc-windows"), Storefront: strptr("steam"), HoursPlayed: fptr(10), OwnershipStatus: strptr("subscription")}}})
+		Platforms: []PlatformInput{{Platform: strptr("pc-windows"), Storefront: strptr("steam"), HoursPlayed: fptr(10), OwnershipStatus: new(enum.OwnershipSubscription)}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Re-acquire with lower hours, higher ownership.
 	res, err := Acquire(context.Background(), testDB, AcquireParams{UserID: u, GameID: 400, Mode: ModeUpsert,
-		Platforms: []PlatformInput{{Platform: strptr("pc-windows"), Storefront: strptr("steam"), HoursPlayed: fptr(2), OwnershipStatus: strptr("owned")}}})
+		Platforms: []PlatformInput{{Platform: strptr("pc-windows"), Storefront: strptr("steam"), HoursPlayed: fptr(2), OwnershipStatus: new(enum.OwnershipOwned)}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,6 +225,42 @@ func TestAcquire_MergeKeepsMaxHoursAndUpgradesOwnership(t *testing.T) {
 	}
 	if len(res.PlatformChanges) != 1 || !res.PlatformChanges[0].OwnershipUpgraded {
 		t.Errorf("expected OwnershipUpgraded change, got %+v", res.PlatformChanges)
+	}
+}
+
+// A NULL ownership_status (the column is nullable) ranks below every status,
+// so merging any status over it is an upgrade with no old status.
+func TestAcquire_MergeUpgradesNullOwnership(t *testing.T) {
+	truncateAllTables(t)
+	u := seedUser(t)
+	seedGame(t, 401, "Outer Wilds")
+	plat := PlatformInput{Platform: strptr("pc-windows"), Storefront: strptr("steam")}
+	res, err := Acquire(context.Background(), testDB, AcquireParams{UserID: u, GameID: 401, Mode: ModeUpsert, Platforms: []PlatformInput{plat}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testDB.NewRaw(`UPDATE user_game_platforms SET ownership_status = NULL WHERE user_game_id = ?`, res.UserGameID).Exec(context.Background()); err != nil {
+		t.Fatalf("null ownership: %v", err)
+	}
+
+	plat.OwnershipStatus = new(enum.OwnershipSubscription)
+	res, err = Acquire(context.Background(), testDB, AcquireParams{UserID: u, GameID: 401, Mode: ModeUpsert, Platforms: []PlatformInput{plat}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.PlatformChanges) != 1 {
+		t.Fatalf("expected 1 platform change, got %+v", res.PlatformChanges)
+	}
+	ch := res.PlatformChanges[0]
+	if !ch.OwnershipUpgraded || ch.OldOwnership != nil || ch.NewOwnership == nil || *ch.NewOwnership != enum.OwnershipSubscription {
+		t.Errorf("expected upgrade from NULL to subscription, got %+v", ch)
+	}
+	var owner string
+	if err := testDB.NewRaw(`SELECT ownership_status FROM user_game_platforms WHERE user_game_id = ?`, res.UserGameID).Scan(context.Background(), &owner); err != nil {
+		t.Fatalf("fetch platform: %v", err)
+	}
+	if owner != string(enum.OwnershipSubscription) {
+		t.Errorf("expected ownership subscription, got %q", owner)
 	}
 }
 

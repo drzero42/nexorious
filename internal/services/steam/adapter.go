@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
 )
@@ -109,7 +110,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				Title:                og.Title,
 				PlaytimeHours:        og.PlaytimeHours,
 				Platforms:            platforms,
-				OwnershipStatus:      "owned",
+				OwnershipStatus:      enum.OwnershipOwned,
 				IsSubscription:       false,
 				AchievementsUnlocked: unlocked,
 				AchievementsTotal:    total,

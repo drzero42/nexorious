@@ -3,6 +3,8 @@ package storefrontadapter
 import (
 	"context"
 	"errors"
+
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 // ExternalGameEntry is the normalised game representation yielded by any storefront adapter.
@@ -11,7 +13,7 @@ type ExternalGameEntry struct {
 	Title           string
 	PlaytimeHours   float64  // 0 when the storefront does not provide playtime; fractional when available (Steam, PSN)
 	Platforms       []string // storefront-specific names; canonicalised to slugs by the worker
-	OwnershipStatus string   // "owned", "subscription", etc.
+	OwnershipStatus enum.OwnershipStatus
 	IsSubscription  bool
 	// AchievementsUnlocked / AchievementsTotal hold per-game achievement counts
 	// when the source provides them (Steam only in v1). Nil = not fetched / not

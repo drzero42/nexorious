@@ -444,8 +444,8 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 	// Map request platforms → usergame.PlatformInput, validating each entry.
 	plats := make([]usergame.PlatformInput, 0, len(req.Platforms))
 	for _, p := range req.Platforms {
-		if p.OwnershipStatus != nil && *p.OwnershipStatus != "" && !enum.OwnershipStatus(*p.OwnershipStatus).Valid() {
-			return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+*p.OwnershipStatus)
+		if p.OwnershipStatus != nil && *p.OwnershipStatus != "" && !p.OwnershipStatus.Valid() {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+string(*p.OwnershipStatus))
 		}
 		var acquired *time.Time
 		if p.AcquiredDate != nil && *p.AcquiredDate != "" {
@@ -883,12 +883,12 @@ func (h *UserGamesHandler) verifyUserGameOwnership(ctx context.Context, userGame
 
 // platformRequest is the bind target for platform create/update.
 type platformRequest struct {
-	Platform        *string  `json:"platform"`
-	Storefront      *string  `json:"storefront"`
-	IsAvailable     *bool    `json:"is_available"`
-	HoursPlayed     *float64 `json:"hours_played"`
-	OwnershipStatus *string  `json:"ownership_status"`
-	AcquiredDate    *string  `json:"acquired_date"`
+	Platform        *string               `json:"platform"`
+	Storefront      *string               `json:"storefront"`
+	IsAvailable     *bool                 `json:"is_available"`
+	HoursPlayed     *float64              `json:"hours_played"`
+	OwnershipStatus *enum.OwnershipStatus `json:"ownership_status"`
+	AcquiredDate    *string               `json:"acquired_date"`
 }
 
 // parseAcquiredDate parses the request's acquired_date string into a time. It
@@ -942,8 +942,8 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 
 	// Validate ownership_status if provided
 	if req.OwnershipStatus != nil && *req.OwnershipStatus != "" {
-		if !enum.OwnershipStatus(*req.OwnershipStatus).Valid() {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid ownership_status: " + *req.OwnershipStatus})
+		if !req.OwnershipStatus.Valid() {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid ownership_status: " + string(*req.OwnershipStatus)})
 		}
 	}
 
@@ -1033,8 +1033,8 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 
 	// Validate ownership_status if provided
 	if req.OwnershipStatus != nil && *req.OwnershipStatus != "" {
-		if !enum.OwnershipStatus(*req.OwnershipStatus).Valid() {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid ownership_status: " + *req.OwnershipStatus})
+		if !req.OwnershipStatus.Valid() {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid ownership_status: " + string(*req.OwnershipStatus)})
 		}
 	}
 
@@ -1153,8 +1153,8 @@ func (h *UserGamesHandler) HandleMoveToLibrary(c *echo.Context) error {
 	platIns := make([]usergame.PlatformInput, 0, len(req.Platforms))
 	for _, p := range req.Platforms {
 		if p.OwnershipStatus != nil && *p.OwnershipStatus != "" {
-			if !enum.OwnershipStatus(*p.OwnershipStatus).Valid() {
-				return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+*p.OwnershipStatus)
+			if !p.OwnershipStatus.Valid() {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+string(*p.OwnershipStatus))
 			}
 		}
 		var acquiredDate *time.Time
@@ -1521,11 +1521,12 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 			"not_started": 0, "in_progress": 0, "completed": 0, "mastered": 0,
 			"dominated": 0, "shelved": 0, "dropped": 0, "replay": 0,
 		},
-		OwnershipStats: map[string]int{
-			"owned": 0, "borrowed": 0, "rented": 0, "subscription": 0, "no_longer_owned": 0,
-		},
-		PlatformStats: map[string]int{},
-		GenreStats:    map[string]int{},
+		OwnershipStats: map[string]int{},
+		PlatformStats:  map[string]int{},
+		GenreStats:     map[string]int{},
+	}
+	for _, s := range enum.AllOwnershipStatuses() {
+		resp.OwnershipStats[s] = 0
 	}
 
 	// total_games
@@ -1568,7 +1569,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 	err = h.db.NewSelect().
 		TableExpr("user_game_platforms AS ugp").
 		Join("JOIN user_games AS ug ON ug.id = ugp.user_game_id").
-		ColumnExpr("COALESCE(ugp.ownership_status, 'owned') AS ownership_status, COUNT(DISTINCT ugp.user_game_id) AS count").
+		ColumnExpr("COALESCE(ugp.ownership_status, ?) AS ownership_status, COUNT(DISTINCT ugp.user_game_id) AS count", enum.OwnershipOwned).
 		Where("ug.user_id = ?", userID).
 		Where("ug.is_wishlisted = ?", false).
 		GroupExpr("ugp.ownership_status").

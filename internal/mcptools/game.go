@@ -408,7 +408,7 @@ func registerGameTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 				if in.Storefront != "" {
 					sf = in.Storefront
 				}
-				input.Platforms = []cliclient.PlatformInput{{Platform: pl, Storefront: sf, OwnershipStatus: "owned"}}
+				input.Platforms = []cliclient.PlatformInput{{Platform: pl, Storefront: sf, OwnershipStatus: string(enum.OwnershipOwned)}}
 			}
 			ug, err := c.CreateUserGame(ctx, key, input)
 			if err != nil {
@@ -509,7 +509,7 @@ func registerGameTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			}
 			ownership := in.OwnershipStatus
 			if ownership == "" {
-				ownership = "owned"
+				ownership = string(enum.OwnershipOwned)
 			}
 			ug, err := c.MoveToLibrary(ctx, key, u.ID, []cliclient.PlatformInput{
 				{Platform: pl, Storefront: sf, OwnershipStatus: ownership},

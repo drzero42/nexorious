@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 // Sighting is one game as a storefront listed it at a sync.
@@ -18,7 +20,7 @@ type Sighting struct {
 	ExternalID      string
 	Title           string
 	IsSubscription  bool
-	OwnershipStatus string
+	OwnershipStatus enum.OwnershipStatus
 	// SourceMetadata is kept as stored when empty.
 	SourceMetadata map[string]string
 	// Platforms are canonical platform slugs, already resolved by the caller.

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
 )
@@ -112,7 +113,7 @@ func toEntries(entitlements []Entitlement) ([]storefrontadapter.ExternalGameEntr
 			ExternalID:      e.ProductID,
 			Title:           title,
 			Platforms:       []string{"pc-windows"},
-			OwnershipStatus: "owned",
+			OwnershipStatus: enum.OwnershipOwned,
 		})
 	}
 	return out, nil
