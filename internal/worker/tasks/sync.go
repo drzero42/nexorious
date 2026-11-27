@@ -15,6 +15,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
@@ -365,13 +366,13 @@ func (w *DispatchSyncWorker) sweep(ctx context.Context, p DispatchSyncArgs, fetc
 			}
 			if _, err := tx.NewRaw(
 				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-				 SELECT ?, ?, ?, eg.id, 'removed', eg.title, now()
+				 SELECT ?, ?, ?, eg.id, ?, eg.title, now()
 				   FROM external_games eg
 				  WHERE eg.id = ?
 				    AND NOT EXISTS (
 				      SELECT 1 FROM external_games o
 				       WHERE o.id <> eg.id AND o.is_available AND `+externalgame.SameGame("o", "eg")+`)`,
-				uuid.NewString(), p.JobID, p.UserID, eg.ID,
+				uuid.NewString(), p.JobID, p.UserID, enum.ChangeRemoved, eg.ID,
 			).Exec(ctx); err != nil {
 				return fmt.Errorf("insert sync_change (removed): %w", err)
 			}

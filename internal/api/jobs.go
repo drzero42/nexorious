@@ -17,6 +17,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/usergame"
@@ -361,12 +362,12 @@ type syncChangeItem struct {
 // changeRow is a changes row as HandleRecentJobs reads it. GameTitle is the
 // title of the library entry user_game_id points to, when it still exists.
 type changeRow struct {
-	ChangeType string  `bun:"change_type"`
-	Title      string  `bun:"title"`
-	GameTitle  *string `bun:"game_title"`
-	UserGameID *string `bun:"user_game_id"`
-	OldStatus  *string `bun:"old_status"`
-	NewStatus  *string `bun:"new_status"`
+	ChangeType enum.ChangeType `bun:"change_type"`
+	Title      string          `bun:"title"`
+	GameTitle  *string         `bun:"game_title"`
+	UserGameID *string         `bun:"user_game_id"`
+	OldStatus  *string         `bun:"old_status"`
+	NewStatus  *string         `bun:"new_status"`
 }
 
 // changeLists are a Job's change lists, one per heading of the UI.
@@ -414,15 +415,14 @@ func listChanges(rows []changeRow, bySyncGame bool) changeLists {
 	// order keeps the lines in the order of their first row: a line is either
 	// a row listed as it is (item) or a library entry (entry).
 	type line struct {
-		changeType string
+		changeType enum.ChangeType
 		item       syncChangeItem
 		entry      *libraryEntryLine
 	}
 	var order []line
 	entries := map[string]*libraryEntryLine{}
 	for _, r := range rows {
-		isLibrary := r.ChangeType == "added" || r.ChangeType == "status_changed" || r.ChangeType == "already_in_library"
-		if bySyncGame && isLibrary && r.UserGameID != nil {
+		if bySyncGame && r.ChangeType.IsLibraryEntry() && r.UserGameID != nil {
 			e, ok := entries[*r.UserGameID]
 			if !ok {
 				title := r.Title
@@ -434,9 +434,9 @@ func listChanges(rows []changeRow, bySyncGame bool) changeLists {
 				order = append(order, line{entry: e})
 			}
 			switch r.ChangeType {
-			case "added":
+			case enum.ChangeAdded:
 				e.added = true
-			case "status_changed":
+			case enum.ChangeStatusChanged:
 				e.statusChanged = true
 				e.oldStatus = maxOwnership(e.oldStatus, r.OldStatus)
 				e.newStatus = maxOwnership(e.newStatus, r.NewStatus)
@@ -445,14 +445,22 @@ func listChanges(rows []changeRow, bySyncGame bool) changeLists {
 		}
 		item := syncChangeItem{Title: r.Title}
 		switch r.ChangeType {
-		case "added", "updated", "already_in_library":
+		case enum.ChangeAdded, enum.ChangeUpdated, enum.ChangeAlreadyInLibrary:
 			item.UserGameID = r.UserGameID
-		case "status_changed":
+		case enum.ChangeStatusChanged:
 			item.UserGameID, item.OldStatus, item.NewStatus = r.UserGameID, r.OldStatus, r.NewStatus
 		}
 		order = append(order, line{changeType: r.ChangeType, item: item})
 	}
 
+	lists := map[enum.ChangeType]*[]syncChangeItem{
+		enum.ChangeAdded:            &l.added,
+		enum.ChangeUpdated:          &l.updated,
+		enum.ChangeRemoved:          &l.removed,
+		enum.ChangeStatusChanged:    &l.statusChanged,
+		enum.ChangeSkipped:          &l.skipped,
+		enum.ChangeAlreadyInLibrary: &l.alreadyInLibrary,
+	}
 	for _, ln := range order {
 		changeType, item := ln.changeType, ln.item
 		if e := ln.entry; e != nil {
@@ -460,27 +468,16 @@ func listChanges(rows []changeRow, bySyncGame bool) changeLists {
 			item = syncChangeItem{Title: e.title, UserGameID: &id}
 			switch {
 			case e.added:
-				changeType = "added"
+				changeType = enum.ChangeAdded
 			case e.statusChanged:
-				changeType = "status_changed"
+				changeType = enum.ChangeStatusChanged
 				item.OldStatus, item.NewStatus = e.oldStatus, e.newStatus
 			default:
-				changeType = "already_in_library"
+				changeType = enum.ChangeAlreadyInLibrary
 			}
 		}
-		switch changeType {
-		case "added":
-			l.added = append(l.added, item)
-		case "updated":
-			l.updated = append(l.updated, item)
-		case "removed":
-			l.removed = append(l.removed, item)
-		case "status_changed":
-			l.statusChanged = append(l.statusChanged, item)
-		case "skipped":
-			l.skipped = append(l.skipped, item)
-		case "already_in_library":
-			l.alreadyInLibrary = append(l.alreadyInLibrary, item)
+		if list, ok := lists[changeType]; ok {
+			*list = append(*list, item)
 		}
 	}
 	return l

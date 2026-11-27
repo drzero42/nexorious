@@ -1,5 +1,7 @@
 package enum
 
+import "slices"
+
 // PlayStatus represents valid play_status values for user_games.
 type PlayStatus string
 
@@ -113,6 +115,43 @@ func AllOwnershipStatuses() []string {
 	out := make([]string, len(allOwnershipStatuses))
 	for i, s := range allOwnershipStatuses {
 		out[i] = string(s)
+	}
+	return out
+}
+
+// ChangeType represents valid change_type values for the changes table: one
+// row per library outcome of a sync or import Job.
+type ChangeType string
+
+const (
+	ChangeAdded            ChangeType = "added"
+	ChangeUpdated          ChangeType = "updated"
+	ChangeRemoved          ChangeType = "removed"
+	ChangeStatusChanged    ChangeType = "status_changed"
+	ChangeSkipped          ChangeType = "skipped"
+	ChangeAlreadyInLibrary ChangeType = "already_in_library"
+)
+
+// LibraryChangeTypes are the change types that record a write to a library
+// entry (sync and import both write them). A sync's diff lists them once per
+// library entry (#1443).
+var LibraryChangeTypes = []ChangeType{
+	ChangeAdded,
+	ChangeAlreadyInLibrary,
+	ChangeStatusChanged,
+}
+
+// IsLibraryEntry reports whether t is one of LibraryChangeTypes.
+func (t ChangeType) IsLibraryEntry() bool {
+	return slices.Contains(LibraryChangeTypes, t)
+}
+
+// LibraryChangeTypeStrings returns LibraryChangeTypes as plain strings, for
+// use in SQL `IN (?)` clauses via bun.List.
+func LibraryChangeTypeStrings() []string {
+	out := make([]string, len(LibraryChangeTypes))
+	for i, t := range LibraryChangeTypes {
+		out[i] = string(t)
 	}
 	return out
 }

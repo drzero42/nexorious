@@ -13,6 +13,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
@@ -309,9 +310,9 @@ func storefrontDisplayName(ctx context.Context, db bun.IDB, slug string) (string
 // games, or nil when there are none.
 func syncDiff(ctx context.Context, db bun.IDB, job *models.Job) (*notify.EmitParams, error) {
 	var rows []struct {
-		ChangeType string `bun:"change_type"`
-		Title      string `bun:"title"`
-		Platforms  string `bun:"platforms"`
+		ChangeType enum.ChangeType `bun:"change_type"`
+		Title      string          `bun:"title"`
+		Platforms  string          `bun:"platforms"`
 	}
 	// One line per game (#1443). An 'added' row is one per library entry; its
 	// line shows the library entry's title and the platforms of every edition
@@ -328,21 +329,22 @@ func syncDiff(ctx context.Context, db bun.IDB, job *models.Job) (*notify.EmitPar
 		          SELECT string_agg(DISTINCT egp.platform, ',' ORDER BY egp.platform)
 		            FROM external_game_platforms egp
 		           WHERE egp.external_game_id = sc.external_game_id
-		              OR (sc.change_type = 'added' AND egp.external_game_id IN (
+		              OR (sc.change_type = ? AND egp.external_game_id IN (
 		                    SELECT l.external_game_id FROM changes l
 		                     WHERE l.job_id = sc.job_id AND l.user_game_id = sc.user_game_id
-		                       AND l.change_type IN ('added', 'already_in_library', 'status_changed')))
-		              OR (sc.change_type = 'removed' AND egp.external_game_id IN (
+		                       AND l.change_type IN (?)))
+		              OR (sc.change_type = ? AND egp.external_game_id IN (
 		                    SELECT o.id FROM external_games me
 		                      JOIN external_games o ON `+externalgame.SameEdition("o", "me")+`
 		                     WHERE me.id = sc.external_game_id))
 		        ), '') AS platforms
 		   FROM changes sc
-		   LEFT JOIN user_games ug ON ug.id = sc.user_game_id AND sc.change_type = 'added'
+		   LEFT JOIN user_games ug ON ug.id = sc.user_game_id AND sc.change_type = ?
 		   LEFT JOIN games g ON g.id = ug.game_id
-		  WHERE sc.job_id = ? AND sc.change_type IN ('added','removed')
+		  WHERE sc.job_id = ? AND sc.change_type IN (?, ?)
 		  ORDER BY sc.created_at, sc.id`,
-		job.ID,
+		enum.ChangeAdded, bun.List(enum.LibraryChangeTypeStrings()), enum.ChangeRemoved,
+		enum.ChangeAdded, job.ID, enum.ChangeAdded, enum.ChangeRemoved,
 	).Scan(ctx, &rows); err != nil {
 		return nil, fmt.Errorf("load changes for diff: %w", err)
 	}
@@ -361,7 +363,7 @@ func syncDiff(ctx context.Context, db bun.IDB, job *models.Job) (*notify.EmitPar
 			platforms = strings.Split(r.Platforms, ",")
 		}
 		entry := notify.DiffGame{Title: r.Title, Platforms: platforms}
-		if r.ChangeType == "added" {
+		if r.ChangeType == enum.ChangeAdded {
 			added = append(added, entry)
 		} else {
 			removed = append(removed, entry)

@@ -14,6 +14,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/igdb"
@@ -215,19 +216,19 @@ func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFi
 }
 
 // importChangeType is the changes row's change_type for an Acquire result.
-func importChangeType(res usergame.Result) string {
+func importChangeType(res usergame.Result) enum.ChangeType {
 	if res.Created {
-		return "added"
+		return enum.ChangeAdded
 	}
 	for _, ch := range res.PlatformChanges {
 		if ch.Created {
-			return "updated"
+			return enum.ChangeUpdated
 		}
 	}
 	if res.TagsAdded > 0 {
-		return "updated"
+		return enum.ChangeUpdated
 	}
-	return "already_in_library"
+	return enum.ChangeAlreadyInLibrary
 }
 
 // errAcquire marks an Acquire error that will not go away by trying again.
