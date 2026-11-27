@@ -7,11 +7,15 @@
 // between internal/joblifecycle, which owns the sync Job, and
 // internal/usergame, which owns the library.
 //
-// It also holds the library write (WriteToLibrary, WriteMatched) and the
-// ingest side of a sync (Seen, AutoMatch, MatchUnderLock, PrunePlatforms,
-// MarkUnavailable). The writes left outside it are the store-link update of the
-// store-link refresh and the deletes of a storefront reset and the admin
-// reset; they move in with the last step of #1412.
+// It also holds the library write (WriteToLibrary, WriteMatched), the ingest
+// side of a sync (Seen, AutoMatch, MatchUnderLock, PrunePlatforms,
+// MarkUnavailable) and the store-link and reset writes (SetStoreLink,
+// DeleteForStorefront, DeleteAll).
+//
+// It is the only non-test Go code that writes external_games or
+// external_game_platforms or takes an explicit row lock on them, and it links
+// neither internal/joblifecycle, internal/worker/tasks nor internal/api
+// (ADR 0009). guard_test.go enforces both.
 package externalgame
 
 import (
