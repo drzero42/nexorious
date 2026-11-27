@@ -19,7 +19,6 @@ type Sighting struct {
 	Storefront      string
 	ExternalID      string
 	Title           string
-	IsSubscription  bool
 	OwnershipStatus enum.OwnershipStatus
 	// SourceMetadata is kept as stored when empty.
 	SourceMetadata map[string]string
@@ -45,18 +44,17 @@ func Seen(ctx context.Context, db bun.IDB, s Sighting) (id string, skipped bool,
 		sourceMetaJSON, _ = json.Marshal(s.SourceMetadata) //nolint:errcheck // marshaling a map[string]string cannot fail
 	}
 	if err := db.NewRaw(`
-		INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, source_metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, true, ?, ?, ?, now(), now())
+		INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, ownership_status, source_metadata, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, true, ?, ?, now(), now())
 		ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
 			title = EXCLUDED.title,
-			is_subscription = EXCLUDED.is_subscription,
 			ownership_status = EXCLUDED.ownership_status,
 			source_metadata = COALESCE(EXCLUDED.source_metadata, external_games.source_metadata),
 			is_available = true,
 			updated_at = now()
 		RETURNING id, is_skipped`,
 		uuid.NewString(), s.UserID, s.Storefront, s.ExternalID, s.Title,
-		s.IsSubscription, s.OwnershipStatus, nullableJSON(sourceMetaJSON),
+		s.OwnershipStatus, nullableJSON(sourceMetaJSON),
 	).Scan(ctx, &row); err != nil {
 		return "", false, fmt.Errorf("upsert external_game: %w", err)
 	}

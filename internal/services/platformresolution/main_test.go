@@ -111,9 +111,8 @@ func insertTestExternalGame(t *testing.T, db *bun.DB, userID, storefront, title 
 	id := uuid.NewString()
 	now := time.Now()
 	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_games
-		     (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, false, true, false, ?, ?)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, false, true, ?, ?)`,
 		id, userID, storefront, uuid.NewString(), title, now, now,
 	)
 	if err != nil {

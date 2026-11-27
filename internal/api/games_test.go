@@ -676,8 +676,8 @@ func insertTestExternalGameForUser(t *testing.T, db *bun.DB, userID, storefront,
 	t.Helper()
 	id := uuid.NewString()
 	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
-		 VALUES (?, ?, ?, ?, ?, false, true, false)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
+		 VALUES (?, ?, ?, ?, ?, false, true)`,
 		id, userID, storefront, uuid.NewString(), title,
 	)
 	if err != nil {

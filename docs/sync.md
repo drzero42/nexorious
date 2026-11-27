@@ -170,8 +170,7 @@ The interface requires a `GetLibrary` method that accepts a context, a batch siz
 | `Title` | string | Game name as reported by the storefront |
 | `PlaytimeHours` | int | Hours played; 0 means not provided by this storefront |
 | `Platforms` | []string | Platform names in storefront-specific format; resolved to canonical slugs by the worker |
-| `OwnershipStatus` | string | `owned`, `subscription`, etc. |
-| `IsSubscription` | bool | True if the game is accessed via a subscription service |
+| `OwnershipStatus` | string | `owned`, `subscription`, etc.; `subscription` when the game is accessed via a subscription service |
 | `SourceMetadata` | map[string]string | Optional per-source resolution inputs captured for later store-link enrichment (currently only Epic sets `{"namespace": …}`); persisted to `external_games.source_metadata`. Never used to build the link directly |
 
 ---

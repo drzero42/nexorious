@@ -14,7 +14,6 @@ type ExternalGameEntry struct {
 	PlaytimeHours   float64  // 0 when the storefront does not provide playtime; fractional when available (Steam, PSN)
 	Platforms       []string // storefront-specific names; canonicalised to slugs by the worker
 	OwnershipStatus enum.OwnershipStatus
-	IsSubscription  bool
 	// AchievementsUnlocked / AchievementsTotal hold per-game achievement counts
 	// when the source provides them (Steam only in v1). Nil = not fetched / not
 	// available. Carried onto the first platform row, like PlaytimeHours.

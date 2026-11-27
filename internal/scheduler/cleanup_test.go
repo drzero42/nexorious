@@ -314,8 +314,8 @@ func TestCleanupUnreferencedGames_KeepsMatchedGames(t *testing.T) {
 	}
 	egID := uuid.NewString()
 	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id, created_at, updated_at)
-		 VALUES (?, ?, 'steam', '123', 'Matched Game', false, true, false, ?, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id, created_at, updated_at)
+		 VALUES (?, ?, 'steam', '123', 'Matched Game', false, true, ?, now(), now())`,
 		egID, userID, matchedID,
 	).Exec(ctx); err != nil {
 		t.Fatalf("insert external game: %v", err)
@@ -362,8 +362,8 @@ func TestGamesForeignKeys_RefuseDeletingReferencedGames(t *testing.T) {
 		}
 	}
 	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id, created_at, updated_at)
-		 VALUES (?, ?, 'steam', '123', 'G', false, true, false, ?, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id, created_at, updated_at)
+		 VALUES (?, ?, 'steam', '123', 'G', false, true, ?, now(), now())`,
 		uuid.NewString(), userID, matchedID,
 	).Exec(ctx); err != nil {
 		t.Fatalf("insert external game: %v", err)

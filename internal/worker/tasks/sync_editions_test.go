@@ -53,8 +53,8 @@ func edInsertGame(t *testing.T, userID string, g edGame) string {
 	}
 	created := time.Now().Add(-g.age - time.Hour)
 	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, false, ?, ?, now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, now())`,
 		id, userID, g.storefront, g.extID, g.title, g.skipped, g.available, resolved, created,
 	).Exec(ctx); err != nil {
 		t.Fatalf("insert external game %s: %v", g.extID, err)

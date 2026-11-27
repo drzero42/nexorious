@@ -111,7 +111,6 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				PlaytimeHours:        og.PlaytimeHours,
 				Platforms:            platforms,
 				OwnershipStatus:      enum.OwnershipOwned,
-				IsSubscription:       false,
 				AchievementsUnlocked: unlocked,
 				AchievementsTotal:    total,
 			})

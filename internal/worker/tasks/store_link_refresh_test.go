@@ -53,8 +53,8 @@ func (c *cancelOnceResolver) Resolve(_ context.Context, _ string, _ map[string]s
 func seedExternalGameSL(t *testing.T, userID, storefront, externalID string, storeLink *string) {
 	t.Helper()
 	_, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, store_link, is_available, is_subscription, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, true, false, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, store_link, is_available, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, true, now(), now())`,
 		uuid.NewString(), userID, storefront, externalID, "T-"+externalID, storeLink,
 	).Exec(context.Background())
 	if err != nil {

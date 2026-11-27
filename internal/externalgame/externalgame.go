@@ -108,8 +108,6 @@ func WriteToLibrary(ctx context.Context, db bun.IDB, userID, externalGameID stri
 	ownership := enum.OwnershipOwned
 	if eg.OwnershipStatus != nil {
 		ownership = enum.OwnershipStatus(*eg.OwnershipStatus)
-	} else if eg.IsSubscription {
-		ownership = enum.OwnershipSubscription
 	}
 	plats := make([]usergame.PlatformInput, 0, len(egPlatforms))
 	for _, egp := range egPlatforms {

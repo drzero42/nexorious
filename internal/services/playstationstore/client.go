@@ -308,9 +308,8 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 				continue
 			}
 
-			isSub := g.SubscriptionService == "PS_PLUS"
 			ownership := enum.OwnershipOwned
-			if isSub {
+			if g.SubscriptionService == "PS_PLUS" {
 				ownership = enum.OwnershipSubscription
 			}
 
@@ -320,7 +319,6 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 				Platforms:       []string{rawPlatform},
 				PlaytimeHours:   0,
 				OwnershipStatus: ownership,
-				IsSubscription:  isSub,
 			}
 		}
 
@@ -342,7 +340,6 @@ type ExternalGameEntry struct {
 	Platforms       []string // single element per entry; PSN creates one ExternalGame per title ID
 	PlaytimeHours   float64
 	OwnershipStatus enum.OwnershipStatus
-	IsSubscription  bool
 }
 
 // applyPlaytimeToOwned returns the user's library using the owned (purchased)

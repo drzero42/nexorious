@@ -144,7 +144,7 @@ func TestGetLibrary_EntryFields(t *testing.T) {
 	if e.ExternalID != "aquaria" || e.Title != "Aquaria" {
 		t.Errorf("ExternalID/Title = %q/%q", e.ExternalID, e.Title)
 	}
-	if e.PlaytimeHours != 0 || e.OwnershipStatus != "owned" || e.IsSubscription {
+	if e.PlaytimeHours != 0 || e.OwnershipStatus != "owned" {
 		t.Errorf("unexpected fields: %+v", e)
 	}
 	platforms := append([]string(nil), e.Platforms...)

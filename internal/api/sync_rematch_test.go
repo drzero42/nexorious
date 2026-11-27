@@ -87,8 +87,8 @@ func (f *rmFixture) titled(id, title string, resolved int, skipped bool, platfor
 		r = resolved
 	}
 	f.seq++
-	f.exec(`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, true, false, ?, now() - interval '1 day' + ? * interval '1 second', now())`,
+	f.exec(`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, true, ?, now() - interval '1 day' + ? * interval '1 second', now())`,
 		id, f.userID, rmStore, id, title, skipped, r, f.seq)
 	if platform != "" {
 		f.exec(`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, ?, 0, now())`,

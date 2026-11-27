@@ -132,7 +132,7 @@ func upsertGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p Dispatch
 		var err error
 		if egID, isSkipped, err = externalgame.Seen(ctx, tx, externalgame.Sighting{
 			UserID: p.UserID, Storefront: p.Storefront, ExternalID: e.ExternalID, Title: e.Title,
-			IsSubscription: e.IsSubscription, OwnershipStatus: e.OwnershipStatus, SourceMetadata: e.SourceMetadata,
+			OwnershipStatus: e.OwnershipStatus, SourceMetadata: e.SourceMetadata,
 			Platforms: platforms, PlaytimeHours: e.PlaytimeHours,
 			AchievementsUnlocked: e.AchievementsUnlocked, AchievementsTotal: e.AchievementsTotal,
 		}); err != nil {

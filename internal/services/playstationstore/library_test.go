@@ -77,8 +77,8 @@ func TestFetchPlayHistory_HappyPath(t *testing.T) {
 	}
 	// Play history no longer classifies ownership — the owned endpoint is the
 	// single source of truth (issue #753). It contributes playtime only.
-	if ps5.OwnershipStatus != "" || ps5.IsSubscription {
-		t.Errorf("play history must not classify ownership, got %q / %v", ps5.OwnershipStatus, ps5.IsSubscription)
+	if ps5.OwnershipStatus != "" {
+		t.Errorf("play history must not classify ownership, got %q", ps5.OwnershipStatus)
 	}
 
 	ps4, ok := result["CUSA12345_00"]
@@ -89,8 +89,8 @@ func TestFetchPlayHistory_HappyPath(t *testing.T) {
 		t.Errorf("expected Platforms[0]=playstation-4, got %v", ps4.Platforms)
 	}
 	// Even a ps_plus service entry must not be classified by play history.
-	if ps4.OwnershipStatus != "" || ps4.IsSubscription {
-		t.Errorf("play history must not classify ownership, got %q / %v", ps4.OwnershipStatus, ps4.IsSubscription)
+	if ps4.OwnershipStatus != "" {
+		t.Errorf("play history must not classify ownership, got %q", ps4.OwnershipStatus)
 	}
 
 	// pspc_game entry must be excluded
@@ -210,9 +210,6 @@ func TestFetchPurchasedGames_HappyPath(t *testing.T) {
 	if len(ps4.Platforms) == 0 || ps4.Platforms[0] != "playstation-4" {
 		t.Errorf("expected Platforms[0]=playstation-4, got %v", ps4.Platforms)
 	}
-	if !ps4.IsSubscription {
-		t.Error("expected IsSubscription=true for PS_PLUS game")
-	}
 	if ps4.OwnershipStatus != "subscription" {
 		t.Errorf("expected OwnershipStatus=subscription, got %q", ps4.OwnershipStatus)
 	}
@@ -226,9 +223,6 @@ func TestFetchPurchasedGames_HappyPath(t *testing.T) {
 	}
 	if len(ps5.Platforms) == 0 || ps5.Platforms[0] != "playstation-5" {
 		t.Errorf("expected Platforms[0]=playstation-5, got %v", ps5.Platforms)
-	}
-	if ps5.IsSubscription {
-		t.Error("expected IsSubscription=false for non-PS_PLUS game")
 	}
 	if ps5.OwnershipStatus != "owned" {
 		t.Errorf("expected OwnershipStatus=owned, got %q", ps5.OwnershipStatus)
@@ -380,17 +374,17 @@ func TestApplyPlaytimeToOwned_ClassificationComesFromOwnedNotHistory(t *testing.
 	// owned endpoint says it is owned outright. Classification must follow the
 	// owned endpoint and ignore play history entirely.
 	owned := map[string]ExternalGameEntry{
-		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 0, OwnershipStatus: "owned", IsSubscription: false},
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 0, OwnershipStatus: "owned"},
 	}
 	played := map[string]ExternalGameEntry{
-		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 4, OwnershipStatus: "subscription", IsSubscription: true},
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 4, OwnershipStatus: "subscription"},
 	}
 	result := applyPlaytimeToOwned(owned, played)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(result))
 	}
-	if result[0].IsSubscription || result[0].OwnershipStatus != "owned" {
-		t.Errorf("classification must come from owned endpoint (owned), got %q / %v", result[0].OwnershipStatus, result[0].IsSubscription)
+	if result[0].OwnershipStatus != "owned" {
+		t.Errorf("classification must come from owned endpoint (owned), got %q", result[0].OwnershipStatus)
 	}
 	if result[0].PlaytimeHours != 4 {
 		t.Errorf("playtime should still be enriched from history (4), got %v", result[0].PlaytimeHours)
