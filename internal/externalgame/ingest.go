@@ -100,14 +100,12 @@ func upsertPlatforms(ctx context.Context, db bun.IDB, id string, s Sighting) err
 // PrunePlatforms deletes the platform rows of the External game id whose
 // platform is not in keep: the platforms a sync no longer lists for it.
 func PrunePlatforms(ctx context.Context, db bun.IDB, id string, keep []string) error {
-	if _, err := db.NewRaw(`
+	_, err := db.NewRaw(`
 		DELETE FROM external_game_platforms
 		WHERE external_game_id = ? AND platform NOT IN (?)`,
 		id, bun.List(keep),
-	).Exec(ctx); err != nil {
-		return fmt.Errorf("delete stale platforms: %w", err)
-	}
-	return nil
+	).Exec(ctx)
+	return err
 }
 
 // MarkUnavailable marks the External game id unavailable: the storefront no
@@ -125,8 +123,8 @@ func MarkUnavailable(ctx context.Context, db bun.IDB, id string) (bool, error) {
 }
 
 // AutoMatch is the write of a confident match found by the match worker's
-// search: the External game id takes an edition's decision made during the
-// search if there is one (precedent first), otherwise the search's match
+// search: the External game id takes a same-title game's decision made during
+// the search if there is one (precedent first), otherwise the search's match
 // igdbID. It reports whether it wrote igdbID. The write is guarded so a
 // rematch or Skip that committed during the search wins (#1338). A games row
 // it creates takes igdbTitle, the IGDB title, not the storefront's (#1455);
