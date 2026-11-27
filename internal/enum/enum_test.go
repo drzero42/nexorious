@@ -60,3 +60,13 @@ func TestOwnershipStatusRank(t *testing.T) {
 		}
 	}
 }
+
+// Every valid ownership status must have a rank, or a newly added status
+// would silently rank as unknown.
+func TestEveryOwnershipStatusHasRank(t *testing.T) {
+	for _, s := range AllOwnershipStatuses() {
+		if OwnershipStatus(s).Rank() <= 0 {
+			t.Errorf("OwnershipStatus(%q).Rank() = %d, want > 0", s, OwnershipStatus(s).Rank())
+		}
+	}
+}
