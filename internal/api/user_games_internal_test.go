@@ -24,7 +24,7 @@ func TestToUserGamePlatformResponse_Achievements(t *testing.T) {
 	}
 }
 
-func TestValidateOwnership(t *testing.T) {
+func TestValidateOwnershipStatus(t *testing.T) {
 	ptr := func(s enum.OwnershipStatus) *enum.OwnershipStatus { return &s }
 	tests := []struct {
 		name    string
@@ -38,9 +38,9 @@ func TestValidateOwnership(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateOwnership(tt.in)
+			err := validateOwnershipStatus(tt.in)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("validateOwnership() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("validateOwnershipStatus() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if err == nil {
 				return
