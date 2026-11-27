@@ -88,7 +88,9 @@ export function planPlatformChanges(
       updates.push({
         id: s.id,
         platform: o.platform ?? '',
-        storefront: s.storefront,
+        // '' is the explicit "clear to NULL" signal; undefined would be dropped
+        // from the request and keep the old storefront (#1501).
+        storefront: s.storefront ?? '',
         hoursPlayed: d.hoursPlayed,
         ownershipStatus: d.ownershipStatus,
         // Carry the value as-is: '' is the explicit "clear to NULL" signal the

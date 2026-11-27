@@ -21,7 +21,8 @@ import (
 func Acquire(ctx context.Context, db bun.IDB, p AcquireParams) (Result, error) {
 	var res Result
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if err := validatePlatformRefs(ctx, tx, p.Platforms); err != nil {
+		plats, err := prepareNewPlatforms(ctx, tx, p.Platforms)
+		if err != nil {
 			return err
 		}
 		ugID, created, err := upsertUserGame(ctx, tx, p)
@@ -31,7 +32,7 @@ func Acquire(ctx context.Context, db bun.IDB, p AcquireParams) (Result, error) {
 		res.UserGameID = ugID
 		res.Created = created
 
-		changes, err := mergePlatforms(ctx, tx, ugID, p.Platforms)
+		changes, err := mergePlatforms(ctx, tx, ugID, plats)
 		if err != nil {
 			return err
 		}
@@ -241,10 +242,11 @@ func AddPlatform(ctx context.Context, db *bun.DB, p AddPlatformParams) (Result, 
 		if err := assertOwned(ctx, tx, p.UserGameID, p.UserID); err != nil {
 			return err
 		}
-		if err := validatePlatformRef(ctx, tx, p.Platform.Platform, p.Platform.Storefront); err != nil {
+		plat, err := prepareNewPlatform(ctx, tx, p.Platform)
+		if err != nil {
 			return err
 		}
-		platID, err := insertPlatformStrict(ctx, tx, p.UserGameID, p.Platform)
+		platID, err := insertPlatformStrict(ctx, tx, p.UserGameID, plat)
 		if err != nil {
 			return err
 		}
@@ -266,7 +268,8 @@ func AddPlatform(ctx context.Context, db *bun.DB, p AddPlatformParams) (Result, 
 func AddPlatformBulk(ctx context.Context, db *bun.DB, p BulkAddPlatformParams) (int, error) {
 	var added int
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if err := validatePlatformRef(ctx, tx, p.Platform.Platform, p.Platform.Storefront); err != nil {
+		plat, err := prepareNewPlatform(ctx, tx, p.Platform)
+		if err != nil {
 			return err
 		}
 		for _, ugID := range p.UserGameIDs {
@@ -281,7 +284,7 @@ func AddPlatformBulk(ctx context.Context, db *bun.DB, p BulkAddPlatformParams) (
 				 (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, external_game_id, acquired_date, sync_from_source, created_at, updated_at)
 				 VALUES (?, ?, ?, ?, true, NULL, ?, NULL, NULL, false, now(), now())
 				 ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
-				uuid.NewString(), ugID, p.Platform.Platform, p.Platform.Storefront, enum.OwnershipOwned,
+				uuid.NewString(), ugID, plat.Platform, plat.Storefront, enum.OwnershipOwned,
 			).Exec(ctx)
 			if insertErr != nil {
 				return fmt.Errorf("bulk insert platform: %w", insertErr)
@@ -309,10 +312,11 @@ func MoveToLibrary(ctx context.Context, db *bun.DB, p MoveParams) (Result, error
 		if err := assertWishlisted(ctx, tx, p.UserGameID, p.UserID); err != nil {
 			return err
 		}
-		if err := validatePlatformRefs(ctx, tx, p.Platforms); err != nil {
+		plats, err := prepareNewPlatforms(ctx, tx, p.Platforms)
+		if err != nil {
 			return err
 		}
-		for _, plat := range p.Platforms {
+		for _, plat := range plats {
 			if _, err := insertPlatformStrict(ctx, tx, p.UserGameID, plat); err != nil {
 				return err
 			}

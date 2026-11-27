@@ -1042,13 +1042,9 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 	if err := validateOwnershipStatus(req.OwnershipStatus); err != nil {
 		return err
 	}
-	// An empty ownership_status is "not provided": leave the stored one as it
-	// is rather than writing '' (#1493).
-	if req.OwnershipStatus != nil && *req.OwnershipStatus == "" {
-		req.OwnershipStatus = nil
-	}
 
-	// Validate platform if provided
+	// Validate platform if provided. An empty platform or ownership_status is
+	// "not provided"; usergame.UpdatePlatform leaves those columns unchanged.
 	if req.Platform != nil && *req.Platform != "" {
 		exists, checkErr := h.db.NewSelect().Model((*models.Platform)(nil)).
 			Where("name = ?", *req.Platform).
@@ -1090,6 +1086,11 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 		IsAvailable:     req.IsAvailable,
 		HoursPlayed:     req.HoursPlayed,
 		OwnershipStatus: req.OwnershipStatus,
+	}
+	// An empty storefront clears it to NULL, like an empty acquired_date (#1501).
+	if req.Storefront != nil && *req.Storefront == "" {
+		fields.Storefront = nil
+		fields.ClearStorefront = true
 	}
 	if acquiredDateProvided {
 		if acquiredDate == nil {

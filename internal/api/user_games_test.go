@@ -1275,6 +1275,124 @@ func TestUpdatePlatform_EmptyOwnershipStatusLeavesItUnchanged(t *testing.T) {
 	}
 }
 
+// TestUpdatePlatform_EmptyPlatformAndStorefront guards #1501: an empty
+// platform leaves it unchanged and an empty storefront clears it to NULL,
+// instead of writing an empty string and failing the foreign keys with a 500.
+func TestUpdatePlatform_EmptyPlatformAndStorefront(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "upd-plat-empty-slugs")
+	gameID := insertTestGame(t, testDB, "Update Plat Empty Slugs")
+	insertTestUserGame(t, testDB, "ug-upd-plat-empty-slugs", userID, int(gameID))
+
+	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-plat-empty-slugs/platforms", map[string]any{
+		"platform":   "pc-windows",
+		"storefront": "steam",
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	platformID := decodeID(t, rec)
+
+	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-plat-empty-slugs/platforms/%s", platformID),
+		map[string]any{"platform": "", "storefront": ""}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var row struct {
+		Platform   string  `bun:"platform"`
+		Storefront *string `bun:"storefront"`
+	}
+	if err := testDB.NewSelect().TableExpr("user_game_platforms").Column("platform", "storefront").
+		Where("id = ?", platformID).Scan(context.Background(), &row); err != nil {
+		t.Fatalf("reload platform row: %v", err)
+	}
+	if row.Platform != "pc-windows" {
+		t.Errorf("platform = %q, want pc-windows (unchanged)", row.Platform)
+	}
+	if row.Storefront != nil {
+		t.Errorf("storefront = %q, want NULL", *row.Storefront)
+	}
+}
+
+// TestAddPlatform_EmptySlugs guards #1501 on the add endpoints: an empty
+// storefront adds the platform with no storefront and an empty platform is a
+// 422, where both used to fail the foreign keys with a 500.
+func TestAddPlatform_EmptySlugs(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "add-plat-empty-slugs")
+	gameID := insertTestGame(t, testDB, "Add Plat Empty Slugs")
+	insertTestUserGame(t, testDB, "ug-add-plat-empty-slugs", userID, int(gameID))
+
+	rec := postJSONAuth(t, e, "/api/user-games/ug-add-plat-empty-slugs/platforms", map[string]any{
+		"platform": "", "storefront": "steam",
+	}, token)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("empty platform expected 422, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = postJSONAuth(t, e, "/api/user-games/ug-add-plat-empty-slugs/platforms", map[string]any{
+		"platform": "pc-windows", "storefront": "",
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("empty storefront expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = postJSONAuth(t, e, "/api/user-games/bulk-add-platforms", map[string]any{
+		"user_game_ids": []string{"ug-add-plat-empty-slugs"}, "platform": "pc-linux", "storefront": "",
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bulk add with empty storefront expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var withStorefront int
+	if err := testDB.NewRaw(
+		`SELECT count(*) FROM user_game_platforms WHERE user_game_id = ? AND storefront IS NOT NULL`, "ug-add-plat-empty-slugs",
+	).Scan(context.Background(), &withStorefront); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if withStorefront != 0 {
+		t.Fatalf("rows with a storefront = %d, want 0", withStorefront)
+	}
+}
+
+// TestUpdatePlatform_ClearStorefrontConflict: clearing a storefront when the
+// game already has a no-storefront row for the same platform hits the unique
+// index (NULLS NOT DISTINCT) and must be a 409, not a 500.
+func TestUpdatePlatform_ClearStorefrontConflict(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "upd-plat-clear-conflict")
+	gameID := insertTestGame(t, testDB, "Update Plat Clear Conflict")
+	insertTestUserGame(t, testDB, "ug-upd-plat-clear-conflict", userID, int(gameID))
+
+	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-plat-clear-conflict/platforms", map[string]any{
+		"platform": "pc-windows",
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create no-storefront row expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = postJSONAuth(t, e, "/api/user-games/ug-upd-plat-clear-conflict/platforms", map[string]any{
+		"platform":   "pc-windows",
+		"storefront": "steam",
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create steam row expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	steamID := decodeID(t, rec)
+
+	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-plat-clear-conflict/platforms/%s", steamID),
+		map[string]any{"storefront": ""}, token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("clear storefront expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestUpdatePlatform_InvalidName verifies that updating a platform row with a
 // non-existent platform or storefront name yields 404.
 func TestUpdatePlatform_InvalidName(t *testing.T) {

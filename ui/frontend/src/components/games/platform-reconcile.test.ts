@@ -110,7 +110,9 @@ describe('planPlatformChanges', () => {
     expect(cs).toEqual({ adds: [], removes: [], updates: [] });
   });
 
-  it('emits an update when an existing storefront is cleared to none (#847)', () => {
+  // The update carries '' rather than undefined: undefined is dropped from the
+  // JSON body and the backend would keep the old storefront (#1501).
+  it('emits an update carrying an empty storefront when it is cleared to none (#847, #1501)', () => {
     const original = [orig('ugp-1', 'pc', 'steam', { hours_played: 4 })];
     const selections = [{ key: 'ugp-1', id: 'ugp-1', platform: 'pc', storefront: undefined }];
     const details = { 'ugp-1': detail(4) };
@@ -121,7 +123,7 @@ describe('planPlatformChanges', () => {
       {
         id: 'ugp-1',
         platform: 'pc',
-        storefront: undefined,
+        storefront: '',
         hoursPlayed: 4,
         ownershipStatus: OwnershipStatus.OWNED,
         acquiredDate: '',
