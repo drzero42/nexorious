@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1424,5 +1425,116 @@ func TestListPagination_PastTheEnd(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A sync's library lists show each library entry once (#1443): its rows are
+// grouped by user_game_id under the library entry's title, in the first list
+// that applies of added, status changed and already in library; a merged
+// status change shows the highest old → the highest new ownership. A row whose
+// library entry is gone (NULL user_game_id) stays its own line. Import Jobs
+// keep one line per row.
+func TestHandleRecentJobs_SyncListsEachLibraryEntryOnce(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "recent-per-game")
+
+	insertGame(t, testDB, 100, "Hades")
+	insertGame(t, testDB, 200, "Celeste")
+	insertGame(t, testDB, 300, "Inside")
+	insertUserGame(t, testDB, "ug-hades", userID, 100)
+	insertUserGame(t, testDB, "ug-celeste", userID, 200)
+	insertUserGame(t, testDB, "ug-inside", userID, 300)
+
+	syncJob := uuid.NewString()
+	importJob := uuid.NewString()
+	insertJob(t, testDB, syncJob, userID, "sync", "psn", "completed")
+	insertJob(t, testDB, importJob, userID, "import", "nexorious", "completed")
+	if _, err := testDB.ExecContext(ctx, `UPDATE jobs SET created_at = now() - interval '1 hour' WHERE id = ?`, importJob); err != nil {
+		t.Fatalf("backdate import job: %v", err)
+	}
+
+	n := 0
+	insertChange := func(jobID string, ug any, changeType, title string, oldStatus, newStatus any) {
+		t.Helper()
+		n++
+		if _, err := testDB.ExecContext(ctx,
+			`INSERT INTO changes (id, job_id, user_id, user_game_id, change_type, title, old_status, new_status, created_at)
+			 VALUES (gen_random_uuid(), ?, ?, ?, ?, ?, ?, ?, now() + make_interval(secs => ?))`,
+			jobID, userID, ug, changeType, title, oldStatus, newStatus, n,
+		); err != nil {
+			t.Fatalf("insert %s change: %v", changeType, err)
+		}
+	}
+	// Hades: one edition added, the other already in library.
+	insertChange(syncJob, "ug-hades", "already_in_library", "HADES (PS5)", nil, nil)
+	insertChange(syncJob, "ug-hades", "added", "HADES (PS4)", nil, nil)
+	// Celeste: two upgrades and an edition already in library.
+	insertChange(syncJob, "ug-celeste", "status_changed", "Celeste PS4", "no_longer_owned", "owned")
+	insertChange(syncJob, "ug-celeste", "already_in_library", "Celeste PS5", nil, nil)
+	insertChange(syncJob, "ug-celeste", "status_changed", "Celeste PS5", "subscription", "borrowed")
+	// Inside: two editions already in library.
+	insertChange(syncJob, "ug-inside", "already_in_library", "INSIDE PS4", nil, nil)
+	insertChange(syncJob, "ug-inside", "already_in_library", "INSIDE PS5", nil, nil)
+	// Library entry deleted since: one line per row.
+	insertChange(syncJob, nil, "already_in_library", "Gone", nil, nil)
+	insertChange(syncJob, nil, "already_in_library", "Gone", nil, nil)
+	// An import's rows are not grouped.
+	insertChange(importJob, "ug-hades", "added", "Hades", nil, nil)
+	insertChange(importJob, "ug-hades", "updated", "Hades", nil, nil)
+	insertChange(importJob, "ug-hades", "added", "Hades", nil, nil)
+
+	rec := getAuth(t, e, "/api/jobs/recent", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	type item struct {
+		Title      string  `json:"title"`
+		UserGameID *string `json:"user_game_id"`
+		OldStatus  *string `json:"old_status"`
+		NewStatus  *string `json:"new_status"`
+	}
+	var resp struct {
+		Jobs []struct {
+			ID                    string `json:"id"`
+			AddedItems            []item `json:"added_items"`
+			UpdatedItems          []item `json:"updated_items"`
+			StatusChangedItems    []item `json:"status_changed_items"`
+			AlreadyInLibraryItems []item `json:"already_in_library_items"`
+		} `json:"jobs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Jobs) != 2 || resp.Jobs[0].ID != syncJob || resp.Jobs[1].ID != importJob {
+		t.Fatalf("expected the sync then the import job, got %+v", resp.Jobs)
+	}
+	titles := func(items []item) []string {
+		out := []string{}
+		for _, it := range items {
+			out = append(out, it.Title)
+		}
+		return out
+	}
+
+	s := resp.Jobs[0]
+	if got := titles(s.AddedItems); !slices.Equal(got, []string{"Hades"}) {
+		t.Errorf("sync added = %v, want [Hades]", got)
+	}
+	if got := titles(s.StatusChangedItems); !slices.Equal(got, []string{"Celeste"}) {
+		t.Errorf("sync status changed = %v, want [Celeste]", got)
+	} else if sc := s.StatusChangedItems[0]; sc.OldStatus == nil || *sc.OldStatus != "subscription" || sc.NewStatus == nil || *sc.NewStatus != "owned" {
+		t.Errorf("merged status change = %v → %v, want subscription → owned", sc.OldStatus, sc.NewStatus)
+	} else if sc.UserGameID == nil || *sc.UserGameID != "ug-celeste" {
+		t.Errorf("merged status change links to %v, want ug-celeste", sc.UserGameID)
+	}
+	if got := titles(s.AlreadyInLibraryItems); !slices.Equal(got, []string{"Inside", "Gone", "Gone"}) {
+		t.Errorf("sync already in library = %v, want [Inside Gone Gone]", got)
+	}
+
+	imp := resp.Jobs[1]
+	if len(imp.AddedItems) != 2 || len(imp.UpdatedItems) != 1 {
+		t.Errorf("import lists = %d added, %d updated, want 2 and 1", len(imp.AddedItems), len(imp.UpdatedItems))
 	}
 }

@@ -68,16 +68,21 @@ Not all storefronts provide playtime. When a storefront does not provide playtim
 | `id` | TEXT | Primary key |
 | `job_id` | TEXT | The sync job that produced this change; FK to `jobs` |
 | `user_id` | TEXT | FK to `users` |
-| `external_game_id` | TEXT | FK to `external_games`; nullable (SET NULL on delete) |
-| `change_type` | TEXT | `added`, `removed`, or `status_changed` |
+| `external_game_id` | TEXT | FK to `external_games`; nullable (SET NULL on delete, e.g. a reset of the storefront's sync data) |
+| `user_game_id` | TEXT | FK to `user_games`; set on `added`, `already_in_library` and `status_changed`; nullable (SET NULL on delete) |
+| `change_type` | TEXT | `added`, `already_in_library`, `status_changed`, `removed` or `skipped` (`updated` is written by imports only) |
 | `title` | TEXT | Game title at the time of the event; denormalised for display |
 | `old_status` | TEXT | Previous ownership status; only set for `status_changed` |
 | `new_status` | TEXT | New ownership status; only set for `status_changed` |
 | `created_at` | TIMESTAMPTZ | When the event was recorded |
 
 Writers:
-- **Stage 1** writes a `removed` entry for each game marked `is_available = false` during the availability sweep
-- **Stage 3** writes an `added` entry when a new `user_games` row is inserted, and a `status_changed` entry when the ownership rank guard replaces an existing status
+- **Stage 1** writes a `skipped` entry for a skipped game, and the availability sweep a `removed` entry for a game whose last available edition left (see below)
+- **Stage 3** writes an `added` entry when the write created the `user_games` row, a `status_changed` entry per platform whose ownership the rank guard upgraded, and otherwise an `already_in_library` entry; a skipped game gets a `skipped` entry. A Rematch during an active sync, and the same-title settle, write the same rows for the items they complete; a Skip during a sync writes the game's `skipped` entry
+
+**A game is listed once** ([ADR 0007](adr/0007-a-game-is-counted-once.md), #1443), whatever editions it has. The two places that show these rows — the recent-activity lists of the sync page (`GET /api/jobs/recent`) and the `sync.diff` notification — follow it:
+- `added`, `already_in_library` and `status_changed` are one row per edition, and are grouped **when read**, by `user_game_id`: one line per library entry, in the first list that applies of added, status changed and already in library, under the library entry's title. A merged status change shows the highest old → the highest new ownership of its rows. A row whose `user_game_id` is NULL is its own line. The `sync.diff` added line lists the platforms of every edition the Job wrote to that library entry.
+- `removed` and `skipped` are one row per game **when written**. The sweep writes `removed` only when no other game that counts as the same game is still available (`externalgame.SameGame`: an edition, or a same-title game when either has no decision), so a game is listed by the sync that takes its last available edition away. A `skipped` row is not written when the Job already has one for an edition of the game. The `sync.diff` removed line lists the platforms of every edition of the set.
 
 Old entries are pruned by a periodic maintenance job (see Maintenance).
 
@@ -182,7 +187,7 @@ The `DispatchSyncWorker` runs once per sync job. It:
    - Accumulates each game's `external_id` into an in-memory set of fetched IDs
    - Adds a job item for every game that is not skipped, with its Stage 2 River job, in one transaction through the module. A game the Job already has an item for gets none, so a dispatch that runs again gives no item a second River job. A skipped game gets no job item, only a `skipped` change. A new game gets no decision here, also when it is an edition of a skipped game: its item takes the skip in Stage 2 (see [Editions](#editions))
    - A database error while adding the items is returned to River, which runs the dispatch again; it does not fail the sync
-4. After all batches complete, the sweeps run: platform rows not seen in this fetch are removed, and every `external_games` row for this user and storefront still marked available whose `external_id` was not fetched is marked `is_available = false` with a `removed` entry in `changes`. Each game is one transaction (Job row share lock, then the game, then the `removed` row only when this run changed it), so a sweep that runs twice writes one row.
+4. After all batches complete, the sweeps run: platform rows not seen in this fetch are removed, and every `external_games` row for this user and storefront still marked available whose `external_id` was not fetched is marked `is_available = false`. Each game is one transaction (Job row share lock, then the game, then the `removed` row only when this run changed it), so a sweep that runs twice writes one row. The `removed` row is written only when no other game that counts as the same game is still available (see [Sync Changes](#sync-changes)): when two editions leave, the one swept last writes it; when one stays, nothing is written.
    The sweep is skipped when the fetch returned no games at all while at least one game is still marked available for this storefront. An empty reply is far more likely a privacy setting, an upstream glitch or a changed response shape than a library that really went to zero, so the job fails instead (`sync.failed`) and nothing is marked removed. If the library really is empty, reset the storefront's sync data or disconnect it.
 
 5. Marks the dispatch done, with `last_synced_at` and the cleared credentials flag in the same transaction. The module then evaluates completion; an empty library completes here.

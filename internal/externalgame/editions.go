@@ -72,6 +72,15 @@ func Undecided(a string) string {
 	return fmt.Sprintf("(%s.resolved_igdb_id IS NULL AND NOT %s.is_skipped)", a, a)
 }
 
+// SameGame is the SQL condition that the External games aliased a and b count
+// as the same game in a storefront's change lists (#1443): editions of each
+// other, or same-title games one of which has no decision. A game without a
+// decision takes the oldest same-title decision as soon as its match worker
+// runs, so it is about to be an edition of the set.
+func SameGame(a, b string) string {
+	return "(" + SameEdition(a, b) + " OR (" + SameTitle(a, b) + " AND (" + Undecided(a) + " OR " + Undecided(b) + ")))"
+}
+
 // ErrEditionsChanged: the game's set of editions kept changing while
 // LockEditions tried to lock it. Callers answer it with 409 and ask the user to
 // try again.
