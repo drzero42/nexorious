@@ -1235,7 +1235,7 @@ func TestUpdatePlatform_InvalidOwnershipStatus(t *testing.T) {
 }
 
 // TestUpdatePlatform_EmptyOwnershipStatusLeavesItUnchanged guards #1493: an
-// empty ownership_status on update is "not provided", never stored as ”.
+// empty ownership_status on update is "not provided", never stored as an empty string.
 func TestUpdatePlatform_EmptyOwnershipStatusLeavesItUnchanged(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
@@ -1252,11 +1252,7 @@ func TestUpdatePlatform_EmptyOwnershipStatusLeavesItUnchanged(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var createResp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &createResp); err != nil {
-		t.Fatalf("decode create response: %v", err)
-	}
-	platformID := createResp["id"].(string)
+	platformID := decodeID(t, rec)
 
 	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-plat-empty/platforms/%s", platformID),
 		map[string]any{"ownership_status": ""}, token)
