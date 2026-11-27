@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1757,6 +1759,58 @@ func TestCollectionStats(t *testing.T) {
 		want := map[string]int{"PC (Windows)": 2, "PlayStation 5": 1}
 		if !maps.Equal(resp.PlatformStats, want) {
 			t.Fatalf("expected platform_stats=%v, got %v", want, resp.PlatformStats)
+		}
+	})
+
+	// A platform with no ownership status is left out of ownership_stats
+	// (the missing-ownership-status smell reports it), matching the
+	// ownership_status list filter (#1492).
+	t.Run("ownership leaves out platforms with no ownership status", func(t *testing.T) {
+		userID, token := setupUserGamesUser(t, testDB, e, "stats-ownership")
+
+		pcWindows, steam, gog := "pc-windows", "steam", "gog"
+		platforms := []struct {
+			id, userGame, storefront string
+			ownership                *string
+		}{
+			{"ugp-own-a", "ug-own-a", steam, new("owned")},
+			{"ugp-own-b", "ug-own-b", steam, nil},
+			{"ugp-own-c-steam", "ug-own-c", steam, new("owned")},
+			{"ugp-own-c-gog", "ug-own-c", gog, nil},
+			{"ugp-own-d", "ug-own-d", steam, nil},
+			{"ugp-own-e", "ug-own-e", steam, new("borrowed")},
+		}
+		for i, ug := range []string{"ug-own-a", "ug-own-b", "ug-own-c", "ug-own-d", "ug-own-e"} {
+			g := insertTestGame(t, testDB, fmt.Sprintf("Ownership Game %d", i))
+			insertTestUserGame(t, testDB, ug, userID, int(g))
+		}
+		for _, p := range platforms {
+			insertTestUserGamePlatform(t, testDB, p.id, p.userGame, &pcWindows, &p.storefront)
+			if _, err := testDB.ExecContext(context.Background(),
+				`UPDATE user_game_platforms SET ownership_status = ? WHERE id = ?`, p.ownership, p.id); err != nil {
+				t.Fatalf("set ownership_status: %v", err)
+			}
+		}
+
+		rec := getAuth(t, e, "/api/user-games/stats", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			OwnershipStats map[string]int `json:"ownership_stats"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode stats: %v", err)
+		}
+
+		want := map[string]int{}
+		for _, s := range enum.AllOwnershipStatuses() {
+			want[s] = 0
+		}
+		want["owned"] = 2
+		want["borrowed"] = 1
+		if !maps.Equal(resp.OwnershipStats, want) {
+			t.Fatalf("expected ownership_stats=%v, got %v", want, resp.OwnershipStats)
 		}
 	})
 }

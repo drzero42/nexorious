@@ -1568,7 +1568,9 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.CompletionStats[sc.PlayStatus] = sc.Count
 	}
 
-	// ownership_stats
+	// ownership_stats: a platform with no ownership status is left out, as
+	// the ownership_status filter leaves it out; the missing-ownership-status
+	// smell reports it.
 	type ownershipCount struct {
 		OwnershipStatus string `bun:"ownership_status"`
 		Count           int    `bun:"count"`
@@ -1577,9 +1579,10 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 	err = h.db.NewSelect().
 		TableExpr("user_game_platforms AS ugp").
 		Join("JOIN user_games AS ug ON ug.id = ugp.user_game_id").
-		ColumnExpr("COALESCE(ugp.ownership_status, ?) AS ownership_status, COUNT(DISTINCT ugp.user_game_id) AS count", enum.OwnershipOwned).
+		ColumnExpr("ugp.ownership_status, COUNT(DISTINCT ugp.user_game_id) AS count").
 		Where("ug.user_id = ?", userID).
 		Where("ug.is_wishlisted = ?", false).
+		Where("ugp.ownership_status IS NOT NULL").
 		GroupExpr("ugp.ownership_status").
 		Scan(ctx, &ownershipCounts)
 	if err != nil {
