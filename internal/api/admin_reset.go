@@ -8,6 +8,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/logging"
 )
 
@@ -61,7 +62,7 @@ func (h *AdminResetHandler) HandleReset(c *echo.Context) error {
 		// Delete all external games (cascades external_game_platforms).
 		// Non-admin users' rows cascade from users, but the admin's rows must be
 		// deleted explicitly since the admin account is preserved.
-		if _, err := tx.NewRaw("DELETE FROM external_games").Exec(ctx); err != nil {
+		if err := externalgame.DeleteForAllUsers(ctx, tx); err != nil {
 			return err
 		}
 		// Delete non-admin users (cascades user_sessions + api_keys).

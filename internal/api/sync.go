@@ -1525,10 +1525,7 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 		if err := usergame.RemoveStorefrontPlatforms(ctx, tx, userID, sf); err != nil {
 			return err
 		}
-		if _, err := tx.NewRaw(
-			`DELETE FROM external_games WHERE user_id = ? AND storefront = ?`,
-			userID, sf,
-		).Exec(ctx); err != nil {
+		if err := externalgame.DeleteForStorefront(ctx, tx, userID, sf); err != nil {
 			return err
 		}
 		_, err := tx.NewRaw(

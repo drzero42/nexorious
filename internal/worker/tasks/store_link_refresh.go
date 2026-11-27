@@ -13,6 +13,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/storelink"
@@ -285,9 +286,7 @@ func (w *StoreLinkRefreshItemWorker) Work(ctx context.Context, job *river.Job[St
 		if link == "" {
 			continue
 		}
-		if _, e := w.DB.NewRaw(
-			`UPDATE external_games SET store_link = ?, updated_at = now() WHERE id = ?`, link, r.ID,
-		).Exec(ctx); e != nil {
+		if e := externalgame.SetStoreLink(ctx, w.DB, r.ID, link); e != nil {
 			slog.WarnContext(ctx, "store_link_refresh: update store_link", logging.KeyErr, e, "id", r.ID, logging.Cat(logging.CategoryDB))
 		}
 	}

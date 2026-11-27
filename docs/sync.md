@@ -383,7 +383,7 @@ A single `external_games.store_link` column holds whatever a store needs to buil
 
 ### Ownership: enrichment is the sole writer
 
-`store_link` is written **only** by the enrichment worker; the sync upsert (Stage 1) never touches it, so a re-sync can never null a resolved link. Sync's only contribution is capturing resolution *inputs*: the Epic adapter records its `namespace` into `external_games.source_metadata` (Epic's `productmapping` is keyed by namespace, which is not derivable from `external_id` alone). The other stores resolve from `external_id` directly.
+`store_link` is written **only** by the enrichment worker, through the External game module (`externalgame.SetStoreLink`); the sync upsert (Stage 1) never touches it, so a re-sync can never null a resolved link. Sync's only contribution is capturing resolution *inputs*: the Epic adapter records its `namespace` into `external_games.source_metadata` (Epic's `productmapping` is keyed by namespace, which is not derivable from `external_id` alone). The other stores resolve from `external_id` directly.
 
 ### Workers
 
