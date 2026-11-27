@@ -459,8 +459,8 @@ func TestHandleGetUserGame_StoreURL(t *testing.T) {
 	// Insert an external_game with store_link so buildStoreURL can produce a URL.
 	egID := "eg-surl-steam-440"
 	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, store_link)
-		 VALUES (?, ?, 'steam', '440', 'Half-Life 2', false, true, false, '440')`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, store_link)
+		 VALUES (?, ?, 'steam', '440', 'Half-Life 2', false, true, '440')`,
 		egID, userID,
 	)
 	if err != nil {

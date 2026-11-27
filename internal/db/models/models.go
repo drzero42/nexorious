@@ -188,7 +188,6 @@ type ExternalGame struct {
 	ResolvedIGDBID  *int32          `bun:"resolved_igdb_id"         json:"resolved_igdb_id"`
 	IsSkipped       bool            `bun:"is_skipped,notnull"       json:"is_skipped"`
 	IsAvailable     bool            `bun:"is_available,notnull"     json:"is_available"`
-	IsSubscription  bool            `bun:"is_subscription,notnull"  json:"is_subscription"`
 	OwnershipStatus *string         `bun:"ownership_status"         json:"ownership_status"`
 	StoreLink       *string         `bun:"store_link"               json:"store_link,omitempty"`
 	SourceMetadata  json.RawMessage `bun:"source_metadata"          json:"source_metadata,omitempty"`

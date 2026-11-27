@@ -74,7 +74,8 @@ func syncEditionSets(where string) string {
 	return `
 	WITH edition_rows AS (
 		SELECT eg.id, eg.storefront, eg.external_id, eg.title, eg.resolved_igdb_id,
-		       eg.is_skipped, eg.is_available, eg.is_subscription, eg.store_link,
+		       eg.is_skipped, eg.is_available, eg.store_link,
+		       COALESCE(eg.ownership_status = 'subscription', false) AS is_subscription,
 		       first_value(eg.id) OVER w AS rep_id,
 		       row_number() OVER w AS rank_in_set,
 		       ni.id AS newest_item_id,

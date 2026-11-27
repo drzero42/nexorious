@@ -121,8 +121,8 @@ func seedExternalGame(t *testing.T, userID string, g extGame) string {
 		resolved = g.resolved
 	}
 	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id, created_at, updated_at)
-		 VALUES (?, ?, 'steam', ?, 'Horizon', ?, true, false, ?, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id, created_at, updated_at)
+		 VALUES (?, ?, 'steam', ?, 'Horizon', ?, true, ?, now(), now())`,
 		id, userID, id, g.skipped, resolved,
 	).Exec(ctx); err != nil {
 		t.Fatalf("seed external game: %v", err)

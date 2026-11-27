@@ -461,8 +461,8 @@ func TestPendingReviewCount_Deduplicates(t *testing.T) {
 
 	// The first edition and its job_item.
 	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-prc-ed-a', ?, 'playstation-store', 'CUSA12345_00', 'Call of Duty', false, true, false, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
+		 VALUES ('eg-prc-ed-a', ?, 'playstation-store', 'CUSA12345_00', 'Call of Duty', false, true, now(), now())`,
 		userID,
 	)
 	if err != nil {
@@ -479,8 +479,8 @@ func TestPendingReviewCount_Deduplicates(t *testing.T) {
 
 	// The second edition and its job_item.
 	_, err = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-prc-ed-b', ?, 'playstation-store', 'PPSA07890_00', 'Call of Duty', false, true, false, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
+		 VALUES ('eg-prc-ed-b', ?, 'playstation-store', 'PPSA07890_00', 'Call of Duty', false, true, now(), now())`,
 		userID,
 	)
 	if err != nil {
@@ -523,14 +523,14 @@ func TestPendingReviewCount_AnyEditionInReview_CountsTheSet(t *testing.T) {
 
 	// The oldest edition: no pending_review item.
 	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-prc-ed-1', ?, 'playstation-store', 'CUSA999', 'Ratchet', false, true, false, now() - interval '1 hour', now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
+		 VALUES ('eg-prc-ed-1', ?, 'playstation-store', 'CUSA999', 'Ratchet', false, true, now() - interval '1 hour', now())`,
 		userID,
 	)
 	// A younger edition with a pending_review item: the set counts.
 	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-prc-ed-2', ?, 'playstation-store', 'PPSA999', 'Ratchet', false, true, false, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
+		 VALUES ('eg-prc-ed-2', ?, 'playstation-store', 'PPSA999', 'Ratchet', false, true, now(), now())`,
 		userID,
 	)
 	_, _ = testDB.ExecContext(context.Background(),

@@ -19,7 +19,6 @@ type ExternalGameEntry struct {
 	Platforms       []string // all platforms this product runs on
 	PlaytimeHours   float64
 	OwnershipStatus enum.OwnershipStatus
-	IsSubscription  bool
 }
 
 type filteredProductsResponse struct {
@@ -130,7 +129,6 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 			Platforms:       platforms,
 			PlaytimeHours:   0,
 			OwnershipStatus: enum.OwnershipOwned,
-			IsSubscription:  false,
 		})
 	}
 	return entries, numPages, nil

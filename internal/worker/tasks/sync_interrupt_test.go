@@ -161,8 +161,8 @@ func TestDispatchSync_RerunAfterInterrupt_NoDuplicates(t *testing.T) {
 	userID, jobID := seedGOGSyncJob(t, "pending")
 	bg := context.Background()
 	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
-		 VALUES (?, ?, 'gog', '2', 'Skipped Game', true, true, false)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
+		 VALUES (?, ?, 'gog', '2', 'Skipped Game', true, true)`,
 		uuid.NewString(), userID,
 	).Exec(bg); err != nil {
 		t.Fatalf("insert skipped game: %v", err)

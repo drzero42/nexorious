@@ -101,7 +101,6 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 					PlaytimeHours:   0,
 					Platforms:       []string{"pc-windows"},
 					OwnershipStatus: e.OwnershipStatus,
-					IsSubscription:  false,
 					SourceMetadata:  sourceMeta,
 				})
 			}

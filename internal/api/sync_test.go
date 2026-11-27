@@ -520,8 +520,8 @@ func TestPlaystationStoreDisconnect_Idempotent(t *testing.T) {
 func insertExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID, title string) {
 	t.Helper()
 	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, false, true, false, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, false, true, now(), now())`,
 		id, userID, storefront, extID, title,
 	)
 	if err != nil {
@@ -747,16 +747,16 @@ func TestUnskipGame_UnskipsEveryEdition(t *testing.T) {
 
 	// Two editions, both skipped.
 	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-unskip-game', ?, 'playstation-store', 'CUSA002', 'Ratchet', true, true, false, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
+		 VALUES ('eg-unskip-game', ?, 'playstation-store', 'CUSA002', 'Ratchet', true, true, now(), now())`,
 		userID,
 	)
 	if err != nil {
 		t.Fatalf("insert game: %v", err)
 	}
 	_, err = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-unskip-edition', ?, 'playstation-store', 'PPSA002', 'Ratchet', true, true, false, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
+		 VALUES ('eg-unskip-edition', ?, 'playstation-store', 'PPSA002', 'Ratchet', true, true, now(), now())`,
 		userID,
 	)
 	if err != nil {
@@ -1157,6 +1157,42 @@ func TestListExternalGames_AggregatesEditionPlatforms(t *testing.T) {
 	}
 	if !platformSet["playstation-4"] || !platformSet["playstation-5"] {
 		t.Errorf("expected both playstation-4 and playstation-5 in platforms, got %v", platforms)
+	}
+}
+
+func TestListExternalGames_IsSubscriptionFollowsOwnershipStatus(t *testing.T) {
+	// is_subscription is not stored (#1495): the response derives it from
+	// ownership_status, and a game without one is not a subscription.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+	userID, token := setupTagUser(t, testDB, e, "list-is-sub")
+
+	insertExternalGame(t, testDB, "eg-sub", userID, "playstation-store", "CUSA010", "Subscribed")
+	insertExternalGame(t, testDB, "eg-owned", userID, "playstation-store", "CUSA011", "Bought")
+	insertExternalGame(t, testDB, "eg-unset", userID, "playstation-store", "CUSA012", "Unclassified")
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE external_games SET ownership_status = CASE id WHEN 'eg-sub' THEN 'subscription' ELSE 'owned' END
+		 WHERE id IN ('eg-sub', 'eg-owned')`); err != nil {
+		t.Fatalf("set ownership_status: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/sync/playstation-store/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got := make(map[any]any, len(resp))
+	for _, r := range resp {
+		got[r["id"]] = r["is_subscription"]
+	}
+	want := map[any]any{"eg-sub": true, "eg-owned": false, "eg-unset": false}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("%s: is_subscription = %v, want %v", id, got[id], w)
+		}
 	}
 }
 

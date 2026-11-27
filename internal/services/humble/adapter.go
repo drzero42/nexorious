@@ -141,6 +141,5 @@ func gameEntry(sp *Subproduct) (storefrontadapter.ExternalGameEntry, bool) {
 		PlaytimeHours:   0,
 		Platforms:       slugs,
 		OwnershipStatus: enum.OwnershipOwned,
-		IsSubscription:  false,
 	}, true
 }

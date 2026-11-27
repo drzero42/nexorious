@@ -66,7 +66,6 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				PlaytimeHours:   e.PlaytimeHours,
 				Platforms:       e.Platforms,
 				OwnershipStatus: e.OwnershipStatus,
-				IsSubscription:  e.IsSubscription,
 			})
 		}
 		return onBatch(mapped)
