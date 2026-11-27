@@ -405,6 +405,17 @@ func (h *UserGamesHandler) httpError(c *echo.Context, err error) error {
 	}
 }
 
+// validateOwnership rejects an ownership_status outside enum.OwnershipStatus
+// with a 400, so every handler that accepts one answers in the same shape. nil
+// and "" pass: create paths default an empty status to owned, and an update
+// treats it as not provided.
+func validateOwnership(s *enum.OwnershipStatus) error {
+	if s == nil || *s == "" || s.Valid() {
+		return nil
+	}
+	return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+string(*s))
+}
+
 // HandleCreateUserGame handles POST /api/user-games.
 func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
@@ -444,8 +455,8 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 	// Map request platforms → usergame.PlatformInput, validating each entry.
 	plats := make([]usergame.PlatformInput, 0, len(req.Platforms))
 	for _, p := range req.Platforms {
-		if p.OwnershipStatus != nil && *p.OwnershipStatus != "" && !p.OwnershipStatus.Valid() {
-			return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+string(*p.OwnershipStatus))
+		if err := validateOwnership(p.OwnershipStatus); err != nil {
+			return err
 		}
 		var acquired *time.Time
 		if p.AcquiredDate != nil && *p.AcquiredDate != "" {
@@ -940,11 +951,8 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 
-	// Validate ownership_status if provided
-	if req.OwnershipStatus != nil && *req.OwnershipStatus != "" {
-		if !req.OwnershipStatus.Valid() {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid ownership_status: " + string(*req.OwnershipStatus)})
-		}
+	if err := validateOwnership(req.OwnershipStatus); err != nil {
+		return err
 	}
 
 	// Validate platform exists
@@ -1031,11 +1039,13 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 
-	// Validate ownership_status if provided
-	if req.OwnershipStatus != nil && *req.OwnershipStatus != "" {
-		if !req.OwnershipStatus.Valid() {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid ownership_status: " + string(*req.OwnershipStatus)})
-		}
+	if err := validateOwnership(req.OwnershipStatus); err != nil {
+		return err
+	}
+	// An empty ownership_status is "not provided": leave the stored one as it
+	// is rather than writing '' (#1493).
+	if req.OwnershipStatus != nil && *req.OwnershipStatus == "" {
+		req.OwnershipStatus = nil
 	}
 
 	// Validate platform if provided
@@ -1152,10 +1162,8 @@ func (h *UserGamesHandler) HandleMoveToLibrary(c *echo.Context) error {
 
 	platIns := make([]usergame.PlatformInput, 0, len(req.Platforms))
 	for _, p := range req.Platforms {
-		if p.OwnershipStatus != nil && *p.OwnershipStatus != "" {
-			if !p.OwnershipStatus.Valid() {
-				return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+string(*p.OwnershipStatus))
-			}
+		if err := validateOwnership(p.OwnershipStatus); err != nil {
+			return err
 		}
 		var acquiredDate *time.Time
 		if p.AcquiredDate != nil && *p.AcquiredDate != "" {

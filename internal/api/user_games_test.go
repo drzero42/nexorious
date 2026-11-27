@@ -1222,6 +1222,57 @@ func TestUpdatePlatform_InvalidOwnershipStatus(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
+	// Every user-game handler reports a bad ownership_status in the same shape.
+	var errBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if errBody["message"] != "invalid ownership_status: stolen" {
+		t.Fatalf("want message %q, got body %s", "invalid ownership_status: stolen", rec.Body.String())
+	}
+}
+
+// TestUpdatePlatform_EmptyOwnershipStatusLeavesItUnchanged guards #1493: an
+// empty ownership_status on update is "not provided", never stored as ”.
+func TestUpdatePlatform_EmptyOwnershipStatusLeavesItUnchanged(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "upd-plat-empty-own")
+	gameID := insertTestGame(t, testDB, "Update Plat Empty Ownership")
+	insertTestUserGame(t, testDB, "ug-upd-plat-empty", userID, int(gameID))
+
+	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-plat-empty/platforms", map[string]any{
+		"platform":         "pc-windows",
+		"storefront":       "steam",
+		"ownership_status": "borrowed",
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var createResp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &createResp); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	platformID := createResp["id"].(string)
+
+	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-plat-empty/platforms/%s", platformID),
+		map[string]any{"ownership_status": ""}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var stored *string
+	if err := testDB.NewSelect().TableExpr("user_game_platforms").Column("ownership_status").
+		Where("id = ?", platformID).Scan(context.Background(), &stored); err != nil {
+		t.Fatalf("reload ownership_status: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("ownership_status = NULL, want borrowed (unchanged)")
+	}
+	if *stored != "borrowed" {
+		t.Fatalf("ownership_status = %q, want borrowed (unchanged)", *stored)
+	}
 }
 
 // TestUpdatePlatform_InvalidName verifies that updating a platform row with a
