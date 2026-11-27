@@ -1762,23 +1762,22 @@ func TestCollectionStats(t *testing.T) {
 		}
 	})
 
-	// A platform with no ownership status is left out of ownership_stats
-	// (the missing-ownership-status smell reports it), matching the
-	// ownership_status list filter (#1492).
+	// A platform with no ownership status is left out of ownership_stats,
+	// as the ownership_status filter leaves it out (#1492).
 	t.Run("ownership leaves out platforms with no ownership status", func(t *testing.T) {
 		userID, token := setupUserGamesUser(t, testDB, e, "stats-ownership")
 
 		pcWindows, steam, gog := "pc-windows", "steam", "gog"
 		platforms := []struct {
 			id, userGame, storefront string
-			ownership                *string
+			ownership                *enum.OwnershipStatus
 		}{
-			{"ugp-own-a", "ug-own-a", steam, new("owned")},
+			{"ugp-own-a", "ug-own-a", steam, new(enum.OwnershipOwned)},
 			{"ugp-own-b", "ug-own-b", steam, nil},
-			{"ugp-own-c-steam", "ug-own-c", steam, new("owned")},
+			{"ugp-own-c-steam", "ug-own-c", steam, new(enum.OwnershipOwned)},
 			{"ugp-own-c-gog", "ug-own-c", gog, nil},
 			{"ugp-own-d", "ug-own-d", steam, nil},
-			{"ugp-own-e", "ug-own-e", steam, new("borrowed")},
+			{"ugp-own-e", "ug-own-e", steam, new(enum.OwnershipBorrowed)},
 		}
 		for i, ug := range []string{"ug-own-a", "ug-own-b", "ug-own-c", "ug-own-d", "ug-own-e"} {
 			g := insertTestGame(t, testDB, fmt.Sprintf("Ownership Game %d", i))
@@ -1807,8 +1806,8 @@ func TestCollectionStats(t *testing.T) {
 		for _, s := range enum.AllOwnershipStatuses() {
 			want[s] = 0
 		}
-		want["owned"] = 2
-		want["borrowed"] = 1
+		want[string(enum.OwnershipOwned)] = 2
+		want[string(enum.OwnershipBorrowed)] = 1
 		if !maps.Equal(resp.OwnershipStats, want) {
 			t.Fatalf("expected ownership_stats=%v, got %v", want, resp.OwnershipStats)
 		}

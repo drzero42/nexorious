@@ -1570,7 +1570,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 
 	// ownership_stats: a platform with no ownership status is left out, as
 	// the ownership_status filter leaves it out; the missing-ownership-status
-	// smell reports it.
+	// Check reports it.
 	type ownershipCount struct {
 		OwnershipStatus string `bun:"ownership_status"`
 		Count           int    `bun:"count"`
