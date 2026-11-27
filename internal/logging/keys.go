@@ -14,7 +14,8 @@ const (
 	KeyUserID         = "user_id"
 	KeySource         = "source"
 	KeyOperation      = "operation"
-	KeyExternalGameID = "external_game_id"
+	KeyExternalGameID = "external_game_id" // the External game's own id (external_games.id); not KeyExternalID
+	KeyExternalID     = "external_id"      // the External id: the storefront's id for the game (external_games.external_id); not KeyExternalGameID
 	KeyDurationMS     = "duration_ms"
 	KeyHost           = "host"
 	KeyEndpoint       = "endpoint"

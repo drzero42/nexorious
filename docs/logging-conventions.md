@@ -88,8 +88,9 @@ The governing rule: **if the surrounding code handles the condition and continue
 instead of string literals so keys never drift:
 
 `KeyRequestID`, `KeyJobID`, `KeyJobItemID`, `KeyRiverJobID`, `KeyTraceID`, `KeySpanID`,
-`KeyJobType`, `KeyUserID`, `KeySource`, `KeyOperation`, `KeyExternalGameID`, `KeyDurationMS`,
-`KeyHost`, `KeyEndpoint`, `KeyStatus`, `KeyRoute`, `KeyOutcome`, `KeyCategory`, `KeyErr`.
+`KeyJobType`, `KeyUserID`, `KeySource`, `KeyOperation`, `KeyExternalGameID`, `KeyExternalID`,
+`KeyDurationMS`, `KeyHost`, `KeyEndpoint`, `KeyStatus`, `KeyRoute`, `KeyOutcome`, `KeyCategory`,
+`KeyErr`, `KeyStack`, `KeyTool`.
 
 Attributes that have no constant (e.g. `"appid"`, `"backup_id"`, `"path"`) stay
 as string literals. Add a constant only when a key is used widely enough to be

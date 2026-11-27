@@ -217,7 +217,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyn
 			case err != nil:
 				// Best effort, as for every progress write: the next sync
 				// writes the game again.
-				slog.WarnContext(ctx, "dispatch_sync: write game failed", logging.KeyErr, err, "external_id", e.ExternalID, logging.Cat(logging.CategoryDB))
+				slog.WarnContext(ctx, "dispatch_sync: write game failed", logging.KeyErr, err, logging.KeyExternalID, e.ExternalID, logging.Cat(logging.CategoryDB))
 				continue
 			}
 			seenPlatforms[egID] = append(seenPlatforms[egID], platforms...)

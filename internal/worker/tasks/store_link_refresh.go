@@ -280,14 +280,14 @@ func (w *StoreLinkRefreshItemWorker) Work(ctx context.Context, job *river.Job[St
 		}
 		link, rerr := resolver.Resolve(ctx, r.ExternalID, sm)
 		if rerr != nil {
-			slog.WarnContext(ctx, "store_link_refresh: resolve failed", logging.KeySource, meta.Storefront, "external_id", r.ExternalID, logging.KeyErr, rerr, logging.Cat(logging.CategoryExternalAPI))
+			slog.WarnContext(ctx, "store_link_refresh: resolve failed", logging.KeySource, meta.Storefront, logging.KeyExternalID, r.ExternalID, logging.KeyErr, rerr, logging.Cat(logging.CategoryExternalAPI))
 			continue
 		}
 		if link == "" {
 			continue
 		}
 		if e := externalgame.SetStoreLink(ctx, w.DB, r.ID, link); e != nil {
-			slog.WarnContext(ctx, "store_link_refresh: update store_link", logging.KeyErr, e, "id", r.ID, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "store_link_refresh: update store_link", logging.KeyErr, e, logging.KeyExternalGameID, r.ID, logging.Cat(logging.CategoryDB))
 		}
 	}
 	if ctx.Err() != nil {
