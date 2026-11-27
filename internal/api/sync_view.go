@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/externalgame"
 )
 
@@ -75,7 +76,7 @@ func syncEditionSets(where string) string {
 	WITH edition_rows AS (
 		SELECT eg.id, eg.storefront, eg.external_id, eg.title, eg.resolved_igdb_id,
 		       eg.is_skipped, eg.is_available, eg.store_link,
-		       COALESCE(eg.ownership_status = 'subscription', false) AS is_subscription,
+		       COALESCE(eg.ownership_status = '` + string(enum.OwnershipSubscription) + `', false) AS is_subscription,
 		       first_value(eg.id) OVER w AS rep_id,
 		       row_number() OVER w AS rank_in_set,
 		       ni.id AS newest_item_id,
