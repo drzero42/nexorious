@@ -62,7 +62,7 @@ func (h *AdminResetHandler) HandleReset(c *echo.Context) error {
 		// Delete all external games (cascades external_game_platforms).
 		// Non-admin users' rows cascade from users, but the admin's rows must be
 		// deleted explicitly since the admin account is preserved.
-		if err := externalgame.DeleteAll(ctx, tx); err != nil {
+		if err := externalgame.DeleteForAllUsers(ctx, tx); err != nil {
 			return err
 		}
 		// Delete non-admin users (cascades user_sessions + api_keys).

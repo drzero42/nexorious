@@ -10,7 +10,7 @@
 // It also holds the library write (WriteToLibrary, WriteMatched), the ingest
 // side of a sync (Seen, AutoMatch, MatchUnderLock, PrunePlatforms,
 // MarkUnavailable) and the store-link and reset writes (SetStoreLink,
-// DeleteForStorefront, DeleteAll).
+// DeleteForStorefront, DeleteForAllUsers).
 //
 // It is the only non-test Go code that writes external_games or
 // external_game_platforms or takes an explicit row lock on them, and it links

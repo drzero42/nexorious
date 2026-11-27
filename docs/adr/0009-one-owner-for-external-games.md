@@ -14,15 +14,13 @@ Derived editions (ADR 0008) make this more than tidiness. Which games are editio
 
 ## Considered options
 
-- **Column-level ownership** (only the title, match and skip columns). Rejected: the upsert and the match writes have to be in the module anyway, and a table-level rule can be checked with a source scan, a column-level one cannot. The price is a few one-statement functions (`SetStoreLink`, `DeleteForStorefront`, `DeleteAll`, `PrunePlatforms`, `MarkUnavailable`).
+- **Column-level ownership** (only the title, match and skip columns). Rejected: the upsert and the match writes have to be in the module anyway, and a table-level rule can be checked with a source scan, a column-level one cannot. The price is a few one-statement functions (`SetStoreLink`, `DeleteForStorefront`, `DeleteForAllUsers`, `PrunePlatforms`, `MarkUnavailable`).
 - **An allowlist** for the resets. Rejected: they go through the module like everything else, so the guard has no exceptions.
 - **A lint rule or `depguard`.** Rejected: the repo has no `depguard` setup, and a test is enough to fail CI.
 
 ## Consequences
 
 - **What stays outside:** reads (the listing handlers and the sync status view keep reading the tables, with the module's edition key), the Job glue (finding the active Job, the open items of a set, item transitions) and the `changes` rows. The implicit key-share locks that foreign-key checks take on insert into `changes`, `job_items` and `user_game_platforms` are not explicit locks and stay outside too.
-- **Two guard tests in `internal/externalgame`** (`guard_test.go`):
-  - `TestOnlyThisPackageWritesExternalGames` scans every non-test Go file from `go list ./...` outside the package. It fails on a SQL string literal (a `+` concatenation is joined first) whose write keyword targets one of the tables, and on a query-builder chain that starts with a write (`NewUpdate`, `NewInsert`, …) and names `models.ExternalGame`, `models.ExternalGamePlatform` or the table names. `TestWriteGuardMatcher` and `TestWriteGuardSourceScan` pin what it catches.
-  - `TestDoesNotLinkTheJobProcess` fails if the module links `internal/joblifecycle`, `internal/worker/tasks` or `internal/api`.
-- **Known gaps:** a builder write on a typed variable (`NewUpdate().Model(&eg)`) is not caught, nor is SQL built at run time from non-literal parts. Explicit row locks are part of the rule but are not checked by the guard.
+- **Two guard tests in `internal/externalgame`.** One scans the non-test Go sources outside the package for SQL literals and query-builder chains that write the two tables, and fails on any. The other fails if the module links `internal/joblifecycle`, `internal/worker/tasks` or `internal/api`. There is no allowlist.
+- **Known gaps:** the write guard reads source, not running queries, so it misses a write it cannot see as one: a builder chain split across variables or run on a typed variable (`NewUpdate().Model(&eg)`), a table named through a placeholder (`TableExpr("?", bun.Ident("external_games"))`), and SQL built at run time. Explicit row locks are part of the rule but are not checked.
 - **Outside the guards by design:** test files (fixtures write rows directly), backup restore (it drops and reloads the whole schema), SQL migrations (not Go), and foreign-key actions. Platform rows cascade from their game, and `external_games.user_id` is `ON DELETE CASCADE`, so deleting a user removes that user's External games.
