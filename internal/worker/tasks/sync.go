@@ -417,7 +417,10 @@ func (w *DispatchSyncWorker) sweep(ctx context.Context, p DispatchSyncArgs, fetc
 		// One transaction per game (#1329): the share lock on the Job row
 		// first (the changes insert would take one through its foreign key
 		// anyway), then the game, and the 'removed' row only when this run
-		// changed it, so a second run writes nothing twice.
+		// changed it, so a second run writes nothing twice. A game is listed
+		// as removed once, by the sync that takes its last available edition
+		// away (#1443): no row while another game that counts as the same game
+		// is still available.
 		err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 			if err := shareLockActiveJob(ctx, tx, p.JobID); err != nil {
 				return err
@@ -433,8 +436,13 @@ func (w *DispatchSyncWorker) sweep(ctx context.Context, p DispatchSyncArgs, fetc
 			}
 			if _, err := tx.NewRaw(
 				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-				 VALUES (?, ?, ?, ?, 'removed', ?, now())`,
-				uuid.NewString(), p.JobID, p.UserID, eg.ID, eg.Title,
+				 SELECT ?, ?, ?, eg.id, 'removed', eg.title, now()
+				   FROM external_games eg
+				  WHERE eg.id = ?
+				    AND NOT EXISTS (
+				      SELECT 1 FROM external_games o
+				       WHERE o.id <> eg.id AND o.is_available AND `+externalgame.SameGame("o", "eg")+`)`,
+				uuid.NewString(), p.JobID, p.UserID, eg.ID,
 			).Exec(ctx); err != nil {
 				return fmt.Errorf("insert sync_change (removed): %w", err)
 			}

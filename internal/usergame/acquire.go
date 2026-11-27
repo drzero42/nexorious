@@ -186,7 +186,7 @@ func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformI
 		if existingOwnership != nil {
 			finalOwnership = *existingOwnership
 		}
-		if ownershipRank(ownership) > ownershipRankPtr(existingOwnership) {
+		if OwnershipRank(ownership) > ownershipRankPtr(existingOwnership) {
 			ch.OwnershipUpgraded = true
 			ch.OldOwnership = existingOwnership
 			o := ownership
@@ -392,7 +392,7 @@ func ownershipRankPtr(s *string) int {
 	if s == nil {
 		return 0
 	}
-	return ownershipRank(*s)
+	return OwnershipRank(*s)
 }
 
 func deref(s *string) string {

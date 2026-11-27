@@ -15,16 +15,23 @@ import (
 )
 
 // InsertSkippedChange records a skipped External game in a sync Job's diff:
-// one 'skipped' row, unless the Job already has one for the game. changes has
-// no unique constraint, and the dispatch (which may run again), the write stage
-// and a Skip can each record the same game in one Job.
+// one 'skipped' row, unless the Job already has one for an edition of the game
+// (#1443: a game is listed once, whatever editions it has). changes has no
+// unique constraint, and the dispatch (which may run again), the write stage
+// and a Skip can each record the same game in one Job. Two editions recorded at
+// the same moment can still both write a row; that rare double line is
+// accepted.
 func InsertSkippedChange(ctx context.Context, db bun.IDB, jobID, userID, externalGameID, title string) error {
 	if _, err := db.NewRaw(
 		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 		 SELECT ?, ?, ?, ?, 'skipped', ?, now()
 		 WHERE NOT EXISTS (
-		   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
-		uuid.NewString(), jobID, userID, externalGameID, title, jobID, externalGameID,
+		   SELECT 1
+		     FROM changes c
+		     JOIN external_games o ON o.id = c.external_game_id
+		     JOIN external_games me ON me.id = ?
+		    WHERE c.job_id = ? AND c.change_type = 'skipped' AND `+externalgame.SameEdition("o", "me")+`)`,
+		uuid.NewString(), jobID, userID, externalGameID, title, externalGameID, jobID,
 	).Exec(ctx); err != nil {
 		return fmt.Errorf("insert sync_change (skipped): %w", err)
 	}

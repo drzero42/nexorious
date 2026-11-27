@@ -19,6 +19,7 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/usergame"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -357,6 +358,134 @@ type syncChangeItem struct {
 	NewStatus  *string `bun:"new_status"   json:"new_status,omitempty"`
 }
 
+// changeRow is a changes row as HandleRecentJobs reads it. GameTitle is the
+// title of the library entry user_game_id points to, when it still exists.
+type changeRow struct {
+	ChangeType string  `bun:"change_type"`
+	Title      string  `bun:"title"`
+	GameTitle  *string `bun:"game_title"`
+	UserGameID *string `bun:"user_game_id"`
+	OldStatus  *string `bun:"old_status"`
+	NewStatus  *string `bun:"new_status"`
+}
+
+// changeLists are a Job's change lists, one per heading of the UI.
+type changeLists struct {
+	added, updated, removed, statusChanged, skipped, alreadyInLibrary []syncChangeItem
+}
+
+// libraryEntryLine is one line of a sync's library lists: every added,
+// status_changed and already_in_library row of one library entry (#1443).
+type libraryEntryLine struct {
+	userGameID           string
+	title                string
+	added, statusChanged bool
+	oldStatus, newStatus *string
+}
+
+// maxOwnership returns whichever of cur and s ranks higher (usergame's rank).
+func maxOwnership(cur, s *string) *string {
+	if s == nil {
+		return cur
+	}
+	if cur == nil || usergame.OwnershipRank(*s) > usergame.OwnershipRank(*cur) {
+		return s
+	}
+	return cur
+}
+
+// listChanges sorts a Job's changes rows, in order, into its change lists.
+//
+// For a sync Job (bySyncGame) each list shows a game once (ADR 0007, #1443).
+// The library lists (added, status changed, already in library) have one line
+// per library entry: the rows are grouped by user_game_id, the entry is listed
+// in the first list that applies of added, status changed and already in
+// library, shows the library entry's title, and a status change shows the
+// highest old → the highest new ownership of its rows. A row whose
+// user_game_id is NULL (its library entry was deleted) is its own line under
+// its own title. Removed and skipped rows are one per game when written, so
+// they are listed as they are. Other Jobs list one line per row.
+func listChanges(rows []changeRow, bySyncGame bool) changeLists {
+	l := changeLists{
+		added: []syncChangeItem{}, updated: []syncChangeItem{}, removed: []syncChangeItem{},
+		statusChanged: []syncChangeItem{}, skipped: []syncChangeItem{}, alreadyInLibrary: []syncChangeItem{},
+	}
+
+	// order keeps the lines in the order of their first row: a line is either
+	// a row listed as it is (item) or a library entry (entry).
+	type line struct {
+		changeType string
+		item       syncChangeItem
+		entry      *libraryEntryLine
+	}
+	var order []line
+	entries := map[string]*libraryEntryLine{}
+	for _, r := range rows {
+		isLibrary := r.ChangeType == "added" || r.ChangeType == "status_changed" || r.ChangeType == "already_in_library"
+		if bySyncGame && isLibrary && r.UserGameID != nil {
+			e, ok := entries[*r.UserGameID]
+			if !ok {
+				title := r.Title
+				if r.GameTitle != nil {
+					title = *r.GameTitle
+				}
+				e = &libraryEntryLine{userGameID: *r.UserGameID, title: title}
+				entries[*r.UserGameID] = e
+				order = append(order, line{entry: e})
+			}
+			switch r.ChangeType {
+			case "added":
+				e.added = true
+			case "status_changed":
+				e.statusChanged = true
+				e.oldStatus = maxOwnership(e.oldStatus, r.OldStatus)
+				e.newStatus = maxOwnership(e.newStatus, r.NewStatus)
+			}
+			continue
+		}
+		item := syncChangeItem{Title: r.Title}
+		switch r.ChangeType {
+		case "added", "updated", "already_in_library":
+			item.UserGameID = r.UserGameID
+		case "status_changed":
+			item.UserGameID, item.OldStatus, item.NewStatus = r.UserGameID, r.OldStatus, r.NewStatus
+		}
+		order = append(order, line{changeType: r.ChangeType, item: item})
+	}
+
+	for _, ln := range order {
+		changeType, item := ln.changeType, ln.item
+		if e := ln.entry; e != nil {
+			id := e.userGameID
+			item = syncChangeItem{Title: e.title, UserGameID: &id}
+			switch {
+			case e.added:
+				changeType = "added"
+			case e.statusChanged:
+				changeType = "status_changed"
+				item.OldStatus, item.NewStatus = e.oldStatus, e.newStatus
+			default:
+				changeType = "already_in_library"
+			}
+		}
+		switch changeType {
+		case "added":
+			l.added = append(l.added, item)
+		case "updated":
+			l.updated = append(l.updated, item)
+		case "removed":
+			l.removed = append(l.removed, item)
+		case "status_changed":
+			l.statusChanged = append(l.statusChanged, item)
+		case "skipped":
+			l.skipped = append(l.skipped, item)
+		case "already_in_library":
+			l.alreadyInLibrary = append(l.alreadyInLibrary, item)
+		}
+	}
+	return l
+}
+
 // HandleRecentJobs handles GET /api/jobs/recent (filters: source, job_type, days_back, limit).
 func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
@@ -434,58 +563,30 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			}
 		}
 
-		var allChanges []struct {
-			ChangeType string  `bun:"change_type"`
-			Title      string  `bun:"title"`
-			UserGameID *string `bun:"user_game_id"`
-			OldStatus  *string `bun:"old_status"`
-			NewStatus  *string `bun:"new_status"`
-		}
+		var allChanges []changeRow
 		if err := h.db.NewRaw(`
-			SELECT change_type, title, user_game_id, old_status, new_status
-			FROM changes
-			WHERE job_id = ?
-			ORDER BY created_at`,
+			SELECT c.change_type, c.title, g.title AS game_title, c.user_game_id, c.old_status, c.new_status
+			FROM changes c
+			LEFT JOIN user_games ug ON ug.id = c.user_game_id
+			LEFT JOIN games g ON g.id = ug.game_id
+			WHERE c.job_id = ?
+			ORDER BY c.created_at, c.id`,
 			j.ID,
 		).Scan(ctx, &allChanges); err != nil {
 			slog.ErrorContext(reqCtx, "HandleRecentJobs: failed to query changes", logging.KeyJobID, j.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			allChanges = nil
 		}
-
-		addedItems := []syncChangeItem{}
-		updatedItems := []syncChangeItem{}
-		removedItems := []syncChangeItem{}
-		statusChangedItems := []syncChangeItem{}
-		skippedItems := []syncChangeItem{}
-		alreadyInLibraryItems := []syncChangeItem{}
-		for _, sc := range allChanges {
-			switch sc.ChangeType {
-			case "added":
-				addedItems = append(addedItems, syncChangeItem{Title: sc.Title, UserGameID: sc.UserGameID})
-			case "updated":
-				updatedItems = append(updatedItems, syncChangeItem{Title: sc.Title, UserGameID: sc.UserGameID})
-			case "removed":
-				removedItems = append(removedItems, syncChangeItem{Title: sc.Title})
-			case "status_changed":
-				statusChangedItems = append(statusChangedItems, syncChangeItem{
-					Title: sc.Title, UserGameID: sc.UserGameID, OldStatus: sc.OldStatus, NewStatus: sc.NewStatus,
-				})
-			case "skipped":
-				skippedItems = append(skippedItems, syncChangeItem{Title: sc.Title})
-			case "already_in_library":
-				alreadyInLibraryItems = append(alreadyInLibraryItems, syncChangeItem{Title: sc.Title, UserGameID: sc.UserGameID})
-			}
-		}
+		lists := listChanges(allChanges, j.JobType == models.JobTypeSync)
 
 		result = append(result, jobWithChanges{
 			Job:                   j,
 			Progress:              progress,
-			AddedItems:            addedItems,
-			UpdatedItems:          updatedItems,
-			RemovedItems:          removedItems,
-			StatusChangedItems:    statusChangedItems,
-			SkippedItems:          skippedItems,
-			AlreadyInLibraryItems: alreadyInLibraryItems,
+			AddedItems:            lists.added,
+			UpdatedItems:          lists.updated,
+			RemovedItems:          lists.removed,
+			StatusChangedItems:    lists.statusChanged,
+			SkippedItems:          lists.skipped,
+			AlreadyInLibraryItems: lists.alreadyInLibrary,
 		})
 	}
 
