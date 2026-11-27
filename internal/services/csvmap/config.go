@@ -56,7 +56,7 @@ type StatusColumn struct {
 	Format     ColumnFormat               // "" scalar (default) | "json-keys"
 	ValueMap   map[string]enum.PlayStatus // normalized source value -> play_status
 	Wishlist   []string                   // source values (matched case-insensitively) that set is_wishlisted instead of a play_status
-	Precedence []string                   // normalized source values, highest priority first
+	Precedence []string                   // source values (matched case-insensitively), highest priority first
 	Default    enum.PlayStatus            // empty/unmapped -> this; "" falls back to "not_started"
 }
 
