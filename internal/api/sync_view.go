@@ -1,6 +1,10 @@
 package api
 
-import "github.com/drzero42/nexorious/internal/externalgame"
+import (
+	"fmt"
+
+	"github.com/drzero42/nexorious/internal/externalgame"
+)
 
 // SQL fragments for a storefront's External game view, shared by the list
 // (HandleListExternalGames) and the review badge (HandlePendingReviewCount) so
@@ -49,6 +53,14 @@ const syncRetryable = `(` + syncFailed + ` AND NOT ` + syncNeedsReview + `
 // module cancels them with it).
 const syncInFlight = `COALESCE(ni.status IN ('pending', 'processing') AND nj.status IN ('pending', 'processing'), false)`
 
+// syncRepresentativeOrder orders the editions of a set (External games aliased
+// a) so that the first is the set's representative: the oldest edition still
+// in the storefront library, else the oldest. The storefront list, the review
+// badge and the ignored list all pick their row by it.
+func syncRepresentativeOrder(a string) string {
+	return fmt.Sprintf("NOT %[1]s.is_available, %[1]s.created_at, %[1]s.id", a)
+}
+
 // syncEditionSets is the WITH clause shared by the list and the badge, so the
 // two group and flag the sets of editions the same way. edition_rows has one
 // row per External game eg of the user that matches where (SQL with its own
@@ -74,7 +86,7 @@ func syncEditionSets(where string) string {
 		` + syncNewestItemJoin + `
 		WHERE ` + where + `
 		WINDOW w AS (PARTITION BY ` + externalgame.EditionKey("eg") + `
-		             ORDER BY NOT eg.is_available, eg.created_at, eg.id)
+		             ORDER BY ` + syncRepresentativeOrder("eg") + `)
 	), edition_sets AS (
 		SELECT rep_id, array_agg(id) AS ids,
 		       bool_or(is_available) AS is_available,

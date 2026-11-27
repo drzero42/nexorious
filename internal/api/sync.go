@@ -675,12 +675,17 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 		return statusReadFailed("sync config", err)
 	}
 
+	// One per set of editions with an available edition (ADR 0007, #1438), so
+	// "N games" counts games, as the storefront list shows them.
 	var externalGameCount int
-	if err := h.db.NewSelect().
-		TableExpr("external_games").
-		ColumnExpr("COUNT(*)").
-		Where("user_id = ? AND storefront = ? AND is_available = true", userID, sf).
-		Scan(ctx, &externalGameCount); err != nil {
+	if err := h.db.NewRaw(
+		`SELECT COUNT(*) FROM (
+			SELECT 1 FROM external_games eg
+			WHERE eg.user_id = ? AND eg.storefront = ? AND eg.is_available
+			GROUP BY `+externalgame.EditionKey("eg")+`
+		) sets`,
+		userID, sf,
+	).Scan(ctx, &externalGameCount); err != nil {
 		return statusReadFailed("external game count", err)
 	}
 
@@ -1263,11 +1268,19 @@ func (h *SyncHandler) HandleListIgnored(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 
+	// One row per set of editions, its representative, as the storefront list
+	// shows it (ADR 0007, #1438).
+	key := externalgame.EditionKey("eg")
 	var games []models.ExternalGame
-	err := h.db.NewSelect().Model(&games).
-		Where("user_id = ? AND is_skipped = true", userID).
-		Scan(context.Background())
+	err := h.db.NewRaw(
+		`SELECT DISTINCT ON (`+key+`) eg.*
+		FROM external_games eg
+		WHERE eg.user_id = ? AND eg.is_skipped
+		ORDER BY `+key+`, `+syncRepresentativeOrder("eg"),
+		userID,
+	).Scan(c.Request().Context(), &games)
 	if err != nil {
+		slog.ErrorContext(c.Request().Context(), "sync: list ignored failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list ignored games")
 	}
 	if games == nil {

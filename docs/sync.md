@@ -217,13 +217,13 @@ Before searching, titles are normalised (trademark symbols removed, diacritics f
 
 ### Editions
 
-Some storefronts give the platform releases of one game separate identifiers: PSN gives the PS4 and PS5 versions of a game distinct title IDs. Each arrives as its own `external_games` row. The **editions** of an External game are the External games of the same user and storefront that have the same title, the same match (`resolved_igdb_id`) and the same skip (`is_skipped`). Nothing stores this: two games are editions for as long as they agree, and stop being editions when they differ. Every edition has its own match, its own skip and its own job item. The key is defined once, in `internal/externalgame` (`SameEdition`, `EditionKey`), and the lock, the storefront list, the review badge and the lookup of a set's open items are all built from it ([ADR 0008](adr/0008-derived-editions.md)).
+Some storefronts give the platform releases of one game separate identifiers: PSN gives the PS4 and PS5 versions of a game distinct title IDs. Each arrives as its own `external_games` row. The **editions** of an External game are the External games of the same user and storefront that have the same title, the same match (`resolved_igdb_id`) and the same skip (`is_skipped`). Nothing stores this: two games are editions for as long as they agree, and stop being editions when they differ. Every edition has its own match, its own skip and its own job item. The key is defined once, in `internal/externalgame` (`SameEdition`, `EditionKey`), and the lock, the storefront list, the review badge, the ignored list, the sync status count and the lookup of a set's open items are all built from it ([ADR 0008](adr/0008-derived-editions.md)).
 
 Four rules make editions behave as one game:
 
 1. **Precedent (Stage 2).** A game without a decision (unmatched and not skipped) takes the match and the skip of the oldest same-title game that has one (`created_at`, then id), and is not searched. The copy is made once; afterwards the game stands on its own. A same-title game on another storefront decides nothing, nor does one without a decision. The other game is read `FOR SHARE`, so a Rematch, Skip or Unskip in progress on it is waited for. Precedent applies whenever a game has no decision, not only when it is new, so an undecided game beside a decided one takes the decision at the next sync. A new edition of a skipped game gets a job item and takes the skip when its match worker runs; its item then ends `skipped` and nothing is written. If the Job fails or is cancelled in between, the game shows as its own unmatched entry until the next sync gives it the skip.
 2. **Fan-out.** Rematch, Skip and Unskip act on every edition of the game they are given, through any edition's id, and lock the editions in id order (see [User Interactions](#user-interactions)). With `only_this_edition=true` they act on the given edition alone (see [One edition alone](#one-edition-alone)).
-3. **One row.** The storefront list and the review badge show a set of editions as one entry (see [The storefront view](#the-storefront-view)).
+3. **One row.** The storefront list, the review badge, the ignored list and the sync status count show a set of editions as one entry (see [The storefront view](#the-storefront-view)).
 4. **Settle (Stage 2).** Two editions are searched with different platform filters, so one can match with confidence while the other goes to review. When a search matches a game with confidence, its same-title games of that sync waiting in Pending review without a decision take that match by precedent, are written to the library, and their items are completed, in the Job lifecycle module's transaction for the Job. Settle only gives a match: when the oldest decision of the title is a skip, the game is left as it is and its item stays in review. Settle is best effort: it runs after the matched edition's transition has committed, and a failure is logged and leaves the items in review.
 
 Two undecided editions searched in the same sync both end in Pending review if neither search is confident: one entry in the list, and one Rematch completes both items.
@@ -339,7 +339,7 @@ The External Games list reads a game's status from its **newest** item (`ORDER B
 
 The list has **one entry per set of editions**. Each entry has an `editions` array, one element per edition in id order, with its `id`, `external_id`, `platforms`, `store_url` and `is_available`: the ids a decision on one edition alone is sent to. Each edition's status comes from its own newest item by the rules above; the entry needs review, has failed, or is hidden as in flight when any edition does. The entry is its representative: the oldest edition still in the storefront library, else the oldest. It is available when any edition is, and its platforms are those of all editions. `failed_job_item_id` is the newest item of the first retryable edition, only while the entry shows as failed; retrying it leaves a second failed edition showing as failed, and "Retry all" retries them all.
 
-The orphan fields (`has_user_game`, `user_game_id`, `user_game_other_platform_count`) are per set, with the same definition as the rematch's orphan check: links of any edition, "other" meaning outside the set. The pending-review badge counts sync review per set of editions: a set counts when any edition needs review and none is in flight. `GET /api/sync/ignored` and the sync status count still show one entry per edition (#1438).
+The orphan fields (`has_user_game`, `user_game_id`, `user_game_other_platform_count`) are per set, with the same definition as the rematch's orphan check: links of any edition, "other" meaning outside the set. The pending-review badge counts sync review per set of editions: a set counts when any edition needs review and none is in flight. `GET /api/sync/ignored` returns one row per skipped set, its representative by the same rule, and the sync status's `external_game_count` counts the sets with an available edition. Job progress and the sync notification counts are numbers of Job items, one per edition; the sync change lists and the `sync.diff` notification show a game once (see [Sync Changes](#sync-changes)).
 
 ---
 
@@ -515,7 +515,7 @@ The sync UI has two levels: a hub page that shows all storefronts at a glance, a
 
 ### Navigation
 
-The global navigation shows an aggregate count of `pending_review` items across all storefronts. Tapping it navigates to the sync hub page.
+The global navigation shows a pending-review badge. Its sync part counts the sets of editions in review across all storefronts (`GET /api/jobs/pending-review-count`). Tapping it navigates to the sync hub page.
 
 ### Sync Hub Page
 
@@ -524,7 +524,7 @@ A grid of storefront cards — one per supported storefront. Each card shows:
 - Platform name and icon; the name links to that storefront's detail page
 - Connection status (Connected / Credentials Error / Not Configured)
 - Last synced timestamp
-- Count of external games currently available on that storefront (`is_available = true`), including skipped games; shown as a simple number (e.g. "482 games")
+- Count of games currently available on that storefront: the sets of editions with an edition that is `is_available = true`, including skipped games; shown as a simple number (e.g. "482 games")
 - Pending review count badge; clicking it navigates to that storefront's detail page, anchoring to the Pending Review section where possible
 - A Sync Now button to trigger a manual sync without navigating into the detail page
 
@@ -547,7 +547,7 @@ Contains:
 
 Shown only while a sync job is active. Displays:
 
-- Total number of games found on the storefront so far; during Stage 1 this count grows as games are fetched; once Stage 1 completes it is fixed for that run
+- Total number of Job items so far, one per edition; during Stage 1 this count grows as items are added; once Stage 1 completes it is fixed for that run
 - Live counts per state: matched, needs review, skipped, failed, and still processing
 
 When the job reaches a terminal state the progress box collapses to a single summary line showing the outcome and timestamp, or disappears entirely.

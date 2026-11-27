@@ -19,9 +19,9 @@ import (
 // as long as they agree.
 //
 // The key is defined here once, as columns, and every query that needs it (the
-// lock below, the storefront list, the review badge, the lookup of a set's open
-// items) is built from these helpers, so they cannot disagree on which games
-// form a set.
+// lock below, the storefront list, the review badge, the ignored list, the
+// sync status count, the lookup of a set's open items) is built from these
+// helpers, so they cannot disagree on which games form a set.
 
 // keyColumn is a column of the key, with its SQL type.
 type keyColumn struct{ name, sqlType string }

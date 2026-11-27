@@ -257,6 +257,55 @@ func TestSyncStatus_ReflectsActiveJob(t *testing.T) {
 	}
 }
 
+// external_game_count counts games, not editions (ADR 0007, #1438): the sets
+// of editions with an available edition.
+func TestSyncStatus_CountsSetsOfEditions(t *testing.T) {
+	cases := []struct {
+		name string
+		// setup runs after eg-a (older) and eg-b (newer), both "Astro Bot",
+		// both available, are inserted.
+		setup string
+		want  float64
+	}{
+		{"two available editions", ``, 1},
+		{"only the newer edition available", `UPDATE external_games SET is_available = false WHERE id = 'eg-a'`, 1},
+		{"no edition available", `UPDATE external_games SET is_available = false`, 0},
+		{"same title on different matches", `UPDATE external_games SET resolved_igdb_id = CASE id WHEN 'eg-a' THEN 9101 ELSE 9102 END`, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+			userID, token := setupTagUser(t, testDB, e, "stat-editions")
+			insertTestGameWithID(t, testDB, 9101, "Astro Bot")
+			insertTestGameWithID(t, testDB, 9102, "Astro Bot (2024)")
+			insertExternalGame(t, testDB, "eg-a", userID, "playstation-store", "CUSA1", "Astro Bot")
+			insertExternalGame(t, testDB, "eg-b", userID, "playstation-store", "PPSA1", "Astro Bot")
+			ctx := context.Background()
+			if _, err := testDB.ExecContext(ctx, `UPDATE external_games SET created_at = now() - interval '1 day' WHERE id = 'eg-a'`); err != nil {
+				t.Fatal(err)
+			}
+			if tc.setup != "" {
+				if _, err := testDB.ExecContext(ctx, tc.setup); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			rec := getAuth(t, e, "/api/sync/playstation-store/status", token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status: got %d %s, want 200", rec.Code, rec.Body.String())
+			}
+			var status map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+				t.Fatalf("unmarshal status: %v", err)
+			}
+			if got := status["external_game_count"]; got != tc.want {
+				t.Fatalf("external_game_count = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // A status read that fails must not answer as an idle store: the store page
 // would then re-enable Sync Now and treat a running sync as ended.
 func TestSyncStatus_DatabaseErrorIs500(t *testing.T) {
@@ -547,6 +596,44 @@ func TestIgnored_SkipAndUnskip(t *testing.T) {
 	}
 	if isSkipped {
 		t.Fatal("expected is_skipped=false after unskip")
+	}
+}
+
+// The ignored list shows a skipped game once, whatever editions it has
+// (ADR 0007, #1438): its row is the set's representative, the oldest edition
+// still in the storefront library, else the oldest.
+func TestIgnored_ListsASetOfEditionsOnce(t *testing.T) {
+	for _, skipVia := range []string{"eg-ps4", "eg-ps5"} {
+		t.Run("skip via "+skipVia, func(t *testing.T) {
+			truncateAllTables(t)
+			e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+			userID, token := setupTagUser(t, testDB, e, "ign-editions")
+			insertExternalGame(t, testDB, "eg-ps4", userID, "playstation-store", "CUSA1", "Astro Bot")
+			insertExternalGame(t, testDB, "eg-ps5", userID, "playstation-store", "PPSA1", "Astro Bot")
+			// The PS4 edition is older but has left the library, so the PS5
+			// edition represents the set.
+			if _, err := testDB.ExecContext(context.Background(),
+				`UPDATE external_games SET created_at = now() - interval '1 day', is_available = false WHERE id = 'eg-ps4'`,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			if rec := postJSONAuth(t, e, "/api/sync/ignored/"+skipVia, nil, token); rec.Code != http.StatusNoContent {
+				t.Fatalf("skip: got %d %s, want 204", rec.Code, rec.Body.String())
+			}
+
+			rec := getAuth(t, e, "/api/sync/ignored", token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("list: got %d, want 200", rec.Code)
+			}
+			var resp []map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal resp: %v", err)
+			}
+			if len(resp) != 1 || resp[0]["id"] != "eg-ps5" {
+				t.Fatalf("expected one row, eg-ps5, got %v", resp)
+			}
+		})
 	}
 }
 
