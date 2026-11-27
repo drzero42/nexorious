@@ -8,6 +8,14 @@
 // separate, plain role that owns the database for the application to use
 // instead (#1357). CheckConnectedRole reports when the application is
 // connected as a privileged role anyway.
+//
+// EnsureAppRole runs as `nexorious ensure-db-role` (the Compose db-role
+// service and the Helm db-role initContainer), connected as the bundled
+// PostgreSQL's bootstrap superuser. It makes nexorious_app a non-superuser
+// owner of the database and every object in public, idempotently and one
+// object at a time: REASSIGN OWNED is refused for the bootstrap superuser,
+// which also cannot be demoted. CheckConnectedRole backs the startup warning
+// and the admin-only GET /api/admin/health-warnings banner.
 package dbrole
 
 import (

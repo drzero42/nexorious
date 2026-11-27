@@ -12,6 +12,12 @@
 // MarkUnavailable) and the store-link and reset writes (SetStoreLink,
 // DeleteForStorefront, DeleteForAllUsers).
 //
+// The SQL condition builders (SameTitle, SameEdition, SameGame, Undecided,
+// EditionKey) are the one definition of those relations: the lock, the
+// storefront list, the review badge and the open-item lookups are built from
+// them, so a query never spells the columns out again. The open-item lookups
+// only read; item status stays with internal/joblifecycle.
+//
 // It is the only non-test Go code that writes external_games or
 // external_game_platforms or takes an explicit row lock on them, and it links
 // neither internal/joblifecycle, internal/worker/tasks nor internal/api

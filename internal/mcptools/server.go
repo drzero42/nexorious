@@ -4,7 +4,28 @@
 // internal/clientops, so the CLI and MCP front-ends cannot drift.
 //
 // The package is transport-agnostic: callers bind the returned server to stdio
-// (nexctl mcp serve) or an HTTP handler.
+// (nexctl mcp serve) or an HTTP handler. The server serves it at /api/mcp
+// (internal/api/mcp.go).
+//
+// The tools mirror the game, pool, tag, sync and doctor trees
+// (library_smells_*). Left out on purpose: sync_connect, whose secrets would
+// pass through an agent, and the admin, import, export, backup and config
+// groups.
+//
+// NewServer takes a per-request KeyFunc: every REST sub-call reuses the
+// caller's API key, so it is authenticated and scope-checked again on its own
+// route. Each tool declares its scope in toolScopes (scope.go); addTool panics
+// for a tool without an entry (TestEveryToolDeclaresScope). A read-scoped key
+// gets a server that never registered the write tools.
+//
+// Tools return a concise JSON projection (human fields plus the id, for
+// chaining). An ambiguous ref returns a candidates list and changes nothing,
+// for the agent to disambiguate; with only_this_edition, sync_resolve and
+// sync_skip return one flat candidate per edition (#1452). REST errors go
+// through toolError (a 403 tells the agent to mint a write-scoped key).
+//
+// Tests run in-process over the SDK's mcp.NewInMemoryTransports against an
+// httptest REST stub (tools_test.go).
 package mcptools
 
 import (
