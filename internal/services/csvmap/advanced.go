@@ -5,13 +5,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
 
 // extractStatusFlags resolves play_status from ordered boolean-flag columns: the
 // first rule (in order) whose column holds a truthy value wins; otherwise Default
 // ("not_started" when Default is empty). Replaces darkadia.resolvePlayStatus.
-func extractStatusFlags(rec []string, idx map[string]int, sf *StatusFlags) string {
+func extractStatusFlags(rec []string, idx map[string]int, sf *StatusFlags) enum.PlayStatus {
 	for _, rule := range sf.Rules {
 		v := normKey(cell(rec, idx, rule.Column))
 		if v == "" {
@@ -26,7 +27,7 @@ func extractStatusFlags(rec []string, idx map[string]int, sf *StatusFlags) strin
 	if sf.Default != "" {
 		return sf.Default
 	}
-	return psNotStarted
+	return enum.PlayStatusNotStarted
 }
 
 // parseHMM parses Darkadia "H:MM" playtime into hours. "148:00" -> 148.0,

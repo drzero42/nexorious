@@ -3,6 +3,8 @@ package csvmap
 import (
 	"reflect"
 	"testing"
+
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 func TestGuessColumns_ExactAndContains(t *testing.T) {
@@ -97,7 +99,7 @@ func TestGuessRatingScale(t *testing.T) {
 
 func TestGuessStatusValueMap(t *testing.T) {
 	got := GuessStatusValueMap([]string{"Beaten", "Playing", "Backlog", "Dropped", "Weird Value"})
-	want := map[string]string{
+	want := map[string]enum.PlayStatus{
 		"Beaten":      "completed",
 		"Playing":     "in_progress",
 		"Backlog":     "not_started",

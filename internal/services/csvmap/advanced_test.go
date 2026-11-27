@@ -1,6 +1,10 @@
 package csvmap
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/drzero42/nexorious/internal/enum"
+)
 
 func TestExtractStatusFlags_PrecedenceAndDefault(t *testing.T) {
 	sf := &StatusFlags{
@@ -25,7 +29,7 @@ func TestExtractStatusFlags_PrecedenceAndDefault(t *testing.T) {
 	}
 	cases := []struct {
 		on   []string
-		want string
+		want enum.PlayStatus
 	}{
 		{nil, "not_started"},
 		{[]string{"Played"}, "shelved"},

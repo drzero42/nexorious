@@ -150,3 +150,41 @@ func TestDetectPreset_NoMatchReturnsNil(t *testing.T) {
 		t.Fatalf("detectPreset = %+v, want nil for an unrecognised header", got)
 	}
 }
+
+// A value_map target of "wishlisted" is not a play status: it marks the source
+// value as wishlisted, as it always has for API and nexctl callers.
+func TestBuildCSVConfig_WishlistedTarget(t *testing.T) {
+	var m csvMapping
+	m.Columns.Title = "Name"
+	m.Status.Column = "Shelf"
+	m.Status.ValueMap = map[string]string{" Wish List ": "wishlisted", "Beaten": "completed"}
+
+	cfg, err := buildCSVConfig(m)
+	if err != nil {
+		t.Fatalf("buildCSVConfig: %v", err)
+	}
+	sc := cfg.Status.Column
+	if len(sc.Wishlist) != 1 || sc.Wishlist[0] != "wish list" {
+		t.Errorf("Wishlist = %q, want [\"wish list\"]", sc.Wishlist)
+	}
+	if _, ok := sc.ValueMap["wish list"]; ok {
+		t.Errorf("wishlisted value leaked into ValueMap: %+v", sc.ValueMap)
+	}
+	if sc.ValueMap["beaten"] != "completed" {
+		t.Errorf("ValueMap = %+v, want beaten -> completed", sc.ValueMap)
+	}
+}
+
+// A target that is neither a play status nor "wishlisted" rejects the mapping
+// before the import starts, instead of importing those games as not_started.
+func TestBuildCSVConfig_InvalidPlayStatus(t *testing.T) {
+	for _, target := range []string{"compelted", "", "Completed"} {
+		var m csvMapping
+		m.Columns.Title = "Name"
+		m.Status.Column = "Status"
+		m.Status.ValueMap = map[string]string{"Beaten": target}
+		if _, err := buildCSVConfig(m); err == nil {
+			t.Errorf("target %q: expected an error, got nil", target)
+		}
+	}
+}

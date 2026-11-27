@@ -245,6 +245,26 @@ func TestImportCSV_MissingTitleMapping(t *testing.T) {
 	}
 }
 
+func TestImportCSV_InvalidPlayStatus_400(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-badstatus")
+
+	mapping := validMapping(t, map[string]string{"Beaten": "compelted"})
+	rec := postCSVImport(t, e, "/api/import/csv", "lib.csv", []byte("Name,Status\nCeleste,Beaten\n"), mapping, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+	}
+	var jobs int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs`).Scan(context.Background(), &jobs); err != nil {
+		t.Fatalf("count jobs: %v", err)
+	}
+	if jobs != 0 {
+		t.Errorf("jobs = %d, want 0 (rejected before the import starts)", jobs)
+	}
+}
+
 func TestImportCSV_NoDataRows(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
