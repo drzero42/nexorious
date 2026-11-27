@@ -352,21 +352,21 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 // updated, status_changed, already_in_library); the frontend renders the title
 // as a link to /games/$id when present and as plain text otherwise.
 type syncChangeItem struct {
-	Title      string  `bun:"title"        json:"title"`
-	UserGameID *string `bun:"user_game_id" json:"user_game_id,omitempty"`
-	OldStatus  *string `bun:"old_status"   json:"old_status,omitempty"`
-	NewStatus  *string `bun:"new_status"   json:"new_status,omitempty"`
+	Title      string                `bun:"title"        json:"title"`
+	UserGameID *string               `bun:"user_game_id" json:"user_game_id,omitempty"`
+	OldStatus  *enum.OwnershipStatus `bun:"old_status"   json:"old_status,omitempty"`
+	NewStatus  *enum.OwnershipStatus `bun:"new_status"   json:"new_status,omitempty"`
 }
 
 // changeRow is a changes row as HandleRecentJobs reads it. GameTitle is the
 // title of the library entry user_game_id points to, when it still exists.
 type changeRow struct {
-	ChangeType enum.ChangeType `bun:"change_type"`
-	Title      string          `bun:"title"`
-	GameTitle  *string         `bun:"game_title"`
-	UserGameID *string         `bun:"user_game_id"`
-	OldStatus  *string         `bun:"old_status"`
-	NewStatus  *string         `bun:"new_status"`
+	ChangeType enum.ChangeType       `bun:"change_type"`
+	Title      string                `bun:"title"`
+	GameTitle  *string               `bun:"game_title"`
+	UserGameID *string               `bun:"user_game_id"`
+	OldStatus  *enum.OwnershipStatus `bun:"old_status"`
+	NewStatus  *enum.OwnershipStatus `bun:"new_status"`
 }
 
 // changeLists are a Job's change lists, one per heading of the UI.
@@ -380,15 +380,15 @@ type libraryEntryLine struct {
 	userGameID           string
 	title                string
 	added, statusChanged bool
-	oldStatus, newStatus *string
+	oldStatus, newStatus *enum.OwnershipStatus
 }
 
 // maxOwnership returns whichever of cur and s ranks higher.
-func maxOwnership(cur, s *string) *string {
+func maxOwnership(cur, s *enum.OwnershipStatus) *enum.OwnershipStatus {
 	if s == nil {
 		return cur
 	}
-	if cur == nil || enum.OwnershipStatus(*s).Rank() > enum.OwnershipStatus(*cur).Rank() {
+	if cur == nil || s.Rank() > cur.Rank() {
 		return s
 	}
 	return cur

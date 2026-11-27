@@ -5,8 +5,6 @@ import (
 	"time"
 
 	"github.com/uptrace/bun"
-
-	"github.com/drzero42/nexorious/internal/enum"
 )
 
 type Game struct {
@@ -232,23 +230,6 @@ type UserSyncConfig struct {
 	CredentialsError      bool       `bun:"credentials_error"       json:"-"`
 	CreatedAt             time.Time  `bun:"created_at,nullzero,notnull"      json:"created_at"`
 	UpdatedAt             time.Time  `bun:"updated_at,nullzero,notnull"      json:"updated_at"`
-}
-
-// JobChange mirrors the changes table — one row per library outcome per job run
-// (sync, import). The job's type is derived by joining jobs.job_type.
-type JobChange struct {
-	bun.BaseModel `bun:"table:changes"`
-
-	ID             string          `bun:"id,pk"               json:"id"`
-	JobID          string          `bun:"job_id,notnull"      json:"job_id"`
-	UserID         string          `bun:"user_id,notnull"     json:"user_id"`
-	ExternalGameID *string         `bun:"external_game_id"    json:"external_game_id"`
-	UserGameID     *string         `bun:"user_game_id"        json:"user_game_id"`
-	ChangeType     enum.ChangeType `bun:"change_type,notnull" json:"change_type"`
-	Title          string          `bun:"title,notnull"       json:"title"`
-	OldStatus      *string         `bun:"old_status"          json:"old_status"`
-	NewStatus      *string         `bun:"new_status"          json:"new_status"`
-	CreatedAt      time.Time       `bun:"created_at,nullzero,notnull"  json:"created_at"`
 }
 
 // UserSettings mirrors the user_settings table — one row per user, lazily
