@@ -17,6 +17,13 @@
 // the running ones through River, and the startup step ReclaimRunning moves
 // River jobs a dead process left running back to a state River acts on.
 //
+// Some operations belong to one caller. StartDispatch, AddItems, AddNewItems
+// and MarkDispatched are for the dispatch owner; Owns, EndItem, NextStage and
+// AwaitReview for the item owner. Resolve and Skip are the review decisions;
+// SkipItems and CompleteItems carry a sync's own writes in a Selector. A
+// refused transition is typed (IsRefusal), and a worker that gets one exits
+// cleanly. Ending effects (notifications) run in EffectsWorker.
+//
 // Kinds are registered on an instance, not globally, so tests register fake
 // kinds. The module does not import the workers: a kind tells it which River
 // args run its dispatch and its items.

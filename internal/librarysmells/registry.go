@@ -1,5 +1,17 @@
 // Package librarysmells detects data-quality issues ("library smells") in a
 // user's game collection and, for a subset, applies one-click fixes (#1144).
+//
+// Each Check in the registry is keyed by slug and finds its flagged games with
+// a read-only query anti-joined against smell_ignores (the user's ignores).
+// Checks on platform rows flag each game once (EXISTS over
+// user_game_platforms). A fixable check's Apply first re-validates which of the
+// requested games are still flagged, then fixes them through internal/usergame.
+// The API serves library health at /api/library/smells.
+//
+// A check must not infer a terminal status from play time: the removed
+// beat-but-not-marked check (hours_played ≥ howlongtobeat_main → completed)
+// misfired on co-op, replayed and idle-inflated games, and its fix took them
+// out of pools (#1145).
 package librarysmells
 
 import (

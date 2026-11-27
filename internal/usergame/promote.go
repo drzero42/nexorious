@@ -1,5 +1,3 @@
-// Package usergame holds shared user-game business rules invoked from the
-// usergame operations, so the logic lives in one place.
 package usergame
 
 import (

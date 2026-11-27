@@ -21,6 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Type check (frontend)    | `npm run check`  (from `ui/frontend/`)                   |
 | Dead-code check (frontend)| `npm run knip`   (from `ui/frontend/`)                   |
 | Run frontend tests       | `npm run test`   (from `ui/frontend/`)                   |
+| Run one frontend test    | `npm run test game-card.test.tsx` (from `ui/frontend/`)  |
 | Lint Go                  | `golangci-lint run`                                      |
 
 ### Environment Validation
@@ -34,7 +35,7 @@ make --version
 ### Development Environment
 Uses devenv for a reproducible shell (Go 1.27, golangci-lint, make, Node 26, TypeScript).
 
-> **Run commands directly** — `go`, `make`, `npm`, etc. are all on PATH in the devenv-activated shell. Only use `devenv shell -- <command>` when a tool is genuinely not available in the current environment. Never use `devenv shell --command`; the correct separator is `--`.
+> **Run commands directly** — `go`, `make`, `npm`, etc. are all on PATH in the devenv-activated shell. Only use `devenv shell -- <command>` when a tool is genuinely not available in the current environment. The separator is `--` (never `devenv shell --command`).
 
 ### Build
 ```bash
@@ -43,7 +44,7 @@ make frontend    # builds React SPA into ui/frontend/dist/
 make build       # compiles the Go binary
 ```
 
-`ui/frontend/dist/` is gitignored and must be populated by `make frontend` before `go build`. The Go binary embeds five UI dirs via `//go:embed`: `all:frontend/dist`, `all:migrate`, `db-error`, `setup`, and `all:shared` (see `ui/ui.go`).
+`ui/frontend/dist/` is gitignored and must be populated by `make frontend` before `go build`; the binary embeds it and the other UI dirs (`ui/ui.go`).
 
 ### Initial Setup
 ```bash
@@ -58,34 +59,30 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 
 ## Project Structure
 
-- `cmd/nexorious/` — server entry point, wires config/db/echo/workers (auth/account commands and the REST-client setup command have moved to `nexctl`; the server binary keeps the DB-direct migrate command)
-- `cmd/nexctl/` — REST client binary; `account` (login/logout/whoami/api-key; `login --scope read|write` picks the stored key's scope, default write; with `--profile <name>`, login/logout touch only that profile and never switch the current one — `clicfg.StoreProfile`), `profile`, `game` (list/show/add/edit/acquire/rm/stats/filters), `tag` (list/create/rename/rm), `pool` (list/show/create/edit/rm/add/remove/queue/reorder), `sync` (status/connect/disconnect/config/run/review/resolve/skip/retry/reset), `job` (list/show/retry/cancel), `import` (sources/nexorious/csv/run/review/resolve/skip), `export`, `backup` (list/create/rm/download/restore/schedule[set]), `admin` (user list/show/create/enable/disable/set-admin/passwd/rm + reset), `config` (get/set + notify channel/sub/test-url/events), `mcp` (config/serve), `doctor` (library-health smells: summary/--check/apply/ignore/restore/ignored), `setup` (admin/backups/restore — unauthenticated pre-bootstrap), and `migrate` (run/status — HTTP-driven against a running server) commands. Commands call the user-games/IGDB/tags/pools/sync/jobs/import/export REST API via `cliclient`; `game add`/`game edit` are multi-call orchestrations (IGDB search→import→create; ordered platform/hours/status/fields/tags updates); `game stats` is a read-only wrapper over `GET /api/user-games/stats` (`CollectionStats`) — sectioned table by default, `--json` for the raw record, `-q` emits just `total_games`. `game filters` is a read-only filter-discovery command (sectioned table / `--json` / `-q` flat values): play- and ownership-statuses come from `internal/enum` (stable enums, imported directly — `AllPlayStatuses`/`AllOwnershipStatuses`), storefronts from `GET /api/platforms/storefronts/simple-list`, and genres/game-modes/themes/perspectives from `GET /api/user-games/filter-options` (only changeable/server-owned values are fetched; tags and platforms are excluded — they have their own commands). Pools key off `user_game_id` (game refs resolve via `resolveUserGameRef`); `pool queue` bulk-adds then sets the declarative order; `pool create --filter` takes a raw JSON `{"filters":[…]}` string. Sync's storefront slug set is registry-driven via `resolveStorefront` (no hardcoded list); `sync connect` builds per-storefront credential bodies (secrets prompted no-echo); `sync review` is interactive-only (off-TTY use `sync resolve`/`sync skip`); match-review there is the **sync external-games** flow (rematch/skip). `sync resolve`/`sync skip --only-this-edition` decide one edition alone (#1452): the request goes to the edition's id (from the list entry's `editions`), never the entry's; a title of an entry with several editions, or of several entries, is ambiguous and the picker/error lists editions (id, storefront id, platforms). `sync review` stays a decision on the set; there is no unskip command. Imports are multipart uploads via `cliclient.doBearerMultipart` (50 MB server cap): `import nexorious` (JSON round-trip), `import csv` (no flags → **auto mode**: server detects a preset by header signature, else builds a data-refined guessed mapping, enqueues, and prints what it chose; `--inspect` shows headers/suggested-mapping/detected-preset; `--preset` for an explicit preset; manual `--*-col`/`--status-map`/`--rating-scale` flags assemble the server `mapping` JSON — preset and manual are mutually exclusive; `format=generic` with no mapping still 400 "missing mapping field"), and `import run <source>` (registry-validated via `resolveImportSource`, same pattern as `resolveStorefront`; `nexorious`/`csv` are NOT registry sources — dedicated endpoints). CSV presets are only listable via `csv --inspect` (no standalone REST endpoint), so they are never hardcoded. `import review`/`resolve`/`skip` is the **import job-item** match-review flow (paginates all `pending_review` items, live IGDB search→`/api/job-items/:id/resolve|skip`), disjoint from sync review. `export [--format json|csv] [--out FILE|-] [--no-wait]` triggers an async export job, polls it to terminal (`Job.IsTerminal`), then streams the download to a path / stdout / default `nexorious_export_<id>.<ext>`; export is whole-library only (no server-side filter, so no `--filter`). `job`/`sync`/`import` confirm destructive ops (cancel/disconnect/reset/skip) via the persistent `-y`. `backup`/`admin`/`config` (Phase 6) round out the operator + per-user-config surface: `backup` wraps the admin `/api/admin/backups/*` endpoints — `create` is synchronous (`create --download [--out]` then downloads the new backup through the same `saveBackup` helper as `download`; status lines go to stderr when stdout carries the archive, id or JSON), `download` mirrors `export`'s `--out`/`-`/default (`backup-<id>.tar.gz`), `restore` takes exactly one of `<id>` or `--file` (multipart upload) with a loud destructive confirm, and `schedule set` GETs the current `BackupConfig` then overlays only `Changed()` flags (`--frequency`/`--time`/`--day`/`--retention-mode`/`--retention-value`) so a full valid struct is always PUT; the **authenticated** `/api/admin/backups/*` surface; the **unauthenticated** setup-zone restore (`/api/auth/setup/*`, pre-bootstrap) is the separate `setup` group. `admin` (`/api/auth/admin/*`) **requires an admin user's key** (API keys carry no admin scope — a non-admin key gets a 403 surfaced verbatim; there is no client-side admin gate); `user rm` prints the deletion-impact before confirming, `admin reset` is the loudest confirm, and self-deactivation/self-demotion/self-deletion are refused server-side (400, surfaced — never pre-checked client-side). `config get/set` is user settings (`--deal-region`, server-validated → 422 surfaced); `config notify` nests channels (secret Shoutrrr URLs prompted no-echo, **never positional**, and never returned by the API so never printed), `sub` (list/set/reset subscriptions), `test-url`, and `events`. `mcp` bridges stdio-only MCP clients to the server's `POST /api/mcp` (#1262). The MCP Go SDK (`modelcontextprotocol/go-sdk`) is a **server-only** dependency: `nexctl` must never link it or `internal/mcptools` (guarded by `TestNexctlDoesNotLinkMCPSDK`). `mcp serve` is a plain JSON-RPC pump: it relays each stdin line to `/api/mcp` with the profile's key via `cliclient.PostMCP` and writes the reply as one stdout line. It never parses the protocol beyond peeking at `id`, so a server protocol upgrade never needs a nexctl upgrade. HTTP failures become JSON-RPC errors with the original `id`; 404/405 means the server has no MCP endpoint (`MCP_ENABLED=false` or too old). `mcp config` prints a stdio stanza and a native HTTP stanza (URL + `Authorization` header), with a stderr warning that the output contains the key. `doctor` is the CLI/MCP front-end over the library-smells REST API (`/api/library/smells`, engine in `internal/librarysmells`): default summary table (id/check/tier/fixable/count), `--check <id>` lists flagged items, `apply <check> [refs…]` fixes auto-fixable checks (no refs = all flagged; confirms unless `-y`; server 422s a non-fixable check), and `ignore`/`restore`/`ignored <check>` manage per-item dismissals. Refs resolve via `resolveUserGameRef` (over `clientops.FindUserGamesByRef`). Registry is **9 checks, 3 auto-fixable** (`beat-but-not-marked` was removed in the #1145 follow-up) — fixability is read from the API's `auto_fixable`, never hardcoded.
-- `internal/clientops/` — the operations over `cliclient` that nexctl and `internal/mcptools` share, as the single implementation for both front-ends: ref finders (`FindUserGamesByRef`/`FindIGDBCandidates`/`FindPoolsByRef`/`FindExternalGamesByRef` — the last matches a UUID against entries and every edition's id and returns `ExternalGameMatch`, the entry plus the edition named; `ExternalDecisionTarget` then picks the id a Rematch/Skip is sent to, with or without `only_this_edition`, and refuses the option against a server that lists no `editions`; `ResolveExternalDecision` combines the two and, for an ambiguous ref, returns the candidates — entries, or every edition with the option — that nexctl and MCP only format), `GamesByFilter` (`GameFilter`), the multi-call `EditOne` (`EditOpts`), and slug/ref validation (`ResolveStorefront`, `ResolveTagRef`, `ValidatePlatform`). Functions take no cobra command and never prompt; callers own disambiguation. The package imports neither cobra nor the MCP SDK, so nexctl can link it.
-- `internal/mcptools/` — the MCP tool surface served at `/api/mcp` (wired in `internal/api/mcp.go`): a mirror of the nexctl `game`/`pool`/`tag`/`sync`/`doctor` trees (`game_list/show/stats/filters/add/edit/acquire/rm`, `pool_list/show/create/edit/rm/add/remove/queue/reorder`, `tag_list/create/rename/rm`, `sync_status/review/run/resolve/skip/retry/reset/disconnect`, `library_smells_list/detail/apply/ignore/restore/ignored`). Handlers build on `clientops` + `cliclient`, the same code the CLI runs, so the two front-ends can't drift. `NewServer` takes a per-request `KeyFunc`: every REST sub-call reuses the caller's API key, so it is re-authenticated and re-scoped on its own route. Tools project a concise JSON output (human fields + id for chaining); ambiguous refs return a `candidates` list with no mutation for the agent to disambiguate; `sync_resolve`/`sync_skip` take `only_this_edition` (decide one edition alone, #1452); with it an ambiguous ref returns one flat candidate per edition (the edition's id, external_id, platforms and store_url, with its game's title and igdb_title), and `sync_review` briefs carry each entry's `editions` (`externalEditionBrief`); REST errors go through `toolError` (403 → "mint a write-scoped key"). `jsonschema:"…"` struct tags must be **bare description strings** (the `description=…` form panics at `AddTool`). **Scope:** the `toolScopes` table in `scope.go` is the one place each tool declares `ScopeRead`/`ScopeWrite` (when in doubt, write). A new tool must get an entry there, or `addTool` panics and `TestEveryToolDeclaresScope` fails. A read-scoped key gets a server that never registered the write tools, and `enforceToolScope` refuses a write-tool call with a tool error. **Out of MCP:** `sync_connect` (secrets would pass through an agent) and the `admin`/`import`/`export`/`backup`/`config` groups. Tests run in-process via the SDK's `mcp.NewInMemoryTransports` against an `httptest` REST stub (`tools_test.go`).
-- `internal/cliui/` — shared TTY/prompt/JSON terminal helpers used by `nexctl`
-- `internal/cliauth/` — login-bootstrap plus the setup/migrate orchestration (`Preflight`/`RunMigrateAndWait`/`ReportSetupResult`) shared by `nexctl account login`, `nexctl setup`, and `nexctl migrate`
-- `internal/api/` — Echo route handlers per domain (games, user_games, auth, setup, platforms, tags, jobs, job_items, import, export, backup, sync, settings, docs, store_url, events, notifications, admin_users, admin_reset, db_error)
-- `internal/db/` — database layer
-  - `migrations/` — Bun migrate SQL files with timestamp-prefix naming (`20260503000001_name.up.sql` / `.down.sql`); auto-discovered via `//go:embed *.sql` in `migrations.go`
-  - `models/` — Bun model structs (hand-edited)
-- `internal/migrate/` — migration state machine + Echo handlers for `/migrate` and `/api/migrate/*`
-- `internal/joblifecycle/` — the one owner of Job and Job item status (#1265; spec: `docs/job-lifecycle.md`, which also lists which Job kinds are on it). For a registered kind it makes every change to `jobs.status`, `job_items.status` and `jobs.dispatch_complete`, creates its Jobs and items, and inserts their River jobs **in the same transaction** through an insert-only River client on Bun's `*sql.DB` (ADR 0001), recording the owning River job in `river_job_id`. Operations: `CreateWithDispatch`/`CreateWithItems`, `StartDispatch`/`AddItems`/`AddNewItems`/`MarkDispatched` (dispatch owner only), `Owns`/`EndItem`/`NextStage`/`AwaitReview` (item owner only), `Resolve`/`Skip` (review), `SkipItems`/`CompleteItems` (sync Skip, rematch and settle, with the caller's writes in a `Selector`), `Fail`, `Cancel`, `Retry`, plus `Recover` (the recovery rule, periodic + at startup), `ReclaimRunning` (startup) and `FailAllAfterRestore` (the restore marker's clear; no effects, no River client). Refusals are typed (`IsRefusal`: a worker exits cleanly). Ending effects (notifications) run in its `EffectsWorker`. Kinds register in `tasks.RegisterLifecycleKinds`; the module imports neither `tasks` nor `api`. It also writes `river_job` directly (set-based cancel, startup reclaim). Every Job kind is on it: metadata refresh, store-link refresh, export, both import kinds (a kind that names a source, `nexorious`, wins over the catch-all generic import kind, which also covers sources since removed from the registry) and sync (#1268).
-- `internal/worker/` — River job worker implementations; `tasks/` contains workers for sync, import, export, and metadata refresh
-- `internal/scheduler/` — River worker implementations for periodic maintenance jobs (cleanup, backup polling, scheduled syncs); `BuildPeriodicJobs()` registers cron-scheduled River `PeriodicJob` entries
-- `internal/services/` — IGDB client, storefront sync (Steam, PSN, GOG, Epic, Humble Bundle, Amazon Games), game matching, platform resolution
-- `internal/usergame/` — single owner of user-game *mutation* operations (#1056): `Acquire` (keystone), platform add/update/remove, set-status, record-progress, delete, clear-library. Free functions taking `*bun.DB`, each owning a `RunInTx` so the invariant tail (clear-wishlist, promote-if-played, remove-from-pools, tag reconcile) runs atomically. **Route every user-game mutation (API/sync/import) through these — never hand-chain platform inserts + the now-unexported invariant helpers.** Boundary errors `Err{NotFound,Conflict,Validation}` map to HTTP via `httpError`; nullable PATCH fields use `Clear*` bool sentinels for omit-vs-clear.
-- `internal/externalgame/` — holds the sync **library write** (`WriteToLibrary`, which turns a matched External game into library state through `internal/usergame`, plus the refusals `ErrNotFound`/`ErrSkipped`/`ErrUnmatched`/`ErrNoPlatforms`), shared by the sync worker, rematch and unskip, and the **editions** (#1449, ADR 0008): the one definition of which External games are editions of each other (`SameTitle`/`SameEdition`/`EditionKey` SQL builders — the lock, the storefront list, the review badge and the open-items lookups are all built from them, never spelled out again; `Undecided` is the one "has no decision" condition; `SameGame` — an edition, or a same-title game while either has no decision — is what the sync sweep uses to write one `removed` change per game, #1443), the read-only open-item lookups of a set (`EditionsOpenItemJobs`/`EditionsOpenItems`/`UndecidedSameTitleInReview`; item status stays with `internal/joblifecycle`), `LockEditions` (locks a game's set in id order, optimistic with up to three tries in savepoints; `ErrEditionsChanged` → 409) and `HasPrecedent`/`TakePrecedent`/`TakeMatchPrecedent` (a game without a decision takes the oldest same-title decision). It is the **only** non-test Go code that writes `external_games` / `external_game_platforms` or takes an explicit row lock on them (ADR 0009). Free functions taking `bun.IDB`, like `internal/usergame`; it imports neither `internal/joblifecycle`, `internal/worker/tasks` nor `internal/api`, and takes no River client.
-- `internal/librarysmells/` — library-smell detection engine (#1144): a `Check` registry of 9 detectors (slug-keyed) over the user's collection, each a read-only Bun query anti-joined against `smell_ignores`; 3 are auto-fixable (`wishlisted-yet-owned`→clear wishlist, `played-but-not-started`/`in-progress-untouched`→set-status) and route their `Apply` through `internal/usergame` after re-validating the still-flagged subset. Platform-level checks dedupe to one item per game (via `EXISTS` over `user_game_platforms`). The `beat-but-not-marked` check was removed (#1145 follow-up): inferring "completed" from `hours_played ≥ howlongtobeat_main` false-positives on co-op/replayed/idle-inflated games and its auto-fix to a terminal status removed them from pools. Served at `/api/library/smells` (summary → `/:checkID` listing → `/apply` → `/ignore`+restore+`/ignored`).
-- `internal/auth/` — session + API key auth + Echo middleware. A read-scoped key is limited to non-mutating methods, except for two exemption lists in `scope.go`: `readOnlyMutatingRoutes` (POST routes that only read, i.e. IGDB search) and `selfScopedRoutes` (`/api/mcp`, whose handler enforces scope per tool). Any key may also revoke itself (`DELETE /api/auth/api-keys/:id` with its own id, `isSelfRevoke`) so `nexctl account logout` works on a read key. `APIKeyMiddleware` is Bearer-only (no cookie) and guards `/api/mcp`.
-- `internal/dbrole/` — keeps the app's DB role unprivileged (#1357): `EnsureAppRole` (run by `nexorious ensure-db-role` as the Compose `db-role` service / Helm `db-role` initContainer, as the bundled Postgres's bootstrap superuser) makes `nexorious_app` a non-superuser owner of the database and every `public` object, idempotently and per object (`REASSIGN OWNED` is refused for the bootstrap superuser, which also can't be demoted). `CheckConnectedRole` backs the startup warning and the admin-only `GET /api/admin/health-warnings` banner.
-- `internal/filter/` — dynamic query builder (Bun) for user-game list filtering
-- `internal/ratelimit/` — interface + local (`x/time/rate`) and PostgreSQL implementations
-- `internal/config/` — config struct via `caarlos0/env`
-- `internal/enum/` — shared enum types
-- `internal/middleware/` — Echo middleware (state gate, auth bridge, etc.)
-- `internal/backup/` — backup orchestration (invoked from scheduler)
-- `ui/` — contains `ui/frontend/` (React SPA source + build output), `ui/migrate/` (migration HTML), `ui/db-error/`, `ui/setup/`
-- `docs/` — Markdown guides and reference docs. Only `user-guide.md` and `admin-guide.md` are embedded (`docs/embed.go`, explicit `//go:embed user-guide.md admin-guide.md`) and served in-app by `internal/api/docs.go` at `/api/docs/:slug`, rendered at `/help/:slug` (`admin-guide` is admin-gated). The reference docs (`sync.md`, `maintenance.md`, `import-export-format.md`, `darkadia-import.md`, `logging-conventions.md`) stay in the repo for GitHub viewing but are **not** embedded/served. `ui/frontend/src/lib/doc-links.ts` (issue #887) resolves any relative link to a `docs/*.md` sibling into an in-app `/help/:slug` route, and anything outside `docs/` (e.g. `../DEV.md`) into a GitHub source URL — so if you add an in-app link to a reference doc you must also embed it, or it will 404. The two guides currently cross-link only to each other.
+One line per package: what it owns and the rule that guards it. Where a package has a doc comment (`go doc ./internal/<pkg>`), the details live there; read it before changing the package. A new package gets one line here, a new rule one sentence — never a list of its functions.
+
+- `cmd/nexorious/` — the server binary, with the commands that need direct DB access (e.g. `migrate`, `ensure-db-role`).
+- `cmd/nexctl/` — the REST client binary; its command reference is the package doc (`cmd/nexctl/doc.go`). It talks to the server only over REST (`cliclient`), puts operations shared with MCP in `internal/clientops`, and never links the MCP SDK or `internal/mcptools` (`TestNexctlDoesNotLinkMCPSDK`).
+- `internal/clientops/` — the one implementation of operations both nexctl and MCP run. Never prompts, imports neither cobra nor the MCP SDK.
+- `internal/mcptools/` — the MCP tools at `/api/mcp`, mirroring nexctl's game/pool/tag/sync/doctor trees on `clientops`. Every tool declares its scope in `toolScopes` (`scope.go`), or `addTool` panics.
+- `internal/cliui/`, `internal/cliauth/` — nexctl's terminal helpers, and the login/setup/migrate orchestration.
+- `internal/api/` — Echo route handlers per domain.
+- `internal/db/` — `migrations/` (SQL, see [Migrations](#essential-workflow)) and `models/` (hand-edited Bun structs).
+- `internal/migrate/` — migration state machine and the `/migrate` handlers.
+- `internal/joblifecycle/` — the **only** writer of `jobs.status`, `job_items.status`, `dispatch_complete` and `river_job_id`, and the creator of Jobs, items and their River jobs (spec: `docs/job-lifecycle.md`). Imports neither `internal/worker/tasks` nor `internal/api`.
+- `internal/worker/tasks/` — River workers (sync, import, export, metadata refresh); kinds register with the lifecycle in `tasks.RegisterLifecycleKinds`.
+- `internal/scheduler/` — periodic River jobs (`BuildPeriodicJobs`).
+- `internal/services/` — IGDB client, storefront clients, game matching, platform resolution.
+- `internal/usergame/` — the **only** place user games are mutated: API, sync and import all call its operations.
+- `internal/externalgame/` — the **only** non-test code that writes `external_games` / `external_game_platforms` or row-locks them, and the one definition of editions (ADR 0008, ADR 0009). Imports neither `internal/joblifecycle`, `internal/worker/tasks` nor `internal/api`; `guard_test.go` enforces the write and import rules, not the locks.
+- `internal/librarysmells/` — library health: the Checks and their fixes, which go through `internal/usergame`.
+- `internal/auth/` — session + API-key auth. A read-scoped key may only use non-mutating methods; the exemptions are the lists in `scope.go`.
+- `internal/dbrole/` — keeps the app's DB role unprivileged.
+- `internal/filter/` — Bun query builder for user-game list filters.
+- `internal/ratelimit/` — limiter interface: local (`x/time/rate`) and PostgreSQL (`SELECT FOR UPDATE`, multi-instance, opt-in).
+- `internal/config/`, `internal/enum/`, `internal/middleware/`, `internal/backup/` — env config, shared enums, Echo middleware, backup orchestration.
+- `ui/` — `frontend/` (React SPA), plus the standalone `migrate/`, `db-error/`, `setup/` pages.
+- `docs/` — guides and reference docs. Only `user-guide.md` and `admin-guide.md` are embedded and served in-app (`/help/:slug`).
 
 ## Architecture
 
@@ -93,34 +90,11 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 ```
 DBUnavailable ↔ NeedsMigration → Migrating → Ready
 ```
-Echo middleware blocks all non-migration routes until state is `Ready`. River workers and the cron-based periodic job scheduler start only after migrations complete. Graceful shutdown waits for in-flight River jobs on `SIGTERM`/`SIGINT`.
+Echo middleware blocks all non-migration routes until state is `Ready`. River workers and the periodic scheduler start only after migrations complete. Graceful shutdown waits for in-flight River jobs on `SIGTERM`/`SIGINT`.
 
 ### Database Layer
-- **ORM**: Bun (`uptrace/bun`) with model structs in `internal/db/models/`. Queries use Bun's query builder.
-- **Exception**: `internal/auth` uses raw `db.NewRaw`/`db.QueryRow` directly (not Bun models) to keep auth isolated.
-- **Dynamic filter queries**: Bun query builder used in `internal/filter/` for user-game list filtering.
-- **Driver**: `pgx/v5` via Bun's own `pgdriver` (`uptrace/bun/driver/pgdriver`).
-- **Migrations**: Bun migrate (`uptrace/bun/migrate`); SQL files live in `internal/db/migrations/` with timestamp-prefix naming (`YYYYMMDD<nnnnnn>_name.up.sql`, where `<nnnnnn>` is a zero-padded running number, e.g. `20260503000001_name.up.sql`); discovered automatically via `Migrations.Discover(FS)` in `migrations.go`.
-
-### Frontend Embedding (Stash pattern)
-`ui/ui.go` exposes five `embed.FS` vars:
-```go
-//go:embed all:frontend/dist
-var UIBox embed.FS      // main React SPA
-
-//go:embed all:migrate
-var MigrateBox embed.FS // standalone migration UI
-
-//go:embed db-error
-var DBErrorBox embed.FS
-
-//go:embed setup
-var SetupBox embed.FS
-
-//go:embed all:shared
-var SharedBox embed.FS
-```
-The Go binary serves the React SPA itself.
+- **ORM**: Bun (`uptrace/bun`) with the `pgdriver` driver; queries use Bun's query builder.
+- **Exception**: `internal/auth` uses raw `db.NewRaw`/`db.QueryRow` (not Bun models) to keep auth isolated.
 
 ### Frontend Stack
 - Vite 8 + React 19 + TypeScript
@@ -132,15 +106,7 @@ The Go binary serves the React SPA itself.
 - **Migration zone** (`/migrate`, `/api/migrate/*`) — always available, bypasses state middleware
 - **Setup zone** (`/api/auth/setup/*`) — requires `Ready` state, no auth (no users exist yet)
 - **API zone** — gated by state middleware, then `AuthMiddleware` where required
-  - `/api/mcp` — MCP (stateless Streamable HTTP, JSON responses): `APIKeyMiddleware` (Bearer API key only, never the session cookie) behind an Origin check (`Origin` host must equal `Host` or be in `CORS_ORIGINS`). Not registered at all when `MCP_ENABLED=false`.
-
-### Workers & Scheduler
-River (`riverqueue/river`) is the job queue. Worker structs live under `worker/tasks/` (sync, import, export, metadata refresh) and `internal/scheduler/` (cleanup jobs, backup polling). Periodic schedules are registered in `scheduler.BuildPeriodicJobs()` using `robfig/cron/v3` expressions and River `PeriodicJob`. Backup orchestration still lives in `internal/backup/` and is invoked by the `CheckScheduledBackupWorker`. Sync workers cover Steam, PSN, GOG, Humble Bundle, Epic (via Legendary), and Amazon Games (via nile), plus IGDB metadata refresh.
-
-### Rate Limiting
-`ratelimit.Limiter` interface with two implementations:
-- `local.go` — `golang.org/x/time/rate` (single instance)
-- `postgres.go` — PostgreSQL `SELECT FOR UPDATE`` (multi-instance, opt-in via config)
+  - `/api/mcp` — Bearer API key only (`APIKeyMiddleware`, never the session cookie), behind an Origin check (`Origin` host must equal `Host` or be in `CORS_ORIGINS`). Not registered at all when `MCP_ENABLED=false`.
 
 ## Testing
 
@@ -152,7 +118,7 @@ Write a test when:
 - The logic is non-obvious or involves a subtle invariant
 - A real bug was found — the test documents that it cannot regress
 
-Do NOT write a test when:
+Skip a test when:
 - The function is a thin wrapper or a struct field accessor
 - The test only verifies that calling the function returns what it computes (tautology)
 - The only assertion is "no panic on happy path" with no behavioural verification
@@ -160,64 +126,40 @@ Do NOT write a test when:
 
 There is no coverage gate in CI. The quality gate is: does the PR touching non-trivial logic include a test that would have caught a plausible bug in that logic?
 
-### Performance
+### Shared database
 
-Each package that needs a real database uses a shared PostgreSQL container via `TestMain`. The container starts once per `go test` invocation per package; migrations run once at startup. Each test calls `truncateAllTables(t)` at the top for isolation. Do NOT call a per-test `setupXxxDB(t)` helper that starts a new container — use the shared `testDB` package variable instead.
-
-### Running Tests
-
-- **Framework**: stdlib `testing` + `testcontainers-go`
-- Run all: `go test ./...`
-- Run single: `go test ./internal/api/... -run TestFunctionName -v`
-- Frontend: from `ui/frontend/` — `npm run test`, single file: `npm run test game-card.test.tsx`
+Each package that needs a real database uses a shared PostgreSQL container via `TestMain` (`testcontainers-go`): it starts once per package per `go test` run, with migrations applied once. Each test calls `truncateAllTables(t)` at the top for isolation and uses the shared `testDB` package variable — a per-test helper that starts its own container is too slow.
 
 ## Development Rules
 
 > **Always ask questions if you are uncertain about something!**
 
 ### Essential Workflow
-1. **Planning**: Design decisions and plans are recorded in GitHub issues (and their epics), not in repo docs — read the issue and its epic before starting; the landed code is the authority. Domain terms live in `GLOSSARY.md`
+1. **Planning**: Design decisions and plans are recorded in GitHub issues (and their epics), not in repo docs — read the issue and its epic before starting; the landed code is the authority. Domain terms live in `GLOSSARY.md`.
 2. **Working on an issue**: When asked to work on an issue ("work on #825"), read it with `gh issue view <n> --comments` — later comments often correct the original — and treat every claim in it (diagnosis, proposed fix, file/function references) as a hypothesis to verify against the code; tell the user when the issue is wrong or stale instead of implementing against a false premise. Then present what you found and the change you intend, and **wait for explicit approval before making any change** — creating the branch and writing the first test count as changes. Verified ≠ approved; an explicit "just fix it" in the session overrides this.
-3. **Branching**: Create a feature branch before starting any task
-4. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using the naming convention `YYYYMMDD<nnnnnn>_name.up.sql` where `<nnnnnn>` is a zero-padded running number (e.g. `20260503000001_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
-5. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)) — format/lint on every edit, build + typecheck when a turn ends, and the full suites at `git push`. You don't need to re-run the whole suites by hand; do run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.
-6. **Dead code**: After a Go change that **removes or renames a caller, deletes a code path, or refactors across package boundaries**, run `make deadcode` (`go run golang.org/x/tools/cmd/deadcode@latest -test ./...`) and reconcile any *new* entries against your diff — `staticcheck`'s `unused` only flags unexported symbols, so a newly-orphaned **exported** method slips past CI. Pure additions don't need it. `-test` is mandatory (or the legitimate `*ForTest` helpers report as false positives); the tool can't see reflection / `//go:embed` / interface-dispatch-only calls, so verify before deleting.
+3. **Branching**: Create a feature branch before starting any task.
+4. **Migrations**: Add a new `.up.sql` / `.down.sql` pair in `internal/db/migrations/` named `YYYYMMDD<nnnnnn>_name.up.sql`, where `<nnnnnn>` is a zero-padded running number (e.g. `20260503000001_name.up.sql`); Bun discovers them via `Migrations.Discover(FS)`.
+5. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)). Run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.
+6. **Dead code**: After a Go change that **removes or renames a caller, deletes a code path, or refactors across package boundaries**, run `make deadcode` and reconcile any *new* entries against your diff — `staticcheck`'s `unused` only flags unexported symbols, so a newly-orphaned **exported** method slips past CI. Pure additions don't need it. The tool can't see reflection / `//go:embed` / interface-dispatch-only calls, so verify before deleting.
+7. **Issues** you write describe behaviour and rules; they never ask for an `AGENTS.md` inventory update. A new package's doc comment carries its details.
 
 ### Out-of-Scope Findings
-When working with code, if you identify a problem, bug, or inconsistency that you judge to be out-of-scope for the current task, do **not** silently fix it or ignore it — surface it and **offer to file a follow-up GitHub issue** (`gh issue create`) to track the fix. Only create the issue once the user agrees.
+When working with code, if you identify a problem, bug, or inconsistency that you judge to be out-of-scope for the current task, surface it and **offer to file a follow-up GitHub issue** (`gh issue create`) rather than fixing or ignoring it silently. Only create the issue once the user agrees.
 
-When you do create an issue, **label it** at creation (`gh issue create --label ...`). Run `gh label list` to pick from the repo's defined set (e.g. `documentation`, `enhancement`, `bug`, `tech-debt`, `security`, `observability`) — a docs feature request is `documentation` + `enhancement`.
+Label an issue at creation (`gh issue create --label ...`), picking from `gh label list` (e.g. `documentation`, `enhancement`, `bug`, `tech-debt`, `security`, `observability`) — a docs feature request is `documentation` + `enhancement`.
 
-**Cross-references in issue/epic bodies go stale.** Epic bodies (e.g. #1055) list "child/related issues" in hand-written prose that does *not* update when a child closes or is re-scoped. Before acting on a referenced issue, verify its live state (`gh issue view <n> --json state` or absence from `gh issue list --state open`) and re-read its current body as the authority — never the epic's summary of it. `gh issue view <n>` returns a body regardless of open/closed, so reading it is not proof it's open.
+**Cross-references in issue/epic bodies go stale.** Epic bodies list "child/related issues" in hand-written prose that does not update when a child closes or is re-scoped. Before acting on a referenced issue, verify its live state (`gh issue view <n> --json state`) and treat its current body as the authority; `gh issue view` returns a body for closed issues too.
 
 ### Branch Workflow (MANDATORY)
-- ✅ Always create a branch before starting task work
-- ✅ Use `--squash --delete-branch` when merging PRs
-- ❌ **`main` is protected — every change lands through a PR, no exceptions.** A direct `git push origin main` is rejected by a GitHub ruleset ("Protect main": require PR, squash-only, no bypass) with `GH013: Changes must be made through a pull request`. There is no admin override; this applies to docs, CI workflows, and one-line fixes alike. Open a branch + PR for everything.
-- ❌ Never merge a PR on your own initiative — only when the user explicitly instructs
+- ✅ Always create a branch before starting task work.
+- ✅ **Every change lands through a PR.** `main` is protected by a ruleset with no bypass (require PR, squash-only); a direct push fails with `GH013`. This covers docs, CI workflows and one-line fixes alike.
+- ✅ Merge with `--squash --delete-branch`, and only when the user explicitly says to.
+- ✅ Put a closing keyword before **each** issue number in the PR body (`Closes #846, closes #847`).
+- ✅ Keep the required `CI Gate` job in `.github/workflows/test.yaml` green and reporting when editing that file.
 
-**Required check `CI Gate`:** the ruleset requires exactly one status check, the `CI Gate` job in `.github/workflows/test.yaml`. That job aggregates the path-gated suites (Go/frontend/Helm) and passes when each either succeeded or was skipped. When editing `test.yaml`, keep `CI Gate` green and reporting — renaming or removing it, or breaking its `needs:`/`if: always()` wiring, will block every PR from merging.
+What `gh pr merge` does to the local checkout, the closing-keyword details and the `CI Gate` wiring: [docs/agents/pull-requests.md](docs/agents/pull-requests.md).
 
-**`gh pr merge` handles everything locally:** when you run `gh pr merge --squash --delete-branch` while checked out on the PR's branch, `gh` switches your local checkout to `main`, deletes the local feature branch, **and pulls `main`** so it is already up to date with the new squash commit. Do **not** run `git checkout main`, `git branch -D`, `git pull`, or `git reset --hard origin/main` afterward — `gh` has already done it. Just confirm with `git status` (expect `## main...origin/main`, no divergence).
-
-**Auto-closing issues from a PR (MANDATORY syntax):** a [closing keyword](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) (`Closes`/`Fixes`/`Resolves`) applies **only to the single issue number immediately following it**. A comma-separated list does **not** work: `Closes #846, #847` auto-closes only #846 and leaves #847 open. Repeat the keyword for every issue — `Closes #846, closes #847` — or put one per line:
-```
-Closes #846
-Closes #847
-```
-Cross-repo: `Closes owner/repo#123`. The keyword must be in the **PR body**, not only the title (GitHub links and closes issues from the PR description; the squash commit itself carries only the title, see [Commit message convention](#commit-message-convention-mandatory)). After merging a multi-issue PR, verify every referenced issue actually closed (`gh issue view <n> --json state`) and close any stragglers manually with a comment linking the PR.
-
-### Merging Renovate PRs
-
-Non-major npm and Go updates arrive **pre-grouped** — one "npm non-major" PR (`package-lock.json`) and one "go non-major" PR (`go.sum` + `goVendorHash` in `flake.nix`), configured via `packageRules` in `.github/renovate.json`. These two group PRs touch disjoint files, so they do **not** conflict with each other — merge them independently. `flake.lock` updates come from Renovate's nix manager as their own weekly lockfile-maintenance PR (Monday morning), never bundled into an unrelated PR.
-
-The conflict mechanism still exists within a single ecosystem: a **major** PR and its same-ecosystem **group** PR both touch the same lockfile (and, for Go, `goVendorHash`), so merging one invalidates the other. Nothing in CI rebases Renovate branches — Renovate rebases a conflicted branch itself on its next run, recomputing `goVendorHash` in the same commit (a `postUpgradeTasks` entry runs `nix/update-go-vendor-hash.sh` on every gomod update). No workflow pushes to Renovate branches; `nix.yaml` only verifies. Branches don't need to be up to date with `main` to merge (the ruleset's required check is not strict).
-
-When you do need to merge two same-ecosystem PRs (major + group) by hand:
-1. Verify all CI checks pass on the target PR (use `gh run list --branch <branch>` — the GitHub API's `statusCheckRollup` field lags and often shows stale/empty data)
-2. Merge **one PR** with `gh pr merge <n> --squash --delete-branch`
-3. The other PR now conflicts and is fixed by Renovate's rebase on its next run. Renovate is self-hosted (`cloudzero-renovate-operator`, a few runs a day), not the Mend app, so `@renovatebot` comments do nothing — ask the user to trigger a run rather than wait for the schedule (ticking the "rebase/retry" checkbox also only takes effect on the next run)
-4. Wait for the rebase to land and CI to pass (~4 min) before merging it
+Renovate PRs (grouping, post-upgrade scripts, merging a major and a group PR of the same ecosystem): [docs/agents/renovate.md](docs/agents/renovate.md).
 
 ### Code Style
 
@@ -231,39 +173,22 @@ When you do need to merge two same-ecosystem PRs (major + group) by hand:
 **TypeScript (Frontend)**
 - Import order: external → internal (`@/...`) → types
 - TanStack Query for server state; `useState` for local state only
-- `routeTree.gen.ts` is generated by the TanStack Router Vite plugin (on every `vite build`/`vite dev`, so also `make frontend`) and committed to git; never edit it by hand. After adding, moving, renaming, or removing a route, run `npm run build` to regenerate it, then commit the updated file alongside the route edit. The `Route tree is up to date` step in `Frontend Checks` regenerates it and fails on any difference. If a build dirties it while you haven't touched `src/routes/`, the committed copy is stale (a router-plugin bump can change the generator's output): don't sweep it into an unrelated commit and don't revert it, tell the user so it lands in its own `chore(frontend): regenerate route tree` PR. Renovate regenerates it on TanStack Router updates (a `postUpgradeTasks` rule running `ui/frontend/scripts/regen-route-tree.sh`, which also works by hand), so a router bump's PR arrives with the new file. Stage files explicitly, not with `git add -A`.
-- shadcn/ui components in `ui/frontend/src/components/ui/` follow an "include and prune" policy — knip removes any unused component or sub-export. If a feature needs a missing one (e.g. `Form`, `Tabs`, `Separator`), re-add it via `npx shadcn@latest add <component>` and import it.
-- **Responsive card-vs-table swaps** use the `useMediaQuery` hook (`@/hooks`), not CSS `hidden`/`block` toggles — render a single layout tree (`isMobile ? <cards> : <table>`) so the inactive layout isn't mounted and so jsdom tests (which ignore CSS) don't see duplicated nodes. Examples: `game-list.tsx` (`(max-width: 1023px)`) and `admin/users/index.tsx` (`(max-width: 639px)`). Reserve CSS-only `hidden lg:block` toggles for purely *presentational* responsive tweaks (sidebars, info boxes, icon-only buttons, grid column counts) — not structural swaps.
-
-### Quality Gates
-Enforced automatically by the hooks in [Automated Checks](#automated-checks); this list is the contract they uphold:
-- Zero Go build errors and zero `golangci-lint` errors before committing
-- Zero TypeScript/lint errors (`npm run check`) and zero knip findings (`npm run knip`) before committing
-- All tests must pass before committing
+- `routeTree.gen.ts` is generated by the TanStack Router Vite plugin and committed; never edit it by hand. After adding, moving, renaming or removing a route, run `npm run build` and commit the regenerated file with the route edit (the `Route tree is up to date` CI step fails on any difference). If a build dirties it while you haven't touched `src/routes/`, the committed copy is stale: leave it out of your commit, keep the change, and tell the user so it lands in its own `chore(frontend): regenerate route tree` PR.
+- Stage files explicitly, not with `git add -A`.
+- shadcn/ui components in `ui/frontend/src/components/ui/` follow an "include and prune" policy — knip removes any unused component or sub-export. If a feature needs a missing one, re-add it via `npx shadcn@latest add <component>`.
+- **Responsive card-vs-table swaps** use the `useMediaQuery` hook (`@/hooks`) and render a single layout tree (`isMobile ? <cards> : <table>`), so the inactive layout isn't mounted and jsdom tests (which ignore CSS) don't see duplicated nodes. Examples: `game-list.tsx` and `admin/users/index.tsx`. CSS-only `hidden lg:block` toggles are for purely *presentational* tweaks (sidebars, info boxes, icon-only buttons, grid column counts).
 
 ### Automated Checks
 
-Format, lint, build, and test gates run automatically — you rarely invoke them by hand. **Launch Claude Code from inside `devenv shell`** (or an active direnv) so `go`, `golangci-lint`, `node`, and `jq` are on `PATH`; otherwise the Claude Code hooks silently no-op.
+Hooks enforce the quality bar (zero Go build/`golangci-lint` errors, zero `npm run check`/knip findings, all tests passing), so you rarely run the gates by hand. **Launch Claude Code from inside `devenv shell`** (or an active direnv); without `go`, `golangci-lint`, `node` and `jq` on `PATH` the Claude Code hooks silently no-op.
 
-| When | Mechanism | What runs |
-|---|---|---|
-| After each file edit | `PostToolUse` hook → `.claude/hooks/post-edit.sh` | Go: `gofmt -w` + `golangci-lint` on the file's package. Frontend: `prettier --write` + `eslint --fix` on the file. Remaining findings are fed back to fix. |
-| When a turn ends | `Stop` hook → `.claude/hooks/stop-check.sh` | `go build ./...` if any `.go` is dirty; `tsc --noEmit` if `ui/frontend/` is dirty. Build/typecheck only — a one-time nudge, not the hard gate. |
-| `git push` | devenv `git-hooks` (pre-push) | Full `go test ./...` (when `.go` files change) and `npm run check && npm run knip && npm run test` (when `ui/frontend/` changes). The hard gate. |
+- **Each edit** (`.claude/hooks/post-edit.sh`): `gofmt` + `golangci-lint` on the Go package, or `prettier` + `eslint --fix` on the frontend file. Fix what it reports.
+- **Turn end** (`.claude/hooks/stop-check.sh`): `go build ./...` / `tsc --noEmit` for dirty code — a nudge, not the gate.
+- **`git push`** (devenv pre-push): the full Go and frontend suites — the hard gate. `git push --no-verify` bypasses it in a pinch.
 
-Config lives in `.claude/settings.json` (Claude Code hooks) and `devenv.nix` → `git-hooks.hooks` (git). Pre-push hooks install/refresh on `devenv shell`; bypass in a pinch with `git push --no-verify`.
+### Nix
 
-### Nix Flake Maintenance
-
-The `nix/` directory contains the Nix package and NixOS module. npm dependencies need no hash: `nix/frontend.nix` uses `importNpmLock`, which fetches each package from the `resolved` URL + `integrity` already in `ui/frontend/package-lock.json`. One hash must be kept in sync with its lock file:
-
-- **`goVendorHash` in `flake.nix`** — update after any `go.mod` / `go.sum` change:
-  ```bash
-  ./nix/update-go-vendor-hash.sh   # builds only .#nexctl.goModules and rewrites the line
-  ```
-  Server (`nix/package.nix`) and client (`nix/nexctl.nix`) build from the same `go.mod`/`go.sum`, and `buildGoModule`'s `vendorHash` is independent of `subPackages`, so the two are **always identical**. They share **one** value — `goVendorHash` in `flake.nix`, passed to both via `callPackage` — so there is no second hash to keep in sync. Renovate runs the same script as a `postUpgradeTasks` command on Go dependency PRs (this needs `nix` in the Renovate runner and the script in the self-hosted `allowedCommands`, which also lists `ui/frontend/scripts/regen-route-tree.sh`). The `Nix Build` workflow (`nix.yaml`) builds **both** `.#nexorious` and `.#nexctl` and **only verifies**: a stale hash fails it, and a hand-made `go.mod`/`go.sum` change needs the script run and `flake.nix` committed.
-
-The `version` field in `flake.nix` is managed automatically by release-please (same as `Chart.yaml`). The flake exposes two packages, `nexorious` (server) and `nexctl` (CLI client); both are also in `overlays.default`. The `nexorious` NixOS module (`nix/module.nix`) installs only the server — `nexctl` is opt-in (add `packages.nexctl` to `environment.systemPackages`).
+After any `go.mod` / `go.sum` change, run `./nix/update-go-vendor-hash.sh` and commit the updated `goVendorHash` in `flake.nix`; the `Nix Build` workflow fails on a stale hash. Details: [docs/agents/nix.md](docs/agents/nix.md).
 
 ## Agent skills
 
@@ -279,49 +204,13 @@ Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `
 
 Single-context: one root `GLOSSARY.md` + `docs/adr/` (created lazily). See `docs/agents/domain.md`.
 
-## Release Process
+## Release Process (MANDATORY commit convention)
 
-Releases are produced by [release-please](https://github.com/googleapis/release-please) from the Conventional Commits on `main`.
+release-please cuts releases from the Conventional Commits on `main`. PRs are squash-merged as `<PR title> (#N)` with no body, so the **PR title** is the commit message: write it as a Conventional Commit (`feat:` minor, `fix:` patch, `feat!:` major; `chore:`/`ci:`/`docs:`/`refactor:`/`test:` no release). The PR description never reaches the commit.
 
-### Commit message convention (MANDATORY)
+The literal override start token belongs in a PR description only when you mean to override the release (release-please splits on it even inside prose or backticks); a `Release-As:` / `BREAKING CHANGE:` line outside an override block fails the `PR Commit Message` check.
 
-All commits on `main` must follow [Conventional Commits](https://www.conventionalcommits.org/). PRs are squash-merged with `squash_merge_commit_title=PR_TITLE` and `squash_merge_commit_message=BLANK`, so every commit on `main` is exactly `<PR title> (#N)` with no body, and the **PR title** is what release-please parses. The PR description never reaches the commit (#1208: Renovate's release-notes descriptions broke release-please's parser and silently dropped commits from the changelog); follow `(#N)` to the PR for context. The only way to give release-please more than the title is a `BEGIN_COMMIT_OVERRIDE` … `END_COMMIT_OVERRIDE` block in the PR description, which release-please reads from the merged PR (see [Overrides](#overrides)). The `PR Commit Message` workflow parses whichever message release-please will use, and fails a PR with a `Release-As:` / `BREAKING CHANGE:` line outside an override block.
-
-| Prefix | Effect |
-|---|---|
-| `feat: …` | minor bump |
-| `fix: …` | patch bump |
-| `feat!: …` (or a `BREAKING CHANGE:` footer inside an override block) | **major bump** |
-| `chore:`, `ci:`, `docs:`, `refactor:`, `test:` | no release |
-
-### Release notes
-
-release-please writes the GitHub Release and `CHANGELOG.md` from GitHub's generated release notes (`"changelog-type": "github"`), so each entry is the merged **PR title** with its author, plus a "New Contributors" section. The version bump still comes from the Conventional Commit, but an override block's wording does not reach the notes: to reword an entry, edit the merged PR's title before the release. Categories are label-driven (`.github/release.yml`), and the `PR Labels` workflow (`pr-labels.yaml`, `pull_request_target` so fork PRs get labelled too) sets them from the commit type: `breaking` (`!` or a `BREAKING CHANGE:` footer), `enhancement` (`feat`), `bug` (`fix`/`perf`/`revert`), `dependencies` (`feat`/`fix` with scope `deps`), and `internal` for everything else, which the notes exclude. Labels are read when the notes are generated, so a wrong label can be fixed on the merged PR any time before the release.
-
-### Cutting a release
-
-1. Wait until there is a `feat:` or `fix:` on `main` since the last release (otherwise release-please's Release PR will be empty).
-2. Find the open PR titled `chore(main): release X.Y.Z` (opened by `release-please-action`).
-3. Review the proposed `CHANGELOG.md` diff (fix a misfiled entry by correcting the merged PR's label or title, then let release-please re-run), `Chart.yaml` / `docker-compose.yml` version bumps.
-4. Merge the Release PR. release-please creates the `vX.Y.Z` tag and publishes a GitHub Release; `release-artifacts.yaml` then builds — for amd64 and arm64, from one per-arch binary — the raw binary, `.deb`, `.rpm`, and a multi-arch container image, smoke-tests the packages, uploads the release assets, pushes the image (semver tag + `latest`) and Helm chart, and advances the `release` branch. The **`nexctl`** client ships the same way minus server-only pieces: per-arch raw binary + `.deb`/`.rpm` (via `deploy/packaging/nfpm-nexctl.yaml`, smoke-tested by the `smoke-test` job's `nexctl` matrix leg using `deploy/packaging/smoke-test-nexctl.sh`), but **no container image or Helm chart**. Both binaries share one repo version. There is no nightly/dev build flow (`build-push.yaml` was removed); non-release artifacts no longer exist.
-
-### Overrides
-
-To force the next release to a specific version, put a `BEGIN_COMMIT_OVERRIDE` block in the **PR description** before squash-merging, holding the full commit message — title line, blank line, `Release-As: X.Y.Z`:
-```
-BEGIN_COMMIT_OVERRIDE
-fix: <the PR title>
-
-Release-As: X.Y.Z
-END_COMMIT_OVERRIDE
-```
-A bare `Release-As:` line in the description does nothing (squash commits have no body) and fails the `PR Commit Message` check. An empty override block is ignored by release-please. **Never write the literal word `BEGIN_COMMIT_OVERRIDE` in a PR description unless you mean it** — release-please splits on the bare token, so even a mention in prose or backticks turns the rest of the description into the commit message (the `PR Commit Message` check catches this). (The old "push an empty commit directly to `main`" shortcut no longer works — `main` is protected; route the override through any PR.)
-
-To skip a release after an unwanted `feat:` / `fix:` lands: close the Release PR; release-please reopens it on the next push to main, so a true skip requires absorbing the change into the next legitimate release.
-
-### Promoting to 1.0.0
-
-A `feat!:` commit (or `BREAKING CHANGE:` footer) will naturally produce a `1.0.0` Release PR when the current version is `0.x.y`. Merge that PR to cut 1.0.0.
+Release notes and labels, cutting a release, overrides, skipping a release, 1.0.0: [docs/agents/releasing.md](docs/agents/releasing.md).
 
 ## Known Gotchas
 
@@ -330,18 +219,19 @@ A `feat!:` commit (or `BREAKING CHANGE:` footer) will naturally produce a `1.0.0
 - **Package name `migrate`** — `internal/migrate` uses package name `migrate`; when importing `uptrace/bun/migrate` inside that package, alias it: `bunmigrate "github.com/uptrace/bun/migrate"` to avoid the collision
 - **`os.Exit` skips deferred calls** — call `pool.Close()` explicitly before any `os.Exit` in main; deferred `pool.Close()` will not run
 - **Background goroutines** — use `context.Background()`, not `c.Request().Context()`, for work that outlives an HTTP handler
-- **`errcheck` runs with `check-blank`** (`.golangci.yml`) — every `_ =` / `_, _ =` error discard fails CI. Default fix is to **handle** it (API handler → `slog.Error` + `echo.NewHTTPError(500, …)`; worker/scheduler → log-only `slog.Error(...)`). Suppress only a genuinely-acceptable discard, via one of: the `std-error-handling` preset (covers the `Close`/`Fprint` family — so `defer func() { _ = resp.Body.Close() }()` needs no annotation), the `(bun.Tx).Rollback` allowlist, or a per-site `//nolint:errcheck // <one-line reason>` (e.g. clamped param parse, advisory `RowsAffected`, marshal of a fixed struct). `_ =` in `_test.go` is exempt.
-- **`gosec` is enabled** (`.golangci.yml`) — security findings (G1xx/G2xx/G3xx/G7xx) fail CI. `_test.go` is excluded wholesale (fixtures legitimately carry fake credentials, password-in-URL cases, marshaled test tokens). For non-test findings: fix genuine issues (e.g. tighten file/dir perms to `0600`/`0750`; validate user-derived paths against traversal); suppress only confirmed false positives with a per-site `//nolint:gosec // <reason>` stating *why* it's safe (e.g. fixed-binary subprocess, internally-derived path, value encrypted before storage, guarded against traversal above). Don't blanket-suppress a rule in config — keep each suppression at the site, auditable.
-- **`jobs` table columns** — `id`, `user_id`, `job_type`, `source`, `status`, `priority`, `file_path`, `total_items`, `error_message`, `dispatch_complete`, `river_job_id`, `created_at`, `started_at`, `completed_at`. There is **no `updated_at`** column. `river_job_id` (the dispatch owner) is written only by `internal/joblifecycle`.
-- **`job_items` table columns** — `id`, `job_id`, `user_id`, `external_game_id`, `item_key`, `source_title`, `source_metadata` (jsonb), `status`, `result` (jsonb), `error_message`, `igdb_candidates` (jsonb), `resolved_igdb_id`, `match_confidence`, `created_at`, `processed_at`, `resolved_at`, `river_job_id`. There is **no `error`** column (it's `error_message`). `river_job_id` (the owner of a `pending` item) is written only by `internal/joblifecycle`.
+- **`errcheck` runs with `check-blank`** — every `_ =` error discard fails CI (`_test.go` exempt). **Handle** the error: an API handler logs and returns `echo.NewHTTPError(500, …)`, a worker logs. A discard that is genuinely fine is covered by the `std-error-handling` preset (`Close`/`Fprint`), the `(bun.Tx).Rollback` allowlist, or a per-site `//nolint:errcheck // <reason>`.
+- **`gosec` is enabled** — findings fail CI (`_test.go` excluded). Fix genuine ones (tighten perms to `0600`/`0750`, guard user-derived paths against traversal); a confirmed false positive gets a per-site `//nolint:gosec // <why it's safe>`, never a config-wide exclusion.
+- **`jobs` / `job_items` columns** — `jobs` has **no `updated_at`**; `job_items` has **no `error`** column (it's `error_message`). Check the migrations before naming a column.
+- **Job and item status belong to `internal/joblifecycle`** — a raw `UPDATE` of `jobs.status`, `job_items.status`, `dispatch_complete` or `river_job_id` breaks ownership (an item can sit `pending` with no River job forever). Ask the module for a transition; `docs/job-lifecycle.md` defines when a Job waits on the user, completes or is recovered.
 - **External games belong to `internal/externalgame`** — a write to `external_games` or `external_game_platforms` anywhere else fails the module's write guard test. Add an operation to the module instead; test fixtures may still write rows directly. Explicit row locks on these tables belong there too, but the guard does not check them (ADR 0009).
-- **Priority type mismatch** — `jobs.priority` is TEXT (`'high'`/`'low'`); `pending_tasks.priority` is INTEGER; don't conflate the two columns
+- **User-game mutations belong to `internal/usergame`** — hand-chaining platform inserts skips the invariant tail (wishlist, promotion, pools, tags). Call the module's operation.
+- **Priority type mismatch** — `jobs.priority` is TEXT (`'high'`/`'low'`); `pending_tasks.priority` is INTEGER; keep the two columns apart
 - **Echo v5 route order** — register static routes before parameterised ones (e.g. `GET /sync/steam/status` before `GET /sync/:id`); Echo v5 doesn't auto-sort and will match the wrong handler otherwise
 - **Service package import cycles** — if `internal/api` imports `internal/services/steam` and vice-versa, break the cycle by having each service package define its own local summary types; `router.go` bridges them with adapter structs that satisfy the handler's interface
 - **Platform/storefront `icon` field** — DB stores bare filename (e.g. `steam-icon-light.svg`); API responses must construct `icon_url` as `/logos/storefronts/<name>/<filename>` (or `platforms/`). Logos are bundled in the SPA dist and served at `/logos/...` — not `/static/logos/`.
 - **`user_game_platforms.platform` / `.storefront` are FKs** to `platforms(name)` / `storefronts(name)` (`ON DELETE RESTRICT`). `platform` is NOT NULL; `storefront` is nullable (a row with no storefront is never matched by a `storefront = ?` filter). Tests inserting platform rows must use **seeded** names (e.g. platform `pc-windows`, storefront `steam`), not arbitrary strings like `pc`, or the insert fails with a foreign-key violation.
-- **Job and item status belong to `internal/joblifecycle`** — a raw `UPDATE` of `jobs.status`, `job_items.status`, `dispatch_complete` or `river_job_id` breaks ownership (an item can sit `pending` with no River job forever). Ask the module for a transition; `docs/job-lifecycle.md` defines when a Job waits on the user, completes or is recovered.
 - **bun raw scan struct tags** — when scanning raw SQL into a struct, bun maps columns by snake_casing the field name. If the column alias doesn't match exactly (e.g. `is_new_addition` → field `IsNewAdd` → bun expects `is_new_add`), the scan silently returns nil rows. Use explicit `bun:"column_name"` tags on all fields in raw-query result structs.
+- **MCP `jsonschema` struct tags** are bare description strings; the `description=…` form panics at `AddTool`.
+- **In-app doc links** — `ui/frontend/src/lib/doc-links.ts` turns a relative link to a `docs/*.md` sibling into an in-app `/help/:slug` route, but only the two guides are embedded (`docs/embed.go`). Linking a guide to any other doc means embedding it too, or the link 404s.
 - **psql dev connection** — `psql "${DATABASE_URL/\/.s.PGSQL.5432/}"` — `DATABASE_URL` includes the full socket path; this substitution strips the socket filename so psql gets just the directory as `host`.
-- **Helm `values.schema.json` must stay in sync** — `deploy/helm/values.schema.json` uses `"additionalProperties": false` on the `nexorious` object; any new field added to `values.yaml` under `nexorious:` must also be registered in the schema or `helm lint --strict` fails. Also add `--set nexorious.<field>=x` to the lint step in `.github/workflows/test.yaml` if the field has a `fail` guard for its default placeholder value. Conversely, when **removing** a field, also remove its `--set nexorious.<field>=x` flag from `test.yaml` — `additionalProperties: false` will reject it and fail the lint.
-
+- **Helm `values.schema.json` must stay in sync** — `additionalProperties: false` on `nexorious` means a field added to `values.yaml` under `nexorious:` must be registered in `deploy/helm/values.schema.json`, or `helm lint --strict` fails. A field with a `fail` guard on its placeholder default also needs `--set nexorious.<field>=x` in the lint step of `.github/workflows/test.yaml`; removing the field means removing that flag too.
