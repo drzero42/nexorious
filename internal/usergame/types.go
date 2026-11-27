@@ -42,7 +42,10 @@ type PlatformInput struct {
 	// It is distinct from AcquiredDate==nil (which means "leave unchanged") and
 	// is used when the caller explicitly supplies an empty string for the field.
 	ClearAcquiredDate bool
-	ExternalGameID    *string
+	// ClearStorefront instructs UpdatePlatform to set storefront to NULL. A nil
+	// or empty Storefront means "leave unchanged".
+	ClearStorefront bool
+	ExternalGameID  *string
 	// SyncFromSource marks the platform row as storefront-synced. Set to true
 	// only in the sync worker; REST-create and import callers leave it false.
 	SyncFromSource bool

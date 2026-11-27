@@ -35,7 +35,14 @@ type BulkRemovePlatformParams struct {
 // UpdatePlatform verifies ownership, applies a PATCH-style partial update to
 // the named platform row, then runs promoteToInProgressIfPlayed (hours may
 // have changed). RowsAffected==0 → ErrNotFound.
+//
+// Nil and empty platform, storefront and ownership status are all "not
+// provided" and leave the column unchanged (#1493, #1501); writing an empty
+// string would fail the foreign keys. ClearStorefront sets the storefront to NULL.
 func UpdatePlatform(ctx context.Context, db *bun.DB, p UpdatePlatformParams) error {
+	p.Fields.Platform = emptyToNil(p.Fields.Platform)
+	p.Fields.Storefront = emptyToNil(p.Fields.Storefront)
+	p.Fields.OwnershipStatus = emptyToNil(p.Fields.OwnershipStatus)
 	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if err := assertOwned(ctx, tx, p.UserGameID, p.UserID); err != nil {
 			return err
@@ -53,7 +60,9 @@ func UpdatePlatform(ctx context.Context, db *bun.DB, p UpdatePlatformParams) err
 		if p.Fields.Platform != nil {
 			q = q.Set("platform = ?", *p.Fields.Platform)
 		}
-		if p.Fields.Storefront != nil {
+		if p.Fields.ClearStorefront {
+			q = q.Set("storefront = NULL")
+		} else if p.Fields.Storefront != nil {
 			q = q.Set("storefront = ?", *p.Fields.Storefront)
 		}
 		if p.Fields.IsAvailable != nil {
@@ -91,6 +100,14 @@ func UpdatePlatform(ctx context.Context, db *bun.DB, p UpdatePlatformParams) err
 	})
 }
 
+// emptyToNil treats a pointer to an empty string as "not provided".
+func emptyToNil[T ~string](v *T) *T {
+	if v != nil && *v == "" {
+		return nil
+	}
+	return v
+}
+
 // RemovePlatform verifies ownership and deletes the named platform row.
 // RowsAffected==0 → ErrNotFound.
 func RemovePlatform(ctx context.Context, db *bun.DB, p RemovePlatformParams) error {
@@ -114,22 +131,42 @@ func RemovePlatform(ctx context.Context, db *bun.DB, p RemovePlatformParams) err
 	})
 }
 
-// validatePlatformRefs validates the platform/storefront slugs of every input.
-func validatePlatformRefs(ctx context.Context, tx bun.IDB, ins []PlatformInput) error {
-	for _, in := range ins {
-		if err := validatePlatformRef(ctx, tx, in.Platform, in.Storefront); err != nil {
-			return err
+// prepareNewPlatforms runs prepareNewPlatform on every input, returning a
+// copy so the caller's slice is left as it was.
+func prepareNewPlatforms(ctx context.Context, tx bun.IDB, ins []PlatformInput) ([]PlatformInput, error) {
+	out := make([]PlatformInput, len(ins))
+	for i, in := range ins {
+		prepared, err := prepareNewPlatform(ctx, tx, in)
+		if err != nil {
+			return nil, err
 		}
+		out[i] = prepared
 	}
-	return nil
+	return out, nil
+}
+
+// prepareNewPlatform readies a platform input for insert (#1501). An empty
+// storefront means no storefront (NULL); a missing or empty platform is
+// ErrUnprocessable, since the column is NOT NULL. The slugs are then checked
+// by validatePlatformRef. Without this, an empty slug reaches the insert and
+// fails the foreign key as a 500.
+func prepareNewPlatform(ctx context.Context, tx bun.IDB, in PlatformInput) (PlatformInput, error) {
+	in.Storefront = emptyToNil(in.Storefront)
+	if emptyToNil(in.Platform) == nil {
+		return in, fmt.Errorf("platform is required: %w", ErrUnprocessable)
+	}
+	if err := validatePlatformRef(ctx, tx, in.Platform, in.Storefront); err != nil {
+		return in, err
+	}
+	return in, nil
 }
 
 // validatePlatformRef checks that the platform (when supplied) and storefront
 // (optional) slugs exist in the reference tables, returning ErrUnprocessable
 // naming the offending value. This converts a would-be foreign-key violation
 // (SQLSTATE 23503) into an actionable 422 for every caller (REST, sync, import).
-// Empty/nil values are skipped — a missing required platform is caught by the
-// NOT-NULL column itself, not here.
+// Empty/nil values are skipped: UpdatePlatform treats them as "not provided"
+// and prepareNewPlatform rejects a missing platform before calling this.
 func validatePlatformRef(ctx context.Context, tx bun.IDB, platform, storefront *string) error {
 	if platform != nil && *platform != "" {
 		ok, err := refExists(ctx, tx, "platforms", *platform)
