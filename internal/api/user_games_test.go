@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1705,13 +1706,8 @@ func TestCollectionStats(t *testing.T) {
 			t.Fatalf("expected total_games=2, got %d", resp.TotalGames)
 		}
 		want := map[string]int{"PC (Windows)": 2, "PlayStation 5": 1}
-		if len(resp.PlatformStats) != len(want) {
+		if !maps.Equal(resp.PlatformStats, want) {
 			t.Fatalf("expected platform_stats=%v, got %v", want, resp.PlatformStats)
-		}
-		for name, n := range want {
-			if resp.PlatformStats[name] != n {
-				t.Fatalf("expected platform_stats=%v, got %v", want, resp.PlatformStats)
-			}
 		}
 	})
 }
