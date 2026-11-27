@@ -1590,7 +1590,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		TableExpr("user_game_platforms AS ugp").
 		Join("JOIN user_games AS ug ON ug.id = ugp.user_game_id").
 		Join("JOIN platforms AS p ON p.name = ugp.platform").
-		ColumnExpr("p.display_name, COUNT(*) AS count").
+		ColumnExpr("p.display_name, COUNT(DISTINCT ugp.user_game_id) AS count").
 		Where("ug.user_id = ?", userID).
 		Where("ug.is_wishlisted = ?", false).
 		GroupExpr("p.name, p.display_name").
