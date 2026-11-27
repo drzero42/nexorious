@@ -144,11 +144,11 @@ func AutoMatch(ctx context.Context, db bun.IDB, id, storefrontTitle string, igdb
 		igdbID, id,
 	).Exec(ctx)
 	if err != nil {
-		return false, fmt.Errorf("auto-resolve external_game: %w", err)
+		return false, fmt.Errorf("auto-match external_game: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("auto-resolve external_game: rows affected: %w", err)
+		return false, fmt.Errorf("auto-match external_game: rows affected: %w", err)
 	}
 	return n > 0, nil
 }
