@@ -233,10 +233,24 @@ func TestCreateUserGame(t *testing.T) {
 				{"platform": "pc-windows", "storefront": "steam", "ownership_status": "bogus"},
 			},
 		}, token)
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 for invalid ownership_status, got %d: %s", rec.Code, rec.Body.String())
-		}
+		assertInvalidOwnershipStatus(t, rec, "bogus")
 	})
+}
+
+// assertInvalidOwnershipStatus checks the 400 every user-game handler returns
+// for an ownership_status outside enum.OwnershipStatus, in its one shape.
+func assertInvalidOwnershipStatus(t *testing.T, rec *httptest.ResponseRecorder, status string) {
+	t.Helper()
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for ownership_status %q, got %d: %s", status, rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if want := "invalid ownership_status: " + status; body["message"] != want {
+		t.Fatalf("want message %q, got body %s", want, rec.Body.String())
+	}
 }
 
 func TestGetUserGame(t *testing.T) {
@@ -992,9 +1006,7 @@ func TestPlatformCRUD(t *testing.T) {
 			"storefront":       "gog",
 			"ownership_status": "stolen",
 		}, token)
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
-		}
+		assertInvalidOwnershipStatus(t, rec, "stolen")
 	})
 
 	t.Run("list after create", func(t *testing.T) {
@@ -1219,8 +1231,45 @@ func TestUpdatePlatform_InvalidOwnershipStatus(t *testing.T) {
 	// Update with invalid ownership_status.
 	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-plat/platforms/%s", platformID),
 		map[string]any{"ownership_status": "stolen"}, token)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	assertInvalidOwnershipStatus(t, rec, "stolen")
+}
+
+// TestUpdatePlatform_EmptyOwnershipStatusLeavesItUnchanged guards #1493: an
+// empty ownership_status on update is "not provided", never stored as an empty string.
+func TestUpdatePlatform_EmptyOwnershipStatusLeavesItUnchanged(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "upd-plat-empty-own")
+	gameID := insertTestGame(t, testDB, "Update Plat Empty Ownership")
+	insertTestUserGame(t, testDB, "ug-upd-plat-empty", userID, int(gameID))
+
+	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-plat-empty/platforms", map[string]any{
+		"platform":         "pc-windows",
+		"storefront":       "steam",
+		"ownership_status": "borrowed",
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	platformID := decodeID(t, rec)
+
+	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-plat-empty/platforms/%s", platformID),
+		map[string]any{"ownership_status": ""}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var stored *string
+	if err := testDB.NewSelect().TableExpr("user_game_platforms").Column("ownership_status").
+		Where("id = ?", platformID).Scan(context.Background(), &stored); err != nil {
+		t.Fatalf("reload ownership_status: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("ownership_status = NULL, want borrowed (unchanged)")
+	}
+	if *stored != "borrowed" {
+		t.Fatalf("ownership_status = %q, want borrowed (unchanged)", *stored)
 	}
 }
 
@@ -2474,6 +2523,21 @@ func TestMoveToLibrary(t *testing.T) {
 		if rec.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("want 422 moving non-wishlisted, got %d: %s", rec.Code, rec.Body.String())
 		}
+	})
+
+	t.Run("invalid ownership_status is rejected", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Bad Ownership MTL")
+		created := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id":       gameID,
+			"is_wishlisted": true,
+		}, token)
+		if created.Code != http.StatusCreated {
+			t.Fatalf("create wishlist: want 201, got %d: %s", created.Code, created.Body.String())
+		}
+		ugID := decodeID(t, created)
+
+		rec := doMoveToLibrary(t, e, token, ugID, `{"platforms":[{"platform":"pc-windows","ownership_status":"stolen"}]}`)
+		assertInvalidOwnershipStatus(t, rec, "stolen")
 	})
 
 	t.Run("empty platforms returns 422", func(t *testing.T) {
