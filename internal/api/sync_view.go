@@ -49,6 +49,12 @@ const syncRetryable = `(` + syncFailed + ` AND NOT ` + syncNeedsReview + `
 // module cancels them with it).
 const syncInFlight = `COALESCE(ni.status IN ('pending', 'processing') AND nj.status IN ('pending', 'processing'), false)`
 
+// syncRepresentativeOrder orders the editions of a set (External games aliased
+// eg) so that the first is the set's representative: the oldest edition still
+// in the storefront library, else the oldest. The storefront list, the review
+// badge and the ignored list all pick their row by it.
+const syncRepresentativeOrder = `NOT eg.is_available, eg.created_at, eg.id`
+
 // syncEditionSets is the WITH clause shared by the list and the badge, so the
 // two group and flag the sets of editions the same way. edition_rows has one
 // row per External game eg of the user that matches where (SQL with its own
@@ -74,7 +80,7 @@ func syncEditionSets(where string) string {
 		` + syncNewestItemJoin + `
 		WHERE ` + where + `
 		WINDOW w AS (PARTITION BY ` + externalgame.EditionKey("eg") + `
-		             ORDER BY NOT eg.is_available, eg.created_at, eg.id)
+		             ORDER BY ` + syncRepresentativeOrder + `)
 	), edition_sets AS (
 		SELECT rep_id, array_agg(id) AS ids,
 		       bool_or(is_available) AS is_available,
