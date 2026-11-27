@@ -132,16 +132,17 @@ const (
 	ChangeAlreadyInLibrary ChangeType = "already_in_library"
 )
 
-// LibraryChangeTypes are the change types a sync Job writes for a library
-// entry. A sync's diff lists them once per library entry (#1443).
+// LibraryChangeTypes are the change types that record a write to a library
+// entry (sync and import both write them). A sync's diff lists them once per
+// library entry (#1443).
 var LibraryChangeTypes = []ChangeType{
 	ChangeAdded,
 	ChangeAlreadyInLibrary,
 	ChangeStatusChanged,
 }
 
-// IsLibrary reports whether t is one of LibraryChangeTypes.
-func (t ChangeType) IsLibrary() bool {
+// IsLibraryEntry reports whether t is one of LibraryChangeTypes.
+func (t ChangeType) IsLibraryEntry() bool {
 	return slices.Contains(LibraryChangeTypes, t)
 }
 

@@ -66,8 +66,7 @@ func InsertLibraryWriteChanges(ctx context.Context, db bun.IDB, jobID, userID st
 		changeType = enum.ChangeAdded
 	case !upgraded:
 		changeType = enum.ChangeAlreadyInLibrary
-	}
-	if changeType == "" {
+	default:
 		return nil
 	}
 	if _, err := db.NewRaw(

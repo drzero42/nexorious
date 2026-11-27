@@ -422,7 +422,7 @@ func listChanges(rows []changeRow, bySyncGame bool) changeLists {
 	var order []line
 	entries := map[string]*libraryEntryLine{}
 	for _, r := range rows {
-		if bySyncGame && r.ChangeType.IsLibrary() && r.UserGameID != nil {
+		if bySyncGame && r.ChangeType.IsLibraryEntry() && r.UserGameID != nil {
 			e, ok := entries[*r.UserGameID]
 			if !ok {
 				title := r.Title
