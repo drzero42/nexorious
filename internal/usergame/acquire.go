@@ -141,10 +141,7 @@ func mergePlatforms(ctx context.Context, tx bun.IDB, ugID string, ins []Platform
 }
 
 func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformInput) (PlatformChange, error) {
-	ownership := "owned"
-	if in.OwnershipStatus != nil && *in.OwnershipStatus != "" {
-		ownership = *in.OwnershipStatus
-	}
+	ownership := effectiveOwnership(in)
 	available := true
 	if in.IsAvailable != nil {
 		available = *in.IsAvailable
@@ -156,7 +153,7 @@ func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformI
 	ch := PlatformChange{Platform: deref(in.Platform), Storefront: deref(in.Storefront)}
 
 	var existingID string
-	var existingOwnership *string
+	var existingOwnership *enum.OwnershipStatus
 	var existingHours *float64
 	err := tx.NewRaw(
 		`SELECT id, ownership_status, hours_played FROM user_game_platforms
@@ -184,10 +181,12 @@ func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformI
 		return ch, fmt.Errorf("select existing platform: %w", err)
 	default:
 		finalOwnership := ownership
+		existingRank := 0 // a NULL ownership ranks like an unknown one
 		if existingOwnership != nil {
 			finalOwnership = *existingOwnership
+			existingRank = existingOwnership.Rank()
 		}
-		if enum.OwnershipStatus(ownership).Rank() > ownershipRankPtr(existingOwnership) {
+		if ownership.Rank() > existingRank {
 			ch.OwnershipUpgraded = true
 			ch.OldOwnership = existingOwnership
 			o := ownership
@@ -280,9 +279,9 @@ func AddPlatformBulk(ctx context.Context, db *bun.DB, p BulkAddPlatformParams) (
 			result, insertErr := tx.NewRaw(
 				`INSERT INTO user_game_platforms
 				 (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, external_game_id, acquired_date, sync_from_source, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, true, NULL, 'owned', NULL, NULL, false, now(), now())
+				 VALUES (?, ?, ?, ?, true, NULL, ?, NULL, NULL, false, now(), now())
 				 ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
-				uuid.NewString(), ugID, p.Platform.Platform, p.Platform.Storefront,
+				uuid.NewString(), ugID, p.Platform.Platform, p.Platform.Storefront, enum.OwnershipOwned,
 			).Exec(ctx)
 			if insertErr != nil {
 				return fmt.Errorf("bulk insert platform: %w", insertErr)
@@ -365,10 +364,7 @@ func assertWishlisted(ctx context.Context, tx bun.IDB, ugID, userID string) erro
 // so a duplicate (user_game_id, platform, storefront) returns ErrConflict.
 // Returns the new platform row ID.
 func insertPlatformStrict(ctx context.Context, tx bun.IDB, ugID string, in PlatformInput) (string, error) {
-	ownership := "owned"
-	if in.OwnershipStatus != nil && *in.OwnershipStatus != "" {
-		ownership = *in.OwnershipStatus
-	}
+	ownership := effectiveOwnership(in)
 	available := true
 	if in.IsAvailable != nil {
 		available = *in.IsAvailable
@@ -389,11 +385,13 @@ func insertPlatformStrict(ctx context.Context, tx bun.IDB, ugID string, in Platf
 	return id, nil
 }
 
-func ownershipRankPtr(s *string) int {
-	if s == nil {
-		return 0
+// effectiveOwnership is the ownership status a platform row gets: the input's,
+// or owned when the input leaves it unset or empty.
+func effectiveOwnership(in PlatformInput) enum.OwnershipStatus {
+	if in.OwnershipStatus != nil && *in.OwnershipStatus != "" {
+		return *in.OwnershipStatus
 	}
-	return enum.OwnershipStatus(*s).Rank()
+	return enum.OwnershipOwned
 }
 
 func deref(s *string) string {

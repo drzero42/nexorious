@@ -7,6 +7,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/cliclient"
 	"github.com/drzero42/nexorious/internal/clientops"
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 func newGameAcquireCmd() *cobra.Command {
@@ -38,7 +39,7 @@ func newGameAcquireCmd() *cobra.Command {
 			}
 			own := ownership
 			if own == "" {
-				own = "owned"
+				own = string(enum.OwnershipOwned)
 			}
 			if _, err := c.MoveToLibrary(cmd.Context(), p.Key, u.ID, []cliclient.PlatformInput{{Platform: pl, Storefront: sf, OwnershipStatus: own}}); err != nil {
 				return fmt.Errorf("acquire failed: %w", err)
@@ -50,6 +51,6 @@ func newGameAcquireCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&platform, "platform", "", "Platform slug, optionally platform/storefront (required)")
 	f.StringVar(&storefront, "storefront", "", "Storefront slug (overrides platform/storefront)")
-	f.StringVar(&ownership, "ownership", "owned", "Ownership status")
+	f.StringVar(&ownership, "ownership", string(enum.OwnershipOwned), "Ownership status")
 	return cmd
 }

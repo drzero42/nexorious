@@ -166,7 +166,7 @@ func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFi
 	createdAt := parseDateOnly(payload.CreatedAt)
 
 	// Game-level HoursPlayed goes on the first platform only.
-	owned := "owned"
+	owned := enum.OwnershipOwned
 	plats := make([]usergame.PlatformInput, 0, len(payload.Platforms))
 	for i, pl := range payload.Platforms {
 		platform := pl.Platform

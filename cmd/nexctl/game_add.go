@@ -10,6 +10,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/cliclient"
 	"github.com/drzero42/nexorious/internal/clientops"
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 func newGameAddCmd() *cobra.Command {
@@ -66,7 +67,7 @@ func newGameAddCmd() *cobra.Command {
 				if err := clientops.ValidatePlatform(cmd.Context(), c, p.Key, pl); err != nil {
 					return err
 				}
-				in.Platforms = []cliclient.PlatformInput{{Platform: pl, Storefront: sf, OwnershipStatus: "owned"}}
+				in.Platforms = []cliclient.PlatformInput{{Platform: pl, Storefront: sf, OwnershipStatus: string(enum.OwnershipOwned)}}
 			}
 
 			ug, err := c.CreateUserGame(cmd.Context(), p.Key, in)

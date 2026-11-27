@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
 )
@@ -139,7 +140,7 @@ func gameEntry(sp *Subproduct) (storefrontadapter.ExternalGameEntry, bool) {
 		Title:           sp.HumanName,
 		PlaytimeHours:   0,
 		Platforms:       slugs,
-		OwnershipStatus: "owned",
+		OwnershipStatus: enum.OwnershipOwned,
 		IsSubscription:  false,
 	}, true
 }

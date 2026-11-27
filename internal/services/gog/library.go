@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 // ExternalGameEntry is a normalised game entry from GOG.
@@ -16,7 +18,7 @@ type ExternalGameEntry struct {
 	Title           string
 	Platforms       []string // all platforms this product runs on
 	PlaytimeHours   float64
-	OwnershipStatus string
+	OwnershipStatus enum.OwnershipStatus
 	IsSubscription  bool
 }
 
@@ -127,7 +129,7 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 			Title:           p.Title,
 			Platforms:       platforms,
 			PlaytimeHours:   0,
-			OwnershipStatus: "owned",
+			OwnershipStatus: enum.OwnershipOwned,
 			IsSubscription:  false,
 		})
 	}
