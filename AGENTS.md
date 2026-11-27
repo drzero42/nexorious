@@ -59,9 +59,9 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 
 ## Project Structure
 
-One line per package: what it owns and the rule that guards it. The details live in each package's doc comment (`go doc ./internal/<pkg>`); read it before changing the package. A new package gets one line here, a new rule one sentence — never a list of its functions.
+One line per package: what it owns and the rule that guards it. Where a package has a doc comment (`go doc ./internal/<pkg>`), the details live there; read it before changing the package. A new package gets one line here, a new rule one sentence — never a list of its functions.
 
-- `cmd/nexorious/` — the server binary: serve, the DB-direct `migrate`, `ensure-db-role`.
+- `cmd/nexorious/` — the server binary, with the commands that need direct DB access (e.g. `migrate`, `ensure-db-role`).
 - `cmd/nexctl/` — the REST client binary; its command reference is the package doc (`cmd/nexctl/doc.go`). It talks to the server only over REST (`cliclient`), puts operations shared with MCP in `internal/clientops`, and never links the MCP SDK or `internal/mcptools` (`TestNexctlDoesNotLinkMCPSDK`).
 - `internal/clientops/` — the one implementation of operations both nexctl and MCP run. Never prompts, imports neither cobra nor the MCP SDK.
 - `internal/mcptools/` — the MCP tools at `/api/mcp`, mirroring nexctl's game/pool/tag/sync/doctor trees on `clientops`. Every tool declares its scope in `toolScopes` (`scope.go`), or `addTool` panics.
@@ -74,8 +74,8 @@ One line per package: what it owns and the rule that guards it. The details live
 - `internal/scheduler/` — periodic River jobs (`BuildPeriodicJobs`).
 - `internal/services/` — IGDB client, storefront clients, game matching, platform resolution.
 - `internal/usergame/` — the **only** place user games are mutated: API, sync and import all call its operations.
-- `internal/externalgame/` — the **only** non-test code that writes `external_games` / `external_game_platforms` or row-locks them, and the one definition of editions (ADR 0008, ADR 0009). Imports neither `internal/joblifecycle`, `internal/worker/tasks` nor `internal/api`; `guard_test.go` enforces both.
-- `internal/librarysmells/` — library-smell checks and their fixes, which go through `internal/usergame`.
+- `internal/externalgame/` — the **only** non-test code that writes `external_games` / `external_game_platforms` or row-locks them, and the one definition of editions (ADR 0008, ADR 0009). Imports neither `internal/joblifecycle`, `internal/worker/tasks` nor `internal/api`; `guard_test.go` enforces the write and import rules, not the locks.
+- `internal/librarysmells/` — library health: the Checks and their fixes, which go through `internal/usergame`.
 - `internal/auth/` — session + API-key auth. A read-scoped key may only use non-mutating methods; the exemptions are the lists in `scope.go`.
 - `internal/dbrole/` — keeps the app's DB role unprivileged.
 - `internal/filter/` — Bun query builder for user-game list filters.

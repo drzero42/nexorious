@@ -25,7 +25,7 @@
 //   - admin: user list/show/create/enable/disable/set-admin/passwd/rm, and reset.
 //   - config: get/set, and notify channel/sub/test-url/events.
 //   - mcp: config/serve.
-//   - doctor: library-health smells (summary, --check, apply/ignore/restore/ignored).
+//   - doctor: library health (summary, --check, apply/ignore/restore/ignored).
 //   - setup: admin/backups/restore, unauthenticated and pre-bootstrap.
 //   - migrate: run/status, HTTP-driven against a running server.
 //
@@ -57,7 +57,7 @@
 // # sync
 //
 // The storefront slug set comes from the server's registry through
-// resolveStorefront; there is no hardcoded list. `sync connect` builds a
+// clientops.ResolveStorefront; there is no hardcoded list. `sync connect` builds a
 // per-storefront credential body, prompting for secrets without echo.
 //
 // `sync review` is the External game match review (rematch/skip) and runs only
@@ -85,7 +85,7 @@
 //     still answers format=generic without a mapping with 400 "missing mapping
 //     field".
 //   - `import run <source>` is validated against the registry by
-//     resolveImportSource, like resolveStorefront. nexorious and csv are not
+//     resolveImportSource, like clientops.ResolveStorefront. nexorious and csv are not
 //     registry sources; they have their own endpoints.
 //   - `import review`/`resolve`/`skip` is the import Job item match review: it
 //     pages through every pending_review item and searches IGDB live, then
@@ -143,12 +143,12 @@
 //
 // # doctor
 //
-// doctor is the front-end over the library-smells API (/api/library/smells,
+// doctor is the front-end over the library health API (/api/library/smells,
 // engine in internal/librarysmells). By default it prints a summary table
-// (id, check, tier, fixable, count); --check <id> lists the flagged items;
+// (id, check, tier, fixable, count); --check <id> lists the flagged games;
 // `apply <check> [refs…]` fixes an auto-fixable check (no refs means every
-// flagged item; it confirms unless -y, and the server answers a check that is
-// not fixable with 422); ignore/restore/ignored <check> manage per-item
-// dismissals. Refs resolve through resolveUserGameRef. Whether a check is
+// flagged game; it confirms unless -y, and the server answers a check that is
+// not fixable with 422); ignore/restore/ignored <check> manage per-game
+// ignores. Refs resolve through resolveUserGameRef. Whether a check is
 // fixable is read from the API's auto_fixable, never hardcoded.
 package main

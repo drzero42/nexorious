@@ -3,12 +3,11 @@
 // the REST API through cliclient and the shared operations in
 // internal/clientops, so the CLI and MCP front-ends cannot drift.
 //
-// The package is transport-agnostic: callers bind the returned server to stdio
-// (nexctl mcp serve) or an HTTP handler. The server serves it at /api/mcp
-// (internal/api/mcp.go).
+// The package is transport-agnostic; the server binds it to an HTTP handler at
+// /api/mcp (internal/api/mcp.go). nexctl never links it: `nexctl mcp serve`
+// only relays stdio to that endpoint.
 //
-// The tools mirror the game, pool, tag, sync and doctor trees
-// (library_smells_*). Left out on purpose: sync_connect, whose secrets would
+// The doctor tree's tools are named library_smells_*. Left out on purpose: sync_connect, whose secrets would
 // pass through an agent, and the admin, import, export, backup and config
 // groups.
 //

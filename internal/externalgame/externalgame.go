@@ -1,7 +1,7 @@
 // Package externalgame owns the storefront side of a sync: External games
 // (external_games) and their platform rows (external_game_platforms), and the
 // rules about a game's editions (#1449, ADR 0008): the definition of a set of
-// editions (SameEdition, EditionKey), locking a game's editions
+// editions, locking a game's editions
 // (LockEditions), the decisions on a locked set (Rematch, Skip and Unskip on
 // Editions), and taking a same-title game's decision (TakePrecedent). It sits
 // between internal/joblifecycle, which owns the sync Job, and
@@ -21,7 +21,8 @@
 // It is the only non-test Go code that writes external_games or
 // external_game_platforms or takes an explicit row lock on them, and it links
 // neither internal/joblifecycle, internal/worker/tasks nor internal/api
-// (ADR 0009). guard_test.go enforces both.
+// (ADR 0009). guard_test.go enforces the write rule and the import rule; it
+// does not check row locks.
 package externalgame
 
 import (

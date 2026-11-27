@@ -1,5 +1,7 @@
-// Package cliauth holds the API-key login bootstrap shared by `nexctl account
-// login` and `nexorious setup --login`.
+// Package cliauth holds the nexctl flows that run before a stored API key
+// exists: the login bootstrap (LoginAndStoreKey, used by `nexctl account login`
+// and `nexctl setup`), the setup orchestration (Preflight, ReportSetupResult)
+// for `nexctl setup`, and RunMigrateAndWait for `nexctl migrate`.
 package cliauth
 
 import (
