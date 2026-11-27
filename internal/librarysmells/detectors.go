@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 var orphanGameCheck = Check{
@@ -187,17 +189,17 @@ func detectPlayedButNotStarted(ctx context.Context, db *bun.DB, userID string) (
 	var items []FlaggedItem
 	err := db.NewRaw(
 		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        'in_progress' AS suggested_status
+		        ? AS suggested_status
 		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
 		 WHERE ug.user_id = ?
-		   AND ug.play_status = 'not_started'
+		   AND ug.play_status = ?
 		   AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
 		        WHERE p.user_game_id = ug.id) >= 0.5
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
-		userID, "played-but-not-started",
+		string(enum.PlayStatusInProgress), userID, string(enum.PlayStatusNotStarted), "played-but-not-started",
 	).Scan(ctx, &items)
 	return items, err
 }
@@ -216,17 +218,17 @@ func detectInProgressUntouched(ctx context.Context, db *bun.DB, userID string) (
 	var items []FlaggedItem
 	err := db.NewRaw(
 		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        'not_started' AS suggested_status
+		        ? AS suggested_status
 		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
 		 WHERE ug.user_id = ?
-		   AND ug.play_status = 'in_progress'
+		   AND ug.play_status = ?
 		   AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
 		        WHERE p.user_game_id = ug.id) = 0
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
-		userID, "in-progress-untouched",
+		string(enum.PlayStatusNotStarted), userID, string(enum.PlayStatusInProgress), "in-progress-untouched",
 	).Scan(ctx, &items)
 	return items, err
 }
@@ -249,12 +251,12 @@ func detectUnratedAfterBeating(ctx context.Context, db *bun.DB, userID string) (
 		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
 		 WHERE ug.user_id = ?
-		   AND ug.play_status IN ('completed', 'mastered', 'dominated')
+		   AND ug.play_status IN (?)
 		   AND ug.personal_rating IS NULL
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
-		userID, "unrated-after-finishing",
+		userID, bun.List(enum.BeatenPlayStatusStrings()), "unrated-after-finishing",
 	).Scan(ctx, &items)
 	return items, err
 }

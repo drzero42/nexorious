@@ -21,13 +21,13 @@ func Grouvee() Config {
 				Column: "shelves",
 				Format: FormatJSONKeys,
 				ValueMap: map[string]string{
-					"playing":   "in_progress",
-					"played":    "completed",
-					"backlog":   "not_started",
+					"playing":   psInProgress,
+					"played":    psCompleted,
+					"backlog":   psNotStarted,
 					"wish list": WishlistStatus,
 				},
 				Precedence: []string{"playing", "played", "backlog"},
-				Default:    "not_started",
+				Default:    psNotStarted,
 			},
 		},
 		PlayLog: &PlayLogConfig{
@@ -35,9 +35,9 @@ func Grouvee() Config {
 			SecondsField:    "seconds_played",
 			CompletionField: "level_of_completion",
 			CompletionMap: map[string]string{
-				"main story":          "completed",
-				"main story + extras": "mastered",
-				"100% completion":     "dominated",
+				"main story":          psCompleted,
+				"main story + extras": psMastered,
+				"100% completion":     psDominated,
 			},
 		},
 		Platform: PlatformConfig{

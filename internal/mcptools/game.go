@@ -393,7 +393,7 @@ func registerGameTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			}
 			status := in.PlayStatus
 			if status == "" {
-				status = "not_started"
+				status = string(enum.PlayStatusNotStarted)
 			}
 			input := cliclient.CreateUserGameInput{
 				GameID:         chosen.IgdbID,

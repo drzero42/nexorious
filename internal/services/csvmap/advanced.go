@@ -26,7 +26,7 @@ func extractStatusFlags(rec []string, idx map[string]int, sf *StatusFlags) strin
 	if sf.Default != "" {
 		return sf.Default
 	}
-	return "not_started"
+	return psNotStarted
 }
 
 // parseHMM parses Darkadia "H:MM" playtime into hours. "148:00" -> 148.0,

@@ -75,6 +75,24 @@ func FinishedPlayStatusStrings() []string {
 	return out
 }
 
+// BeatenPlayStatuses are the Finished play statuses the user played through:
+// every Finished status except dropped (see GLOSSARY "Beaten").
+var BeatenPlayStatuses = []PlayStatus{
+	PlayStatusCompleted,
+	PlayStatusMastered,
+	PlayStatusDominated,
+}
+
+// BeatenPlayStatusStrings returns the beaten set as plain strings, for use in
+// SQL `IN (?)` clauses via bun.List.
+func BeatenPlayStatusStrings() []string {
+	out := make([]string, len(BeatenPlayStatuses))
+	for i, s := range BeatenPlayStatuses {
+		out[i] = string(s)
+	}
+	return out
+}
+
 // OwnershipStatus represents valid ownership_status values for user_game_platforms.
 type OwnershipStatus string
 

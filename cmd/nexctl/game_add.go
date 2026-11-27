@@ -79,7 +79,7 @@ func newGameAddCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&status, "status", "not_started", "Initial play status")
+	f.StringVar(&status, "status", string(enum.PlayStatusNotStarted), "Initial play status")
 	f.StringVar(&platform, "platform", "", "Platform slug, optionally platform/storefront")
 	f.StringVar(&storefront, "storefront", "", "Storefront slug (overrides platform/storefront)")
 	f.StringVar(&notes, "notes", "", "Personal notes")

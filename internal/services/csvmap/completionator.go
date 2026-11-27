@@ -22,10 +22,10 @@ func Completionator() Config {
 			Column: &StatusColumn{
 				Column: "Progress Status",
 				ValueMap: map[string]string{
-					"finished":   "completed",
-					"incomplete": "not_started",
+					"finished":   psCompleted,
+					"incomplete": psNotStarted,
 				},
-				Default: "not_started",
+				Default: psNotStarted,
 			},
 		},
 		Platform: PlatformConfig{

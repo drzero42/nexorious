@@ -137,17 +137,17 @@ func GuessRatingScale(max float64) int {
 // statusSynonyms maps a normalized source status value to a play_status. Values
 // not present here fall back to "not_started".
 var statusSynonyms = map[string]string{
-	"completed": "completed", "complete": "completed", "beaten": "completed",
-	"finished": "completed", "done": "completed", "100": "completed", "100percent": "completed",
-	"inprogress": "in_progress", "playing": "in_progress", "started": "in_progress",
-	"current": "in_progress", "ongoing": "in_progress",
-	"notstarted": "not_started", "backlog": "not_started", "unplayed": "not_started",
-	"neverplayed": "not_started", "tobeplayed": "not_started", "tbp": "not_started", "wishlist": "not_started", // wishlisted = unplayed here; is_wishlisted flag handled separately
-	"dropped": "dropped", "abandoned": "dropped", "quit": "dropped", "gaveup": "dropped",
-	"shelved": "shelved", "onhold": "shelved", "hold": "shelved", "paused": "shelved", "suspended": "shelved",
-	"mastered": "mastered", "platinum": "mastered", "perfected": "mastered",
-	"dominated": "dominated",
-	"replay":    "replay", "replaying": "replay", "revisiting": "replay",
+	"completed": psCompleted, "complete": psCompleted, "beaten": psCompleted,
+	"finished": psCompleted, "done": psCompleted, "100": psCompleted, "100percent": psCompleted,
+	"inprogress": psInProgress, "playing": psInProgress, "started": psInProgress,
+	"current": psInProgress, "ongoing": psInProgress,
+	"notstarted": psNotStarted, "backlog": psNotStarted, "unplayed": psNotStarted,
+	"neverplayed": psNotStarted, "tobeplayed": psNotStarted, "tbp": psNotStarted, "wishlist": psNotStarted, // wishlisted = unplayed here; is_wishlisted flag handled separately
+	"dropped": psDropped, "abandoned": psDropped, "quit": psDropped, "gaveup": psDropped,
+	"shelved": psShelved, "onhold": psShelved, "hold": psShelved, "paused": psShelved, "suspended": psShelved,
+	"mastered": psMastered, "platinum": psMastered, "perfected": psMastered,
+	"dominated": psDominated,
+	"replay":    psReplay, "replaying": psReplay, "revisiting": psReplay,
 }
 
 // GuessStatusValueMap maps each distinct source value to a guessed play_status,
@@ -159,7 +159,7 @@ func GuessStatusValueMap(distinct []string) map[string]string {
 		if ps, ok := statusSynonyms[normalizeHeader(v)]; ok {
 			out[v] = ps
 		} else {
-			out[v] = "not_started"
+			out[v] = psNotStarted
 		}
 	}
 	return out

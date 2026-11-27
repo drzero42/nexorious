@@ -1526,13 +1526,13 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 
 	ctx := context.Background()
 	resp := CollectionStatsResponse{
-		CompletionStats: map[string]int{
-			"not_started": 0, "in_progress": 0, "completed": 0, "mastered": 0,
-			"dominated": 0, "shelved": 0, "dropped": 0, "replay": 0,
-		},
-		OwnershipStats: map[string]int{},
-		PlatformStats:  map[string]int{},
-		GenreStats:     map[string]int{},
+		CompletionStats: map[string]int{},
+		OwnershipStats:  map[string]int{},
+		PlatformStats:   map[string]int{},
+		GenreStats:      map[string]int{},
+	}
+	for _, s := range enum.AllPlayStatuses() {
+		resp.CompletionStats[s] = 0
 	}
 	for _, s := range enum.AllOwnershipStatuses() {
 		resp.OwnershipStats[s] = 0
@@ -1557,7 +1557,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 	var statusCounts []statusCount
 	err = h.db.NewSelect().
 		TableExpr("user_games").
-		ColumnExpr("COALESCE(play_status, 'not_started') AS play_status, COUNT(*) AS count").
+		ColumnExpr("COALESCE(play_status, ?) AS play_status, COUNT(*) AS count", string(enum.PlayStatusNotStarted)).
 		Where("user_id = ?", userID).
 		Where("is_wishlisted = ?", false).
 		GroupExpr("play_status").
@@ -1633,12 +1633,15 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 	}
 
 	// pile_of_shame
-	resp.PileOfShame = resp.CompletionStats["not_started"]
+	resp.PileOfShame = resp.CompletionStats[string(enum.PlayStatusNotStarted)]
 
 	// completion_rate
 	if total > 0 {
-		completed := resp.CompletionStats["completed"] + resp.CompletionStats["mastered"] + resp.CompletionStats["dominated"]
-		resp.CompletionRate = math.Round(float64(completed)/float64(total)*10000) / 100
+		beaten := 0
+		for _, s := range enum.BeatenPlayStatuses {
+			beaten += resp.CompletionStats[string(s)]
+		}
+		resp.CompletionRate = math.Round(float64(beaten)/float64(total)*10000) / 100
 	}
 
 	// average_rating

@@ -12,6 +12,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
 
@@ -132,22 +133,22 @@ func mapEntry(e exportEntry) importmodel.Game {
 // mapCompletionStatus maps a vglist completion_status to a Nexorious play_status.
 // Unknown or empty values fall back to not_started. See docs/vglist-import.md.
 func mapCompletionStatus(s string) string {
+	var ps enum.PlayStatus
 	switch strings.TrimSpace(s) {
 	case "in_progress":
-		return "in_progress"
+		ps = enum.PlayStatusInProgress
 	case "paused":
-		return "shelved"
+		ps = enum.PlayStatusShelved
 	case "dropped":
-		return "dropped"
+		ps = enum.PlayStatusDropped
 	case "completed":
-		return "completed"
+		ps = enum.PlayStatusCompleted
 	case "fully_completed":
-		return "mastered"
-	case "unplayed", "not_applicable", "":
-		return "not_started"
-	default:
-		return "not_started"
+		ps = enum.PlayStatusMastered
+	default: // "unplayed", "not_applicable", "" and unknown values
+		ps = enum.PlayStatusNotStarted
 	}
+	return string(ps)
 }
 
 // mapRating collapses vglist's integer 0–100 rating into whole 1–5 stars:

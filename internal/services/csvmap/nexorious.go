@@ -1,6 +1,10 @@
 package csvmap
 
-import "time"
+import (
+	"time"
+
+	"github.com/drzero42/nexorious/internal/enum"
+)
 
 // NexoriousCSV returns the preset Config for Nexorious's own CSV export
 // (internal/worker/tasks/export.go). Every row carries an igdb_id (the
@@ -26,18 +30,9 @@ func NexoriousCSV() Config {
 		},
 		Status: StatusConfig{
 			Column: &StatusColumn{
-				Column: "play_status",
-				ValueMap: map[string]string{
-					"not_started": "not_started",
-					"in_progress": "in_progress",
-					"completed":   "completed",
-					"mastered":    "mastered",
-					"dominated":   "dominated",
-					"shelved":     "shelved",
-					"dropped":     "dropped",
-					"replay":      "replay",
-				},
-				Default: "not_started",
+				Column:   "play_status",
+				ValueMap: playStatusIdentityMap(),
+				Default:  psNotStarted,
 			},
 		},
 		Platform: PlatformConfig{
@@ -53,4 +48,15 @@ func NexoriousCSV() Config {
 		DateLayout:   time.RFC3339,
 		Grouping:     GroupingConfig{MergeByTitle: false},
 	}
+}
+
+// playStatusIdentityMap maps every play status to itself: Nexorious's own
+// export writes play_status verbatim.
+func playStatusIdentityMap() map[string]string {
+	all := enum.AllPlayStatuses()
+	m := make(map[string]string, len(all))
+	for _, s := range all {
+		m[s] = s
+	}
+	return m
 }
