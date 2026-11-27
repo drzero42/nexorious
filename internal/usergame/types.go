@@ -96,21 +96,3 @@ type PlatformChange struct {
 	OldOwnership      *string
 	NewOwnership      *string
 }
-
-// OwnershipRank returns a numeric rank for an ownership status string.
-// Higher = better. Used to avoid downgrading ownership on update, and to
-// merge a game's ownership upgrades into one line of a sync's change list.
-func OwnershipRank(status string) int {
-	switch status {
-	case "owned":
-		return 4
-	case "borrowed", "rented":
-		return 3
-	case "subscription":
-		return 2
-	case "no_longer_owned":
-		return 1
-	default:
-		return 0
-	}
-}

@@ -11,6 +11,7 @@ import (
 	"github.com/uptrace/bun"
 
 	nexdb "github.com/drzero42/nexorious/internal/db"
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 // Acquire ensures the user owns the game on the supplied platforms, running the
@@ -186,7 +187,7 @@ func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformI
 		if existingOwnership != nil {
 			finalOwnership = *existingOwnership
 		}
-		if OwnershipRank(ownership) > ownershipRankPtr(existingOwnership) {
+		if enum.OwnershipStatus(ownership).Rank() > ownershipRankPtr(existingOwnership) {
 			ch.OwnershipUpgraded = true
 			ch.OldOwnership = existingOwnership
 			o := ownership
@@ -392,7 +393,7 @@ func ownershipRankPtr(s *string) int {
 	if s == nil {
 		return 0
 	}
-	return OwnershipRank(*s)
+	return enum.OwnershipStatus(*s).Rank()
 }
 
 func deref(s *string) string {

@@ -20,7 +20,6 @@ import (
 	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
-	"github.com/drzero42/nexorious/internal/usergame"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -384,12 +383,12 @@ type libraryEntryLine struct {
 	oldStatus, newStatus *string
 }
 
-// maxOwnership returns whichever of cur and s ranks higher (usergame's rank).
+// maxOwnership returns whichever of cur and s ranks higher.
 func maxOwnership(cur, s *string) *string {
 	if s == nil {
 		return cur
 	}
-	if cur == nil || usergame.OwnershipRank(*s) > usergame.OwnershipRank(*cur) {
+	if cur == nil || enum.OwnershipStatus(*s).Rank() > enum.OwnershipStatus(*cur).Rank() {
 		return s
 	}
 	return cur

@@ -99,6 +99,26 @@ func (s OwnershipStatus) Valid() bool {
 	return validOwnershipStatuses[s]
 }
 
+// Rank returns how strong an ownership status is; higher is stronger. Owned
+// ranks above borrowed and rented (equal), then subscription, then
+// no_longer_owned; an unknown or empty status ranks 0. Used to avoid
+// downgrading ownership on update, and to merge a game's ownership upgrades
+// into one line of a sync's change list.
+func (s OwnershipStatus) Rank() int {
+	switch s {
+	case OwnershipOwned:
+		return 4
+	case OwnershipBorrowed, OwnershipRented:
+		return 3
+	case OwnershipSubscription:
+		return 2
+	case OwnershipNoLongerOwned:
+		return 1
+	default:
+		return 0
+	}
+}
+
 // allOwnershipStatuses lists every valid ownership status in display order.
 var allOwnershipStatuses = []OwnershipStatus{
 	OwnershipOwned,
