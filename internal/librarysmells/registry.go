@@ -1,5 +1,6 @@
-// Package librarysmells detects data-quality issues ("library smells") in a
-// user's game collection and, for a subset, applies one-click fixes (#1144).
+// Package librarysmells implements Library health: it runs Checks over a
+// user's collection to find data that looks wrong or out of date and, for a
+// subset, applies one-click fixes (#1144).
 //
 // Each Check in the registry is keyed by slug and finds its flagged games with
 // a read-only query anti-joined against smell_ignores (the user's ignores).
@@ -46,7 +47,7 @@ type FlaggedItem struct {
 	Detail          *string `bun:"detail"           json:"detail,omitempty"`
 }
 
-// Check is one library-smell detector and its optional one-click fix.
+// Check is one rule in Library health, with its optional one-click fix.
 type Check struct {
 	ID          string
 	Title       string
@@ -54,8 +55,8 @@ type Check struct {
 	Tier        Tier
 	AutoFixable bool
 
-	// Detect returns flagged items for userID, excluding rows the user has
-	// dismissed via smell_ignores for this check. Read-only.
+	// Detect returns this Check's flagged games for userID, leaving out games
+	// the user has Ignored for this Check (smell_ignores). Read-only.
 	Detect func(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error)
 
 	// Apply performs the one-click fix for the given user_game IDs, routing
