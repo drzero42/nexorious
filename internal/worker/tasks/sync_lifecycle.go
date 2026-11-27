@@ -317,7 +317,10 @@ func syncDiff(ctx context.Context, db bun.IDB, job *models.Job) (*notify.EmitPar
 	// line shows the library entry's title and the platforms of every edition
 	// the Job wrote to that entry. A 'removed' row is one per set of editions
 	// (the sweep writes it for the last edition to leave); its line shows the
-	// platforms of every edition of the set as they are now.
+	// platforms of every edition of the set as they are now. The set, not
+	// externalgame.SameGame: the sweep counts a same-title game without a
+	// decision as the same game only to hold the row back while it is still
+	// available; it is not yet one of the game's editions.
 	if err := db.NewRaw(
 		`SELECT sc.change_type,
 		        COALESCE(g.title, sc.title) AS title,
