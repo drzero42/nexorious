@@ -37,14 +37,14 @@ func Darkadia() Config {
 		Status: StatusConfig{
 			Flags: &StatusFlags{
 				Rules: []FlagRule{
-					{Column: "Dominated", Truthy: []string{"1"}, Status: "dominated"},
-					{Column: "Mastered", Truthy: []string{"1"}, Status: "mastered"},
-					{Column: "Finished", Truthy: []string{"1"}, Status: "completed"},
-					{Column: "Shelved", Truthy: []string{"1"}, Status: "dropped"},
-					{Column: "Playing", Truthy: []string{"1"}, Status: "in_progress"},
-					{Column: "Played", Truthy: []string{"1"}, Status: "shelved"},
+					{Column: "Dominated", Truthy: []string{"1"}, Status: psDominated},
+					{Column: "Mastered", Truthy: []string{"1"}, Status: psMastered},
+					{Column: "Finished", Truthy: []string{"1"}, Status: psCompleted},
+					{Column: "Shelved", Truthy: []string{"1"}, Status: psDropped},
+					{Column: "Playing", Truthy: []string{"1"}, Status: psInProgress},
+					{Column: "Played", Truthy: []string{"1"}, Status: psShelved},
 				},
-				Default: "not_started",
+				Default: psNotStarted,
 			},
 		},
 		Rating:   &RatingConfig{Scale: 5, Truncate: true},

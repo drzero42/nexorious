@@ -12,6 +12,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/services/csvmap"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
@@ -70,7 +71,7 @@ func buildCSVConfig(m csvMapping) (csvmap.Config, error) {
 		cfg.Status.Column = &csvmap.StatusColumn{
 			Column:   m.Status.Column,
 			ValueMap: vm,
-			Default:  "not_started",
+			Default:  string(enum.PlayStatusNotStarted),
 		}
 	}
 

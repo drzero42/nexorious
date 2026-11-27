@@ -101,10 +101,10 @@ func upsertUserGame(ctx context.Context, tx bun.IDB, p AcquireParams) (string, b
 		err := tx.NewRaw(
 			`INSERT INTO user_games
 			 (id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, is_wishlisted, created_at, updated_at)
-			 VALUES (?, ?, ?, COALESCE(?, 'not_started'), ?, ?, ?, ?, ?, ?)
+			 VALUES (?, ?, ?, COALESCE(?, ?), ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT (user_id, game_id) DO UPDATE SET updated_at = user_games.updated_at
 			 RETURNING id, (xmax = 0) AS is_new`,
-			id, p.UserID, p.GameID, p.PlayStatus, p.PersonalRating, p.IsLoved, p.PersonalNotes, p.IsWishlisted, createdAt, updatedAt,
+			id, p.UserID, p.GameID, p.PlayStatus, string(enum.PlayStatusNotStarted), p.PersonalRating, p.IsLoved, p.PersonalNotes, p.IsWishlisted, createdAt, updatedAt,
 		).Scan(ctx, &row)
 		if err != nil {
 			return "", false, fmt.Errorf("import upsert user_game: %w", err)
@@ -117,8 +117,8 @@ func upsertUserGame(ctx context.Context, tx bun.IDB, p AcquireParams) (string, b
 	_, err := tx.NewRaw(
 		`INSERT INTO user_games
 		 (id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, is_wishlisted, created_at, updated_at)
-		 VALUES (?, ?, ?, COALESCE(?, 'not_started'), ?, ?, ?, ?, ?, ?)`,
-		id, p.UserID, p.GameID, p.PlayStatus, p.PersonalRating, p.IsLoved, p.PersonalNotes, p.IsWishlisted, now, now,
+		 VALUES (?, ?, ?, COALESCE(?, ?), ?, ?, ?, ?, ?, ?)`,
+		id, p.UserID, p.GameID, p.PlayStatus, string(enum.PlayStatusNotStarted), p.PersonalRating, p.IsLoved, p.PersonalNotes, p.IsWishlisted, now, now,
 	).Exec(ctx)
 	if err != nil {
 		if nexdb.IsUniqueViolation(err) {

@@ -48,11 +48,7 @@ var allPlayStatuses = []PlayStatus{
 // AllPlayStatuses returns every valid play status as plain strings, in display
 // order. These are stable enum values, so clients may rely on them directly.
 func AllPlayStatuses() []string {
-	out := make([]string, len(allPlayStatuses))
-	for i, s := range allPlayStatuses {
-		out[i] = string(s)
-	}
-	return out
+	return playStatusStrings(allPlayStatuses)
 }
 
 // FinishedPlayStatuses are the play statuses that remove a game from every pool
@@ -68,11 +64,30 @@ var FinishedPlayStatuses = []PlayStatus{
 // FinishedPlayStatusStrings returns the finished set as plain strings, for use
 // in SQL `IN (?)` clauses via bun.List.
 func FinishedPlayStatusStrings() []string {
-	out := make([]string, len(FinishedPlayStatuses))
-	for i, s := range FinishedPlayStatuses {
+	return playStatusStrings(FinishedPlayStatuses)
+}
+
+// playStatusStrings converts play statuses to plain strings, keeping their order.
+func playStatusStrings(statuses []PlayStatus) []string {
+	out := make([]string, len(statuses))
+	for i, s := range statuses {
 		out[i] = string(s)
 	}
 	return out
+}
+
+// BeatenPlayStatuses are the Finished play statuses the user played through:
+// every Finished status except dropped (see GLOSSARY "Beaten").
+var BeatenPlayStatuses = []PlayStatus{
+	PlayStatusCompleted,
+	PlayStatusMastered,
+	PlayStatusDominated,
+}
+
+// BeatenPlayStatusStrings returns the beaten set as plain strings, for use in
+// SQL `IN (?)` clauses via bun.List.
+func BeatenPlayStatusStrings() []string {
+	return playStatusStrings(BeatenPlayStatuses)
 }
 
 // OwnershipStatus represents valid ownership_status values for user_game_platforms.

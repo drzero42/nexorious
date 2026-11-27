@@ -182,12 +182,12 @@ func buildMerged(rows [][]string, idx map[string]int, cfg Config) []importmodel.
 // case), else Default.
 func extractStatus(rec []string, idx map[string]int, cfg Config) (status string, wishlisted bool) {
 	if cfg.Status.Column == nil {
-		return "not_started", false
+		return psNotStarted, false
 	}
 	sc := cfg.Status.Column
 	def := sc.Default
 	if def == "" {
-		def = "not_started"
+		def = psNotStarted
 	}
 	present := map[string]string{} // normalized source value -> mapped play_status
 	for _, v := range decodeKeys(cell(rec, idx, sc.Column), sc.Format) {
@@ -345,7 +345,7 @@ func extractHours(rec []string, idx map[string]int, cfg Config) *float64 {
 }
 
 // statusRank orders completion tiers so the highest across play-log entries wins.
-var statusRank = map[string]int{"completed": 1, "mastered": 2, "dominated": 3}
+var statusRank = map[string]int{psCompleted: 1, psMastered: 2, psDominated: 3}
 
 // extractPlayLog sums the seconds field into hours_played and maps the highest
 // recognized completion tier to a play_status. Non-array/blank/malformed input,

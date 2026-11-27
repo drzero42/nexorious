@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 // promoteToInProgressIfPlayed flips a user game's play_status from
@@ -18,12 +20,12 @@ import (
 func promoteToInProgressIfPlayed(ctx context.Context, db bun.IDB, userGameID string) error {
 	_, err := db.NewRaw(
 		`UPDATE user_games
-		 SET play_status = 'in_progress', updated_at = now()
+		 SET play_status = ?, updated_at = now()
 		 WHERE id = ?
-		   AND play_status = 'not_started'
+		   AND play_status = ?
 		   AND (SELECT COALESCE(SUM(hours_played), 0)
 		        FROM user_game_platforms WHERE user_game_id = ?) > 0`,
-		userGameID, userGameID,
+		string(enum.PlayStatusInProgress), userGameID, string(enum.PlayStatusNotStarted), userGameID,
 	).Exec(ctx)
 	return err
 }
