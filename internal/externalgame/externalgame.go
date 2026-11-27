@@ -7,8 +7,11 @@
 // between internal/joblifecycle, which owns the sync Job, and
 // internal/usergame, which owns the library.
 //
-// It also holds the library write (WriteToLibrary, WriteMatched); the other
-// writes to these tables move in over the following steps of #1412.
+// It also holds the library write (WriteToLibrary, WriteMatched) and the
+// ingest side of a sync (Seen, AutoMatch, MatchUnderLock, PrunePlatforms,
+// MarkUnavailable). The writes left outside it are the store-link update of the
+// store-link refresh and the deletes of a storefront reset and the admin
+// reset; they move in with the last step of #1412.
 package externalgame
 
 import (
@@ -74,7 +77,7 @@ func WriteToLibrary(ctx context.Context, db bun.IDB, userID, externalGameID stri
 	}
 	out.IGDBID = *eg.ResolvedIGDBID
 
-	if err := EnsureGameRow(ctx, db, out.IGDBID, "", eg.Title); err != nil {
+	if err := ensureGameRow(ctx, db, out.IGDBID, "", eg.Title); err != nil {
 		return out, err
 	}
 
@@ -125,11 +128,11 @@ func WriteToLibrary(ctx context.Context, db bun.IDB, userID, externalGameID stri
 	return out, nil
 }
 
-// EnsureGameRow inserts a stub games row for igdbID when none exists; the
+// ensureGameRow inserts a stub games row for igdbID when none exists; the
 // metadata fetch fills it in later. external_games.resolved_igdb_id and
 // user_games.game_id reference it. The stub takes igdbTitle, the IGDB game's
 // title, or storefrontTitle when the caller has no IGDB title ("") (#1455).
-func EnsureGameRow(ctx context.Context, db bun.IDB, igdbID int32, igdbTitle, storefrontTitle string) error {
+func ensureGameRow(ctx context.Context, db bun.IDB, igdbID int32, igdbTitle, storefrontTitle string) error {
 	title := igdbTitle
 	if title == "" {
 		title = storefrontTitle

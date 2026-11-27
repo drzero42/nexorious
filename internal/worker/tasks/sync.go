@@ -92,15 +92,6 @@ type DispatchSyncWorker struct {
 	RunTimeout time.Duration
 }
 
-// nullableJSON returns nil when b is empty so the column is written as SQL NULL.
-// When non-empty it returns a json.RawMessage so pgdriver encodes it as JSONB.
-func nullableJSON(b []byte) any {
-	if len(b) == 0 {
-		return nil
-	}
-	return json.RawMessage(b)
-}
-
 // errSyncStopped means the sync's Job is no longer active (cancelled, failed,
 // or its storefront data reset): the dispatch stops and exits cleanly.
 var errSyncStopped = errors.New("dispatch_sync: the sync is no longer active")
@@ -138,10 +129,12 @@ func upsertGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p Dispatch
 			return err
 		}
 		var err error
-		if egID, isSkipped, err = upsertExternalGame(ctx, tx, e, p); err != nil {
-			return err
-		}
-		if err := upsertPlatforms(ctx, tx, egID, platforms, e.PlaytimeHours, e.AchievementsUnlocked, e.AchievementsTotal); err != nil {
+		if egID, isSkipped, err = externalgame.Seen(ctx, tx, externalgame.Sighting{
+			UserID: p.UserID, Storefront: p.Storefront, ExternalID: e.ExternalID, Title: e.Title,
+			IsSubscription: e.IsSubscription, OwnershipStatus: e.OwnershipStatus, SourceMetadata: e.SourceMetadata,
+			Platforms: platforms, PlaytimeHours: e.PlaytimeHours,
+			AchievementsUnlocked: e.AchievementsUnlocked, AchievementsTotal: e.AchievementsTotal,
+		}); err != nil {
 			return err
 		}
 		if !isSkipped {
@@ -151,61 +144,6 @@ func upsertGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p Dispatch
 		return InsertSkippedChange(ctx, tx, p.JobID, p.UserID, egID, e.Title)
 	})
 	return egID, isSkipped, err
-}
-
-// upsertExternalGame writes the fetched game and returns its id and whether
-// it is skipped. A game that is new here is not given a decision: its match
-// worker takes a same-title game's decision (precedent) or searches.
-func upsertExternalGame(ctx context.Context, db bun.IDB, e ExternalGameEntry, p DispatchSyncArgs) (egID string, isSkipped bool, err error) {
-	var row struct {
-		ID        string `bun:"id"`
-		IsSkipped bool   `bun:"is_skipped"`
-	}
-	var sourceMetaJSON []byte
-	if len(e.SourceMetadata) > 0 {
-		sourceMetaJSON, _ = json.Marshal(e.SourceMetadata) //nolint:errcheck // marshaling a map[string]string cannot fail
-	}
-	if err := db.NewRaw(`
-		INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, source_metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, true, ?, ?, ?, now(), now())
-		ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
-			title = EXCLUDED.title,
-			is_subscription = EXCLUDED.is_subscription,
-			ownership_status = EXCLUDED.ownership_status,
-			source_metadata = COALESCE(EXCLUDED.source_metadata, external_games.source_metadata),
-			is_available = true,
-			updated_at = now()
-		RETURNING id, is_skipped`,
-		uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
-		e.IsSubscription, e.OwnershipStatus, nullableJSON(sourceMetaJSON),
-	).Scan(ctx, &row); err != nil {
-		return "", false, fmt.Errorf("upsert external_game: %w", err)
-	}
-	return row.ID, row.IsSkipped, nil
-}
-
-func upsertPlatforms(ctx context.Context, db bun.IDB, egID string, platforms []string, playtimeHours float64, achievementsUnlocked, achievementsTotal *int) error {
-	for i, platform := range platforms {
-		hours := 0.0
-		var unlocked, total *int
-		if i == 0 {
-			hours = playtimeHours
-			unlocked = achievementsUnlocked
-			total = achievementsTotal
-		}
-		if _, err := db.NewRaw(`
-			INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, achievements_unlocked, achievements_total, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, now())
-			ON CONFLICT (external_game_id, platform) DO UPDATE SET
-				hours_played = GREATEST(EXCLUDED.hours_played, external_game_platforms.hours_played),
-				achievements_unlocked = COALESCE(EXCLUDED.achievements_unlocked, external_game_platforms.achievements_unlocked),
-				achievements_total = COALESCE(EXCLUDED.achievements_total, external_game_platforms.achievements_total)`,
-			uuid.NewString(), egID, platform, hours, unlocked, total,
-		).Exec(ctx); err != nil {
-			return fmt.Errorf("upsert platform %s: %w", platform, err)
-		}
-	}
-	return nil
 }
 
 func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyncArgs]) error {
@@ -394,11 +332,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, rj *river.Job[DispatchSyn
 // dispatch carries on; a sweep that finds the Job no longer active stops.
 func (w *DispatchSyncWorker) sweep(ctx context.Context, p DispatchSyncArgs, fetchedIDs map[string]struct{}, seenPlatforms map[string][]string) {
 	for egID, platforms := range seenPlatforms {
-		if _, err := w.DB.NewRaw(`
-			DELETE FROM external_game_platforms
-			WHERE external_game_id = ? AND platform NOT IN (?)`,
-			egID, bun.List(platforms),
-		).Exec(ctx); err != nil {
+		if err := externalgame.PrunePlatforms(ctx, w.DB, egID, platforms); err != nil {
 			slog.WarnContext(ctx, "dispatch_sync: delete stale platforms failed", logging.KeyErr, err, logging.KeyExternalGameID, egID, logging.Cat(logging.CategoryDB))
 		}
 	}
@@ -425,14 +359,9 @@ func (w *DispatchSyncWorker) sweep(ctx context.Context, p DispatchSyncArgs, fetc
 			if err := shareLockActiveJob(ctx, tx, p.JobID); err != nil {
 				return err
 			}
-			res, err := tx.NewRaw(
-				`UPDATE external_games SET is_available = false, updated_at = now() WHERE id = ? AND is_available = true`, eg.ID,
-			).Exec(ctx)
-			if err != nil {
-				return fmt.Errorf("mark game unavailable: %w", err)
-			}
-			if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // pgdriver always reports RowsAffected
-				return nil
+			changed, err := externalgame.MarkUnavailable(ctx, tx, eg.ID)
+			if err != nil || !changed {
+				return err
 			}
 			if _, err := tx.NewRaw(
 				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
@@ -661,7 +590,7 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 		// The write stage writes whatever the game has after the own write.
 		var wroteMatch bool
 		err := w.toWrite(ctx, rj, item.ID, func(ctx context.Context, tx bun.Tx) (err error) {
-			wroteMatch, err = writeConfidentMatch(ctx, tx, eg, best)
+			wroteMatch, err = externalgame.AutoMatch(ctx, tx, eg.ID, eg.Title, best.ID, best.Title)
 			return err
 		})
 		if err != nil {
@@ -678,34 +607,6 @@ func (w *IGDBMatchWorker) search(ctx context.Context, rj *river.Job[IGDBMatchArg
 	candidatesJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling the candidates slice cannot fail
 	bs := decision.BestScore
 	return w.toReview(ctx, rj, item.ID, eg.ID, candidatesJSON, &bs)
-}
-
-// writeConfidentMatch is the own write of a confident match: the game takes
-// an edition's decision made during the search if there is one (precedent
-// first), otherwise the search's match best. It reports whether it wrote
-// best. The write is guarded so a rematch or Skip that committed during the
-// search wins (#1338). A games row it creates takes best's IGDB title, not the
-// storefront's (#1455).
-func writeConfidentMatch(ctx context.Context, tx bun.Tx, eg *models.ExternalGame, best matching.Candidate) (bool, error) {
-	took, err := externalgame.TakePrecedent(ctx, tx, eg.ID)
-	if err != nil || took {
-		return false, err
-	}
-	if err := externalgame.EnsureGameRow(ctx, tx, best.ID, best.Title, eg.Title); err != nil {
-		return false, err
-	}
-	res, err := tx.NewRaw(
-		`UPDATE external_games eg SET resolved_igdb_id = ?, updated_at = now() WHERE eg.id = ? AND `+externalgame.Undecided("eg"),
-		best.ID, eg.ID,
-	).Exec(ctx)
-	if err != nil {
-		return false, fmt.Errorf("auto-resolve external_game: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("auto-resolve external_game: rows affected: %w", err)
-	}
-	return n > 0, nil
 }
 
 // completeSameTitleReviews completes the Pending review items of this game's same-title games
@@ -790,11 +691,9 @@ func (w *IGDBMatchWorker) toReview(ctx context.Context, rj *river.Job[IGDBMatchA
 			if took {
 				return UserGameArgs{JobItemID: itemID}, nil
 			}
-			var resolved *int32
-			if err := tx.NewRaw(
-				`SELECT resolved_igdb_id FROM external_games WHERE id = ? FOR SHARE`, externalGameID,
-			).Scan(ctx, &resolved); err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return nil, fmt.Errorf("lock external game: %w", err)
+			resolved, err := externalgame.MatchUnderLock(ctx, tx, externalGameID)
+			if err != nil {
+				return nil, err
 			}
 			if resolved != nil {
 				return UserGameArgs{JobItemID: itemID}, nil
