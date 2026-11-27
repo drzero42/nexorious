@@ -1276,10 +1276,11 @@ func (h *SyncHandler) HandleListIgnored(c *echo.Context) error {
 		`SELECT DISTINCT ON (`+key+`) eg.*
 		FROM external_games eg
 		WHERE eg.user_id = ? AND eg.is_skipped
-		ORDER BY `+key+`, `+syncRepresentativeOrder,
+		ORDER BY `+key+`, `+syncRepresentativeOrder("eg"),
 		userID,
-	).Scan(context.Background(), &games)
+	).Scan(c.Request().Context(), &games)
 	if err != nil {
+		slog.ErrorContext(c.Request().Context(), "sync: list ignored failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list ignored games")
 	}
 	if games == nil {
