@@ -80,7 +80,7 @@ The editions of an External game are the External games of the same user and sto
 _Avoid_: child game, parent, sibling, family
 
 **Set of editions**:
-An External game together with all its Editions. Rematch, Skip and Unskip act on the whole set unless the user decides one edition alone, the storefront list shows it as one entry, and the review badge counts it once. A sync lists a set once under "Removed from storefront", when its last available edition leaves; while a Same-title game without a Decision is still available it is not listed, since that game is about to join the set.
+An External game together with all its Editions. Rematch, Skip and Unskip act on the whole set unless the user decides one edition alone, the storefront list and the ignored list show it as one entry, and the review badge and the sync status count count it once. A sync lists a set once under "Removed from storefront", when its last available edition leaves; while a Same-title game without a Decision is still available it is not listed, since that game is about to join the set.
 _Avoid_: family, group, duplicates
 
 **Decision**:
