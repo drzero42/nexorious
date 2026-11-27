@@ -10,6 +10,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/logging"
 )
@@ -24,14 +25,14 @@ import (
 func InsertSkippedChange(ctx context.Context, db bun.IDB, jobID, userID, externalGameID, title string) error {
 	if _, err := db.NewRaw(
 		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-		 SELECT ?, ?, ?, ?, 'skipped', ?, now()
+		 SELECT ?, ?, ?, ?, ?, ?, now()
 		 WHERE NOT EXISTS (
 		   SELECT 1
 		     FROM changes c
 		     JOIN external_games o ON o.id = c.external_game_id
 		     JOIN external_games me ON me.id = ?
-		    WHERE c.job_id = ? AND c.change_type = 'skipped' AND `+externalgame.SameEdition("o", "me")+`)`,
-		uuid.NewString(), jobID, userID, externalGameID, title, externalGameID, jobID,
+		    WHERE c.job_id = ? AND c.change_type = ? AND `+externalgame.SameEdition("o", "me")+`)`,
+		uuid.NewString(), jobID, userID, externalGameID, enum.ChangeSkipped, title, externalGameID, jobID, enum.ChangeSkipped,
 	).Exec(ctx); err != nil {
 		return fmt.Errorf("insert sync_change (skipped): %w", err)
 	}
@@ -53,18 +54,18 @@ func InsertLibraryWriteChanges(ctx context.Context, db bun.IDB, jobID, userID st
 		upgraded = true
 		if _, err := db.NewRaw(
 			`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, old_status, new_status, created_at)
-			 VALUES (?, ?, ?, ?, ?, 'status_changed', ?, ?, ?, now())`,
-			uuid.NewString(), jobID, userID, w.ExternalGameID, ugID, w.Title, pc.OldOwnership, pc.NewOwnership,
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, now())`,
+			uuid.NewString(), jobID, userID, w.ExternalGameID, ugID, enum.ChangeStatusChanged, w.Title, pc.OldOwnership, pc.NewOwnership,
 		).Exec(ctx); err != nil {
 			return fmt.Errorf("insert change (status_changed): %w", err)
 		}
 	}
-	changeType := ""
+	var changeType enum.ChangeType
 	switch {
 	case added:
-		changeType = "added"
+		changeType = enum.ChangeAdded
 	case !upgraded:
-		changeType = "already_in_library"
+		changeType = enum.ChangeAlreadyInLibrary
 	}
 	if changeType == "" {
 		return nil
