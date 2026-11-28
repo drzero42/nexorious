@@ -61,29 +61,27 @@ func TestOwnershipStatusCheckMigration(t *testing.T) {
 	}
 	insertPlatform, insertExternal := ownershipFixtures(t, ctx, db)
 
-	// want is the value each row holds after the migration; "" means NULL.
-	cases := []struct{ id, before, want string }{
-		{"owned", "owned", "owned"},
-		{"borrowed", "borrowed", "borrowed"},
-		{"no-longer", "no_longer_owned", "no_longer_owned"},
-		{"null", "", ""},
-		{"empty", "''", ""},
-		{"mis-cased", "Owned", ""},
-		{"bogus", "stolen", ""},
+	// before is the stored value (nil is NULL); want is the value after the migration.
+	null := sql.NullString{}
+	val := func(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
+	cases := []struct {
+		id     string
+		before any
+		want   sql.NullString
+	}{
+		{"owned", "owned", val("owned")},
+		{"borrowed", "borrowed", val("borrowed")},
+		{"no-longer", "no_longer_owned", val("no_longer_owned")},
+		{"null", nil, null},
+		{"empty", "", null},
+		{"mis-cased", "Owned", null},
+		{"bogus", "stolen", null},
 	}
 	for _, c := range cases {
-		var v any
-		switch c.before {
-		case "":
-		case "''":
-			v = ""
-		default:
-			v = c.before
-		}
-		if err := insertPlatform(c.id, v); err != nil {
+		if err := insertPlatform(c.id, c.before); err != nil {
 			t.Fatalf("insert platform %s: %v", c.id, err)
 		}
-		if err := insertExternal(c.id, v); err != nil {
+		if err := insertExternal(c.id, c.before); err != nil {
 			t.Fatalf("insert External game %s: %v", c.id, err)
 		}
 	}
@@ -106,9 +104,8 @@ func TestOwnershipStatusCheckMigration(t *testing.T) {
 			got[r.ID] = r.Status
 		}
 		for _, c := range cases {
-			want := sql.NullString{String: c.want, Valid: c.want != ""}
-			if got[c.id] != want {
-				t.Errorf("%s %s: ownership_status = %+v, want %+v", table, c.id, got[c.id], want)
+			if got[c.id] != c.want {
+				t.Errorf("%s %s: ownership_status = %+v, want %+v", table, c.id, got[c.id], c.want)
 			}
 		}
 	}

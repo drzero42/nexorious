@@ -86,7 +86,7 @@ func TestSeen_KnownGameKeepsItsMatchAndMetadata(t *testing.T) {
 	}
 }
 
-// A sighting without an ownership status is stored as owned, never as ”,
+// A sighting without an ownership status is stored as owned, never as an empty string,
 // which the external_games_ownership_status_check constraint rejects (#1500).
 func TestSeen_EmptyOwnershipStatusIsOwned(t *testing.T) {
 	truncateAllTables(t)
@@ -96,10 +96,10 @@ func TestSeen_EmptyOwnershipStatusIsOwned(t *testing.T) {
 	for _, tc := range []struct {
 		extID string
 		in    enum.OwnershipStatus
-		want  string
+		want  enum.OwnershipStatus
 	}{
-		{"empty", "", "owned"},
-		{"sub", enum.OwnershipSubscription, "subscription"},
+		{"empty", "", enum.OwnershipOwned},
+		{"sub", enum.OwnershipSubscription, enum.OwnershipSubscription},
 	} {
 		id, _, err := Seen(ctx, testDB, Sighting{
 			UserID: userID, Storefront: "steam", ExternalID: tc.extID, Title: "Game",
@@ -108,7 +108,7 @@ func TestSeen_EmptyOwnershipStatusIsOwned(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.extID, err)
 		}
-		var got string
+		var got enum.OwnershipStatus
 		if err := testDB.NewRaw(`SELECT ownership_status FROM external_games WHERE id = ?`, id).Scan(ctx, &got); err != nil {
 			t.Fatal(err)
 		}
