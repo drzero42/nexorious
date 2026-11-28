@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -102,35 +100,5 @@ func insertTestUser(t *testing.T, db *bun.DB, userID string) {
 	)
 	if err != nil {
 		t.Fatalf("insertTestUser %q: %v", userID, err)
-	}
-}
-
-// insertTestExternalGame inserts a minimal external_game row and returns its ID.
-func insertTestExternalGame(t *testing.T, db *bun.DB, userID, storefront, title string) string {
-	t.Helper()
-	id := uuid.NewString()
-	now := time.Now()
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, false, true, ?, ?)`,
-		id, userID, storefront, uuid.NewString(), title, now, now,
-	)
-	if err != nil {
-		t.Fatalf("insertTestExternalGame %q: %v", title, err)
-	}
-	return id
-}
-
-// insertTestExternalGamePlatform inserts a row in external_game_platforms for
-// the given external game and platform slug.
-func insertTestExternalGamePlatform(t *testing.T, db *bun.DB, externalGameID, platformSlug string) {
-	t.Helper()
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
-		 VALUES (?, ?, ?, 0, now())`,
-		uuid.NewString(), externalGameID, platformSlug,
-	)
-	if err != nil {
-		t.Fatalf("insertTestExternalGamePlatform eg=%q platform=%q: %v", externalGameID, platformSlug, err)
 	}
 }

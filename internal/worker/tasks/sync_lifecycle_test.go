@@ -18,6 +18,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/observability"
@@ -262,7 +263,7 @@ func TestDispatchSync_RemovedGameSweep_Twice_WritesOneRow(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID, jobID := seedGOGSyncJob(t, "pending")
-	goneID := insertTestExternalGame(t, userID, "gog", "gone", "Gone Game", "pc-windows")
+	goneID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "gog", ExternalID: "gone", Title: "Gone Game", Platforms: []string{"pc-windows"}})
 	batches := [][]tasks.ExternalGameEntry{{{ExternalID: "1", Title: "Kept", Platforms: []string{"pc-windows"}}}}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&hookAdapter{batches: batches}), LC: newTestLC(t)}
 

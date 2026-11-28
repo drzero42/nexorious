@@ -14,7 +14,8 @@ import (
 
 // The guards of ADR 0009: this package is the only non-test Go code that
 // writes external_games and external_game_platforms, and it links none of the
-// Job process or the HTTP layer.
+// Job process or the HTTP layer. Its test-fixture package egtest also writes
+// them, and only test code may link it.
 
 const modulePath = "github.com/drzero42/nexorious"
 
@@ -203,12 +204,13 @@ func TestOnlyThisPackageWritesExternalGames(t *testing.T) {
 	}
 
 	self := modulePath + "/internal/externalgame"
+	fixtures := self + "/egtest"
 	fset := token.NewFileSet()
 	scanned := 0
 	var violations []string
 	for line := range strings.Lines(string(out)) {
 		fields := strings.Split(strings.TrimRight(line, "\n"), "\t")
-		if len(fields) < 2 || fields[0] == self {
+		if len(fields) < 2 || fields[0] == self || fields[0] == fixtures {
 			continue
 		}
 		for _, name := range fields[2:] {
@@ -224,6 +226,36 @@ func TestOnlyThisPackageWritesExternalGames(t *testing.T) {
 	}
 	for _, v := range violations {
 		t.Errorf("%s\n\twrites to external_games and external_game_platforms belong in internal/externalgame (ADR 0009)", v)
+	}
+}
+
+// TestOnlyTestsLinkFixtures keeps the write guard's exemption for egtest from
+// becoming a way around it: no package imports egtest outside its tests.
+func TestOnlyTestsLinkFixtures(t *testing.T) {
+	gobin := goTool(t)
+	root, err := exec.Command(gobin, "list", "-m", "-f", "{{.Dir}}").Output()
+	if err != nil {
+		t.Fatalf("go list -m: %v", err)
+	}
+	cmd := exec.Command(gobin, "list", "-f", `{{.ImportPath}}{{range .Imports}}{{"\t"}}{{.}}{{end}}`, "./...")
+	cmd.Dir = strings.TrimSpace(string(root))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list ./...: %v\n%s", err, out)
+	}
+	fixtures := modulePath + "/internal/externalgame/egtest"
+	listed := 0
+	for line := range strings.Lines(string(out)) {
+		fields := strings.Split(strings.TrimRight(line, "\n"), "\t")
+		listed++
+		for _, imp := range fields[1:] {
+			if imp == fixtures {
+				t.Errorf("%s imports %s; only _test.go files may", fields[0], fixtures)
+			}
+		}
+	}
+	if listed < 20 {
+		t.Fatalf("listed only %d packages; go list output looks wrong:\n%s", listed, out)
 	}
 }
 

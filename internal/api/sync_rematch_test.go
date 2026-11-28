@@ -17,6 +17,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/externalgame"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -81,19 +82,19 @@ func (f *rmFixture) game(id string, resolved int, skipped bool, platform string)
 // titled is game with another title.
 func (f *rmFixture) titled(id, title string, resolved int, skipped bool, platform string) {
 	f.t.Helper()
-	var r any
 	if resolved != 0 {
 		f.igdbGame(resolved)
-		r = resolved
 	}
 	f.seq++
-	f.exec(`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, true, ?, now() - interval '1 day' + ? * interval '1 second', now())`,
-		id, f.userID, rmStore, id, title, skipped, r, f.seq)
-	if platform != "" {
-		f.exec(`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, ?, 0, now())`,
-			id+"-p", id, platform)
+	g := egtest.Game{
+		ID: id, UserID: f.userID, Storefront: rmStore, ExternalID: id, Title: title,
+		Skipped: skipped, ResolvedIGDBID: int32(resolved),
+		CreatedAt: time.Now().Add(-24*time.Hour + time.Duration(f.seq)*time.Second),
 	}
+	if platform != "" {
+		g.Platforms = []string{platform}
+	}
+	egtest.Insert(f.t, testDB, g)
 }
 
 func (f *rmFixture) job(id, status string) {

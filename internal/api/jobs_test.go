@@ -8,7 +8,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 )
@@ -460,15 +462,8 @@ func TestPendingReviewCount_Deduplicates(t *testing.T) {
 	insertJob(t, testDB, "job-prc-dedup", userID, "sync", "playstation-store", "processing")
 
 	// The first edition and its job_item.
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-prc-ed-a", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA12345_00", Title: "Call of Duty"})
 	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
-		 VALUES ('eg-prc-ed-a', ?, 'playstation-store', 'CUSA12345_00', 'Call of Duty', false, true, now(), now())`,
-		userID,
-	)
-	if err != nil {
-		t.Fatalf("insert first edition: %v", err)
-	}
-	_, err = testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
 		 VALUES ('ji-prc-dedup-1', 'job-prc-dedup', ?, 'CUSA12345_00', 'Call of Duty', 'eg-prc-ed-a', '{}', 'pending_review', '{}', '[]', now())`,
 		userID,
@@ -478,14 +473,7 @@ func TestPendingReviewCount_Deduplicates(t *testing.T) {
 	}
 
 	// The second edition and its job_item.
-	_, err = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
-		 VALUES ('eg-prc-ed-b', ?, 'playstation-store', 'PPSA07890_00', 'Call of Duty', false, true, now(), now())`,
-		userID,
-	)
-	if err != nil {
-		t.Fatalf("insert second edition: %v", err)
-	}
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-prc-ed-b", UserID: userID, Storefront: "playstation-store", ExternalID: "PPSA07890_00", Title: "Call of Duty"})
 	_, err = testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
 		 VALUES ('ji-prc-dedup-2', 'job-prc-dedup', ?, 'PPSA07890_00', 'Call of Duty', 'eg-prc-ed-b', '{}', 'pending_review', '{}', '[]', now())`,
@@ -522,17 +510,9 @@ func TestPendingReviewCount_AnyEditionInReview_CountsTheSet(t *testing.T) {
 	insertJob(t, testDB, "job-prc-ed", userID, "sync", "playstation-store", "processing")
 
 	// The oldest edition: no pending_review item.
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
-		 VALUES ('eg-prc-ed-1', ?, 'playstation-store', 'CUSA999', 'Ratchet', false, true, now() - interval '1 hour', now())`,
-		userID,
-	)
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-prc-ed-1", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA999", Title: "Ratchet", CreatedAt: time.Now().Add(-time.Hour)})
 	// A younger edition with a pending_review item: the set counts.
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
-		 VALUES ('eg-prc-ed-2', ?, 'playstation-store', 'PPSA999', 'Ratchet', false, true, now(), now())`,
-		userID,
-	)
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-prc-ed-2", UserID: userID, Storefront: "playstation-store", ExternalID: "PPSA999", Title: "Ratchet"})
 	_, _ = testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
 		 VALUES ('ji-prc-ed-2', 'job-prc-ed', ?, 'PPSA999', 'Ratchet', 'eg-prc-ed-2', '{}', 'pending_review', '{}', '[]', now())`,

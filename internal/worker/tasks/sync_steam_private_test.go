@@ -11,6 +11,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/services/steam"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -42,8 +43,8 @@ func TestDispatchSync_SteamPartialOwnedGames_FailsWithoutRemovingGames(t *testin
 	); err != nil {
 		t.Fatalf("insert sync config: %v", err)
 	}
-	listedID := insertTestExternalGame(t, userID, "steam", "730", "Counter-Strike 2", "pc-windows")
-	unlistedID := insertTestExternalGame(t, userID, "steam", "570", "Dota 2", "pc-windows")
+	listedID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "730", Title: "Counter-Strike 2", Platforms: []string{"pc-windows"}})
+	unlistedID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "570", Title: "Dota 2", Platforms: []string{"pc-windows"}})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

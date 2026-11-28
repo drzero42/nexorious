@@ -19,6 +19,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 )
 
 type stubSteamClient struct {
@@ -279,12 +280,9 @@ func TestSyncStatus_CountsSetsOfEditions(t *testing.T) {
 			userID, token := setupTagUser(t, testDB, e, "stat-editions")
 			insertTestGameWithID(t, testDB, 9101, "Astro Bot")
 			insertTestGameWithID(t, testDB, 9102, "Astro Bot (2024)")
-			insertExternalGame(t, testDB, "eg-a", userID, "playstation-store", "CUSA1", "Astro Bot")
-			insertExternalGame(t, testDB, "eg-b", userID, "playstation-store", "PPSA1", "Astro Bot")
+			egtest.Insert(t, testDB, egtest.Game{ID: "eg-a", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA1", Title: "Astro Bot", CreatedAt: time.Now().Add(-24 * time.Hour)})
+			egtest.Insert(t, testDB, egtest.Game{ID: "eg-b", UserID: userID, Storefront: "playstation-store", ExternalID: "PPSA1", Title: "Astro Bot"})
 			ctx := context.Background()
-			if _, err := testDB.ExecContext(ctx, `UPDATE external_games SET created_at = now() - interval '1 day' WHERE id = 'eg-a'`); err != nil {
-				t.Fatal(err)
-			}
 			if tc.setup != "" {
 				if _, err := testDB.ExecContext(ctx, tc.setup); err != nil {
 					t.Fatal(err)
@@ -517,31 +515,6 @@ func TestPlaystationStoreDisconnect_Idempotent(t *testing.T) {
 
 // ─── Ignored / skip / unskip tests ───────────────────────────────────────────
 
-func insertExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID, title string) {
-	t.Helper()
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, false, true, now(), now())`,
-		id, userID, storefront, extID, title,
-	)
-	if err != nil {
-		t.Fatalf("insertExternalGame: %v", err)
-	}
-}
-
-// insertExternalGamePlatform inserts a platform row for an external_game.
-func insertExternalGamePlatform(t *testing.T, db *bun.DB, egID, platform string) {
-	t.Helper()
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
-		 VALUES (gen_random_uuid()::text, ?, ?, 0, now())`,
-		egID, platform,
-	)
-	if err != nil {
-		t.Fatalf("insertExternalGamePlatform: %v", err)
-	}
-}
-
 func TestIgnored_EmptyList(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
@@ -564,7 +537,7 @@ func TestIgnored_SkipAndUnskip(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "ign-roundtrip")
-	insertExternalGame(t, testDB, "eg-1", userID, "steam", "730", "CS2")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-1", UserID: userID, Storefront: "steam", ExternalID: "730", Title: "CS2"})
 
 	rec := postJSONAuth(t, e, "/api/sync/ignored/eg-1", nil, token)
 	if rec.Code != http.StatusNoContent {
@@ -608,15 +581,13 @@ func TestIgnored_ListsASetOfEditionsOnce(t *testing.T) {
 			truncateAllTables(t)
 			e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 			userID, token := setupTagUser(t, testDB, e, "ign-editions")
-			insertExternalGame(t, testDB, "eg-ps4", userID, "playstation-store", "CUSA1", "Astro Bot")
-			insertExternalGame(t, testDB, "eg-ps5", userID, "playstation-store", "PPSA1", "Astro Bot")
 			// The PS4 edition is older but has left the library, so the PS5
 			// edition represents the set.
-			if _, err := testDB.ExecContext(context.Background(),
-				`UPDATE external_games SET created_at = now() - interval '1 day', is_available = false WHERE id = 'eg-ps4'`,
-			); err != nil {
-				t.Fatal(err)
-			}
+			egtest.Insert(t, testDB, egtest.Game{
+				ID: "eg-ps4", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA1", Title: "Astro Bot",
+				CreatedAt: time.Now().Add(-24 * time.Hour), Unavailable: true,
+			})
+			egtest.Insert(t, testDB, egtest.Game{ID: "eg-ps5", UserID: userID, Storefront: "playstation-store", ExternalID: "PPSA1", Title: "Astro Bot"})
 
 			if rec := postJSONAuth(t, e, "/api/sync/ignored/"+skipVia, nil, token); rec.Code != http.StatusNoContent {
 				t.Fatalf("skip: got %d %s, want 204", rec.Code, rec.Body.String())
@@ -641,7 +612,7 @@ func TestSkipGame_MarksJobItemSkippedAndCompletesJob(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "skip-jobitem")
-	insertExternalGame(t, testDB, "eg-skip-ji", userID, "steam", "777", "Skip Me")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-skip-ji", UserID: userID, Storefront: "steam", ExternalID: "777", Title: "Skip Me"})
 	insertJob(t, testDB, "job-skip-ji", userID, "sync", "steam", "processing")
 	// Insert a pending_review job_item linked to the external_game.
 	_, err := testDB.ExecContext(context.Background(),
@@ -700,8 +671,8 @@ func TestSkipGame_SkipsEveryEdition(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "skip-cascade")
 
-	insertExternalGame(t, testDB, "eg-skip-game", userID, "playstation-store", "CUSA001", "Horizon")
-	insertExternalGame(t, testDB, "eg-skip-edition", userID, "playstation-store", "PPSA001", "Horizon")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-skip-game", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA001", Title: "Horizon"})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-skip-edition", UserID: userID, Storefront: "playstation-store", ExternalID: "PPSA001", Title: "Horizon"})
 	insertJob(t, testDB, "job-skip-cascade", userID, "sync", "playstation-store", "processing")
 
 	_, err := testDB.ExecContext(context.Background(),
@@ -746,22 +717,8 @@ func TestUnskipGame_UnskipsEveryEdition(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "unskip-cascade")
 
 	// Two editions, both skipped.
-	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
-		 VALUES ('eg-unskip-game', ?, 'playstation-store', 'CUSA002', 'Ratchet', true, true, now(), now())`,
-		userID,
-	)
-	if err != nil {
-		t.Fatalf("insert game: %v", err)
-	}
-	_, err = testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, created_at, updated_at)
-		 VALUES ('eg-unskip-edition', ?, 'playstation-store', 'PPSA002', 'Ratchet', true, true, now(), now())`,
-		userID,
-	)
-	if err != nil {
-		t.Fatalf("insert edition: %v", err)
-	}
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-unskip-game", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA002", Title: "Ratchet", Skipped: true})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-unskip-edition", UserID: userID, Storefront: "playstation-store", ExternalID: "PPSA002", Title: "Ratchet", Skipped: true})
 
 	rec := deleteAuth(t, e, "/api/sync/ignored/eg-unskip-game", token)
 	if rec.Code != http.StatusNoContent {
@@ -1083,7 +1040,7 @@ func TestListExternalGames_IsolatedByUser(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userA, tokenA := setupTagUser(t, testDB, e, "eg-user-a")
 	_, tokenB := setupTagUser(t, testDB, e, "eg-user-b")
-	insertExternalGame(t, testDB, "eg-a1", userA, "steam", "730", "CS2")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-a1", UserID: userA, Storefront: "steam", ExternalID: "730", Title: "CS2"})
 
 	rec := getAuth(t, e, "/api/sync/steam/external-games", tokenA)
 	var respA []map[string]any
@@ -1106,8 +1063,8 @@ func TestListExternalGames_OneEntryPerSetOfEditions(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "list-one-entry")
 
-	insertExternalGame(t, testDB, "eg-ed-1", userID, "playstation-store", "CUSA001", "Horizon")
-	insertExternalGame(t, testDB, "eg-ed-2", userID, "playstation-store", "PPSA001", "Horizon")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-ed-1", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA001", Title: "Horizon"})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-ed-2", UserID: userID, Storefront: "playstation-store", ExternalID: "PPSA001", Title: "Horizon"})
 
 	rec := getAuth(t, e, "/api/sync/playstation-store/external-games", token)
 	if rec.Code != http.StatusOK {
@@ -1131,10 +1088,10 @@ func TestListExternalGames_AggregatesEditionPlatforms(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "list-agg-platforms")
 
-	insertExternalGame(t, testDB, "eg-gow-1", userID, "playstation-store", "CUSA002", "God of War")
-	insertExternalGamePlatform(t, testDB, "eg-gow-1", "playstation-4")
-	insertExternalGame(t, testDB, "eg-gow-2", userID, "playstation-store", "PPSA002", "God of War")
-	insertExternalGamePlatform(t, testDB, "eg-gow-2", "playstation-5")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-gow-1", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA002", Title: "God of War"})
+	egtest.InsertPlatform(t, testDB, "eg-gow-1", "playstation-4", 0)
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-gow-2", UserID: userID, Storefront: "playstation-store", ExternalID: "PPSA002", Title: "God of War"})
+	egtest.InsertPlatform(t, testDB, "eg-gow-2", "playstation-5", 0)
 
 	rec := getAuth(t, e, "/api/sync/playstation-store/external-games", token)
 	if rec.Code != http.StatusOK {
@@ -1167,14 +1124,9 @@ func TestListExternalGames_IsSubscriptionFollowsOwnershipStatus(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "list-is-sub")
 
-	insertExternalGame(t, testDB, "eg-sub", userID, "playstation-store", "CUSA010", "Subscribed")
-	insertExternalGame(t, testDB, "eg-owned", userID, "playstation-store", "CUSA011", "Bought")
-	insertExternalGame(t, testDB, "eg-unset", userID, "playstation-store", "CUSA012", "Unclassified")
-	if _, err := testDB.ExecContext(context.Background(),
-		`UPDATE external_games SET ownership_status = CASE id WHEN 'eg-sub' THEN 'subscription' ELSE 'owned' END
-		 WHERE id IN ('eg-sub', 'eg-owned')`); err != nil {
-		t.Fatalf("set ownership_status: %v", err)
-	}
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-sub", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA010", Title: "Subscribed", OwnershipStatus: "subscription"})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-owned", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA011", Title: "Bought", OwnershipStatus: "owned"})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-unset", UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA012", Title: "Unclassified"})
 
 	rec := getAuth(t, e, "/api/sync/playstation-store/external-games", token)
 	if rec.Code != http.StatusOK {
@@ -1203,12 +1155,9 @@ func TestListExternalGames_StoreURL(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "list-store-url")
 
-	insertExternalGame(t, testDB, "eg-link", userID, "steam", "2520", "Alone in the Dark")
-	if _, err := testDB.ExecContext(context.Background(),
-		`UPDATE external_games SET store_link = '2520' WHERE id = 'eg-link'`); err != nil {
-		t.Fatalf("set store_link: %v", err)
-	}
-	insertExternalGame(t, testDB, "eg-nolink", userID, "steam", "9999", "Mystery Game")
+	storeLink := "2520"
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-link", UserID: userID, Storefront: "steam", ExternalID: "2520", Title: "Alone in the Dark", StoreLink: &storeLink})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-nolink", UserID: userID, Storefront: "steam", ExternalID: "9999", Title: "Mystery Game"})
 
 	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
 	if rec.Code != http.StatusOK {
@@ -1274,7 +1223,7 @@ func TestRematchExternalGame_OtherUsersGame(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userA, _ := setupTagUser(t, testDB, e, "rm-userA")
 	_, tokenB := setupTagUser(t, testDB, e, "rm-userB")
-	insertExternalGame(t, testDB, "eg-rm-a", userA, "steam", "42", "Some Game")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-rm-a", UserID: userA, Storefront: "steam", ExternalID: "42", Title: "Some Game"})
 
 	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-rm-a/rematch",
 		map[string]any{"igdb_id": 1234}, tokenB)
@@ -1287,7 +1236,7 @@ func TestRematchExternalGame_OrphanRequiresAction(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-orphan")
-	insertExternalGame(t, testDB, "eg-rm-1", userID, "steam", "1", "Game")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-rm-1", UserID: userID, Storefront: "steam", ExternalID: "1", Title: "Game"})
 	// Link to a user_game that has only this one platform
 	insertUserGameAndPlatform(t, testDB, "ug-rm-1", userID, "1111", "ugp-rm-1", "eg-rm-1")
 
@@ -1302,7 +1251,7 @@ func TestRematchExternalGame_KeepOrphan(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-keep")
-	insertExternalGame(t, testDB, "eg-rm-2", userID, "steam", "2", "Game Two")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-rm-2", UserID: userID, Storefront: "steam", ExternalID: "2", Title: "Game Two"})
 	insertUserGameAndPlatform(t, testDB, "ug-rm-2", userID, "2222", "ugp-rm-2", "eg-rm-2")
 	// Insert a recent sync job so HandleRematchExternalGame can create a job_item attached to it
 	insertJob(t, testDB, "job-rm-keep", userID, "sync", "steam", "pending")
@@ -1341,7 +1290,7 @@ func TestRematchExternalGame_RemoveOrphan(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-remove")
-	insertExternalGame(t, testDB, "eg-rm-3", userID, "steam", "3", "Game Three")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-rm-3", UserID: userID, Storefront: "steam", ExternalID: "3", Title: "Game Three"})
 	insertUserGameAndPlatform(t, testDB, "ug-rm-3", userID, "3333", "ugp-rm-3", "eg-rm-3")
 	// Insert a recent sync job so HandleRematchExternalGame can create a job_item attached to it
 	insertJob(t, testDB, "job-rm-remove", userID, "sync", "steam", "pending")
@@ -1371,8 +1320,8 @@ func TestRematchExternalGame_ActsOnTheUsersEditionsOnly(t *testing.T) {
 	userB, _ := setupTagUser(t, testDB, e, "rm-fk-userB")
 
 	// User A: two editions.
-	insertExternalGame(t, testDB, "eg-fk-a", userA, "playstation-store", "CUSA100", "Spider-Man")
-	insertExternalGame(t, testDB, "eg-fk-b", userA, "playstation-store", "PPSA100", "Spider-Man")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-fk-a", UserID: userA, Storefront: "playstation-store", ExternalID: "CUSA100", Title: "Spider-Man"})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-fk-b", UserID: userA, Storefront: "playstation-store", ExternalID: "PPSA100", Title: "Spider-Man"})
 	insertJob(t, testDB, "job-fk", userA, "sync", "playstation-store", "processing")
 	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
@@ -1384,7 +1333,7 @@ func TestRematchExternalGame_ActsOnTheUsersEditionsOnly(t *testing.T) {
 	}
 
 	// User B: unrelated game with same title — must NOT be touched.
-	insertExternalGame(t, testDB, "eg-fk-other", userB, "playstation-store", "CUSA200", "Spider-Man")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-fk-other", UserID: userB, Storefront: "playstation-store", ExternalID: "CUSA200", Title: "Spider-Man"})
 
 	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-fk-a/rematch",
 		map[string]any{"igdb_id": 4242}, tokenA)
@@ -1440,13 +1389,11 @@ func TestRematchExternalGame_MultiPlatformOrphanRemove(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-mp-orphan")
 
-	// Wrong IGDB match — external_game must exist before UGPs (FK constraint).
-	insertExternalGame(t, testDB, "eg-mp-1", userID, "steam", "3000", "Another World")
+	// Wrong IGDB match — the games row must exist before the match, and the
+	// external_game before UGPs (FK constraints).
+	insertTestGameWithID(t, testDB, 1111, "Test Game")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-mp-1", UserID: userID, Storefront: "steam", ExternalID: "3000", Title: "Another World", ResolvedIGDBID: 1111})
 	insertUserGameAndPlatform(t, testDB, "ug-mp-wrong", userID, "1111", "ugp-mp-win", "eg-mp-1")
-	if _, err := testDB.ExecContext(context.Background(),
-		`UPDATE external_games SET resolved_igdb_id = 1111 WHERE id = 'eg-mp-1'`); err != nil {
-		t.Fatalf("set wrong match: %v", err)
-	}
 	// Second platform (Linux) on the same user_game and same external_game.
 	if _, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO user_game_platforms (id, user_game_id, external_game_id, platform, storefront, sync_from_source, is_available, created_at, updated_at)
@@ -1511,12 +1458,8 @@ func TestRematchExternalGame_EditionAlreadyMatchedWrong(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert wrong game: %v", err)
 	}
-	insertExternalGame(t, testDB, "eg-aw-win", userID, "steam", "2100", "Another World")
-	insertExternalGame(t, testDB, "eg-aw-lin", userID, "steam", "2101", "Another World")
-	if _, err := testDB.ExecContext(context.Background(),
-		`UPDATE external_games SET resolved_igdb_id = 1111 WHERE id IN ('eg-aw-win', 'eg-aw-lin')`); err != nil {
-		t.Fatalf("set wrong match: %v", err)
-	}
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-aw-win", UserID: userID, Storefront: "steam", ExternalID: "2100", Title: "Another World", ResolvedIGDBID: 1111})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-aw-lin", UserID: userID, Storefront: "steam", ExternalID: "2101", Title: "Another World", ResolvedIGDBID: 1111})
 
 	insertJob(t, testDB, "job-aw", userID, "sync", "steam", "completed")
 	for _, row := range []struct{ id, egID, key string }{
@@ -1568,7 +1511,7 @@ func TestResetSyncData_DeletesDataAndResetsTimestamp(t *testing.T) {
 		 VALUES (gen_random_uuid(), ?, 'steam', 'manual', now(), now(), now())`,
 		userID,
 	)
-	insertExternalGame(t, testDB, "eg-reset-1", userID, "steam", "730", "CS2")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-reset-1", UserID: userID, Storefront: "steam", ExternalID: "730", Title: "CS2"})
 	insertUserGameAndPlatform(t, testDB, "ug-reset-1", userID, "12345", "ugp-reset-1", "eg-reset-1")
 
 	rec := deleteAuth(t, e, "/api/sync/steam/data", token)
@@ -1667,19 +1610,11 @@ func TestListExternalGames_AllStates(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "eg-states")
-	insertExternalGame(t, testDB, "eg-matched", userID, "steam", "1", "Matched Game")
-	insertExternalGame(t, testDB, "eg-unmatched", userID, "steam", "2", "Unmatched Game")
-	insertExternalGame(t, testDB, "eg-skipped", userID, "steam", "3", "Skipped Game")
-
-	// Mark skipped
-	_, _ = testDB.ExecContext(context.Background(),
-		`UPDATE external_games SET is_skipped = true WHERE id = 'eg-skipped'`)
-
-	// Set resolved IGDB ID (insert games row first to satisfy FK)
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (9999, 'IGDB Title', now(), now()) ON CONFLICT DO NOTHING`)
-	_, _ = testDB.ExecContext(context.Background(),
-		`UPDATE external_games SET resolved_igdb_id = 9999 WHERE id = 'eg-matched'`)
+	// The match needs its games row first (FK).
+	insertTestGameWithID(t, testDB, 9999, "IGDB Title")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-matched", UserID: userID, Storefront: "steam", ExternalID: "1", Title: "Matched Game", ResolvedIGDBID: 9999})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-unmatched", UserID: userID, Storefront: "steam", ExternalID: "2", Title: "Unmatched Game"})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-skipped", UserID: userID, Storefront: "steam", ExternalID: "3", Title: "Skipped Game", Skipped: true})
 
 	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
 	if rec.Code != http.StatusOK {
@@ -1717,8 +1652,8 @@ func TestListExternalGames_ExcludesInFlight(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "eg-inflight")
 
-	insertExternalGame(t, testDB, "eg-stable", userID, "steam", "10", "Stable Game")
-	insertExternalGame(t, testDB, "eg-inflight-1", userID, "steam", "20", "In-Flight Game")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-stable", UserID: userID, Storefront: "steam", ExternalID: "10", Title: "Stable Game"})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-inflight-1", UserID: userID, Storefront: "steam", ExternalID: "20", Title: "In-Flight Game"})
 	insertJob(t, testDB, "job-inflight", userID, "sync", "steam", "processing")
 
 	// pending job_item links eg-inflight-1 to the active job.
@@ -1765,20 +1700,11 @@ func TestListExternalGames_ReturnsPlatforms(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "eg-plat")
 
-	insertExternalGame(t, testDB, "eg-p1", userID, "steam", "730", "CS2")
-
-	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
-		 VALUES ('egp-1', 'eg-p1', 'pc-windows', 0, now()),
-		        ('egp-2', 'eg-p1', 'pc-linux', 0, now())`)
-	if err != nil {
-		t.Fatalf("insert platforms: %v", err)
-	}
-
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (8888, 'CS2', now(), now()) ON CONFLICT DO NOTHING`)
-	_, _ = testDB.ExecContext(context.Background(),
-		`UPDATE external_games SET resolved_igdb_id = 8888 WHERE id = 'eg-p1'`)
+	insertTestGameWithID(t, testDB, 8888, "CS2")
+	egtest.Insert(t, testDB, egtest.Game{
+		ID: "eg-p1", UserID: userID, Storefront: "steam", ExternalID: "730", Title: "CS2",
+		ResolvedIGDBID: 8888, Platforms: []string{"pc-windows", "pc-linux"},
+	})
 
 	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
 	if rec.Code != http.StatusOK {
@@ -1813,7 +1739,7 @@ func TestListExternalGames_NoPlatforms_ReturnsEmptyArray(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "eg-noplat")
 
-	insertExternalGame(t, testDB, "eg-np1", userID, "steam", "999", "Orphan Game")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-np1", UserID: userID, Storefront: "steam", ExternalID: "999", Title: "Orphan Game"})
 
 	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
 	var resp []map[string]any

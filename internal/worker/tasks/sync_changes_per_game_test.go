@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -66,8 +67,8 @@ func TestDispatchSync_RemovedOncePerGame(t *testing.T) {
 				t.Fatalf("insert sync config: %v", err)
 			}
 
-			a := insertTestExternalGame(t, userID, "psn", "1", "Hades", "playstation-4")
-			b := insertTestExternalGame(t, userID, "psn", "2", "Hades", "playstation-5")
+			a := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "1", Title: "Hades", Platforms: []string{"playstation-4"}})
+			b := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "2", Title: "Hades", Platforms: []string{"playstation-5"}})
 			setDecision(t, a, 100, false)
 			setDecision(t, b, tc.bMatch, false)
 
@@ -107,9 +108,9 @@ func TestInsertSkippedChange_OncePerSetOfEditions(t *testing.T) {
 	ctx := context.Background()
 	userID, jobID, _ := syncCompletionFixture(t, "psn", true, 0)
 
-	a := insertTestExternalGame(t, userID, "psn", "1", "Hades", "playstation-4")
-	b := insertTestExternalGame(t, userID, "psn", "2", "Hades", "playstation-5")
-	c := insertTestExternalGame(t, userID, "psn", "3", "Celeste", "playstation-4")
+	a := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "1", Title: "Hades", Platforms: []string{"playstation-4"}})
+	b := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "2", Title: "Hades", Platforms: []string{"playstation-5"}})
+	c := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "3", Title: "Celeste", Platforms: []string{"playstation-4"}})
 	for _, id := range []string{a, b, c} {
 		setDecision(t, id, 0, true)
 	}
@@ -149,13 +150,10 @@ func TestSyncDiff_MergesEditionPlatforms(t *testing.T) {
 	); err != nil {
 		t.Fatalf("insert user game: %v", err)
 	}
-	ps4 := insertTestExternalGame(t, userID, "psn", "1", "HADES (PS4)", "playstation-4")
-	ps5 := insertTestExternalGame(t, userID, "psn", "2", "HADES (PS5)", "playstation-5")
-	oldPS4 := insertTestExternalGame(t, userID, "psn", "3", "Old Game", "playstation-4")
-	insertTestExternalGame(t, userID, "psn", "4", "Old Game", "playstation-5")
-	if _, err := testDB.ExecContext(ctx, `UPDATE external_games SET is_available = false WHERE title = 'Old Game'`); err != nil {
-		t.Fatalf("mark unavailable: %v", err)
-	}
+	ps4 := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "1", Title: "HADES (PS4)", Platforms: []string{"playstation-4"}})
+	ps5 := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "2", Title: "HADES (PS5)", Platforms: []string{"playstation-5"}})
+	oldPS4 := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "3", Title: "Old Game", Unavailable: true, Platforms: []string{"playstation-4"}})
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "4", Title: "Old Game", Unavailable: true, Platforms: []string{"playstation-5"}})
 
 	insertChange := func(egID string, ug any, changeType, title string, offset int) {
 		t.Helper()

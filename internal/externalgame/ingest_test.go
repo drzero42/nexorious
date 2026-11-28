@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/enum"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 )
 
 func TestSeen_WritesAchievementsOnTheFirstPlatformOnly(t *testing.T) {
@@ -55,12 +56,11 @@ func TestSeen_KnownGameKeepsItsMatchAndMetadata(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := seedUser(t)
-	id := seedExternalGame(t, userID, extGame{resolved: 1001})
-	if _, err := testDB.NewRaw(
-		`UPDATE external_games SET is_available = false, source_metadata = '{"namespace":"ns-1"}' WHERE id = ?`, id,
-	).Exec(ctx); err != nil {
-		t.Fatal(err)
-	}
+	seedGame(t, 1001, "Horizon")
+	id := egtest.Insert(t, testDB, egtest.Game{
+		UserID: userID, Title: "Horizon", ResolvedIGDBID: 1001, Unavailable: true,
+		SourceMetadata: map[string]string{"namespace": "ns-1"},
+	})
 
 	got, skipped, err := Seen(ctx, testDB, Sighting{
 		UserID: userID, Storefront: "steam", ExternalID: id, Title: "Horizon", Platforms: []string{"pc-windows"},

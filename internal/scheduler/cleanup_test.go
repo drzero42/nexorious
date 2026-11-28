@@ -13,6 +13,7 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/scheduler"
 )
 
@@ -312,14 +313,9 @@ func TestCleanupUnreferencedGames_KeepsMatchedGames(t *testing.T) {
 			t.Fatalf("insert game %d: %v", id, err)
 		}
 	}
-	egID := uuid.NewString()
-	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id, created_at, updated_at)
-		 VALUES (?, ?, 'steam', '123', 'Matched Game', false, true, ?, now(), now())`,
-		egID, userID, matchedID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert external game: %v", err)
-	}
+	egID := egtest.Insert(t, testDB, egtest.Game{
+		UserID: userID, ExternalID: "123", Title: "Matched Game", ResolvedIGDBID: matchedID,
+	})
 
 	scheduler.CleanupUnreferencedGames(ctx, testDB)
 
@@ -361,13 +357,9 @@ func TestGamesForeignKeys_RefuseDeletingReferencedGames(t *testing.T) {
 			t.Fatalf("insert game %d: %v", id, err)
 		}
 	}
-	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id, created_at, updated_at)
-		 VALUES (?, ?, 'steam', '123', 'G', false, true, ?, now(), now())`,
-		uuid.NewString(), userID, matchedID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert external game: %v", err)
-	}
+	egtest.Insert(t, testDB, egtest.Game{
+		UserID: userID, ExternalID: "123", Title: "G", ResolvedIGDBID: matchedID,
+	})
 	if _, err := testDB.NewRaw(
 		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at) VALUES (?, ?, ?, now(), now())`,
 		uuid.NewString(), userID, ownedID,

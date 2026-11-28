@@ -20,6 +20,7 @@ import (
 	bunmigrate "github.com/uptrace/bun/migrate"
 
 	"github.com/drzero42/nexorious/internal/db/migrations"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 )
 
 var testDB *bun.DB
@@ -113,29 +114,15 @@ type extGame struct {
 // seedExternalGame inserts a steam external game for userID and returns its id.
 func seedExternalGame(t *testing.T, userID string, g extGame) string {
 	t.Helper()
-	ctx := context.Background()
-	id := uuid.NewString()
-	var resolved any
+	eg := egtest.Game{UserID: userID, Title: "Horizon", Skipped: g.skipped}
 	if g.resolved != 0 {
 		seedGame(t, g.resolved, "Horizon")
-		resolved = g.resolved
-	}
-	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id, created_at, updated_at)
-		 VALUES (?, ?, 'steam', ?, 'Horizon', ?, true, ?, now(), now())`,
-		id, userID, id, g.skipped, resolved,
-	).Exec(ctx); err != nil {
-		t.Fatalf("seed external game: %v", err)
+		eg.ResolvedIGDBID = g.resolved
 	}
 	if g.platforms {
-		if _, err := testDB.NewRaw(
-			`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
-			uuid.NewString(), id,
-		).Exec(ctx); err != nil {
-			t.Fatalf("seed external game platform: %v", err)
-		}
+		eg.Platforms = []string{"pc-windows"}
 	}
-	return id
+	return egtest.Insert(t, testDB, eg)
 }
 
 func userGameCount(t *testing.T, userID string, igdbID int32) int {

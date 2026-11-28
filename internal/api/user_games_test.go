@@ -14,6 +14,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/enum"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 )
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -458,19 +459,13 @@ func TestHandleGetUserGame_StoreURL(t *testing.T) {
 
 	// Insert an external_game with store_link so buildStoreURL can produce a URL.
 	egID := "eg-surl-steam-440"
-	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, store_link)
-		 VALUES (?, ?, 'steam', '440', 'Half-Life 2', false, true, '440')`,
-		egID, userID,
-	)
-	if err != nil {
-		t.Fatalf("insert external_game: %v", err)
-	}
+	storeLink := "440"
+	egtest.Insert(t, testDB, egtest.Game{ID: egID, UserID: userID, Storefront: "steam", ExternalID: "440", Title: "Half-Life 2", StoreLink: &storeLink})
 
 	// Insert a user_game_platform linked to that external_game.
 	pcWindows := "pc-windows"
 	steam := "steam"
-	_, err = testDB.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO user_game_platforms (id, user_game_id, platform, storefront, external_game_id)
 		 VALUES (?, 'ug-surl-1', ?, ?, ?)`,
 		"ugp-surl-1", pcWindows, steam, egID,

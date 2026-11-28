@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/services/igdb"
@@ -670,36 +670,6 @@ func newTestEchoWithLiveIGDB(t *testing.T, db *bun.DB, srvURL string) interface 
 	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, "dev", "unknown", nil)
 }
 
-// insertTestExternalGameForUser inserts a minimal external_game row owned by
-// userID and returns its generated ID.
-func insertTestExternalGameForUser(t *testing.T, db *bun.DB, userID, storefront, title string) string {
-	t.Helper()
-	id := uuid.NewString()
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
-		 VALUES (?, ?, ?, ?, ?, false, true)`,
-		id, userID, storefront, uuid.NewString(), title,
-	)
-	if err != nil {
-		t.Fatalf("insertTestExternalGameForUser: %v", err)
-	}
-	return id
-}
-
-// insertTestExternalGamePlatformForUser inserts an external_game_platforms row
-// linking externalGameID to platformSlug (must match a platforms.name seed value).
-func insertTestExternalGamePlatformForUser(t *testing.T, db *bun.DB, externalGameID, platformSlug string) {
-	t.Helper()
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played)
-		 VALUES (?, ?, ?, 0)`,
-		uuid.NewString(), externalGameID, platformSlug,
-	)
-	if err != nil {
-		t.Fatalf("insertTestExternalGamePlatformForUser: %v", err)
-	}
-}
-
 // ─── ExternalGameID ownership / filter tests ─────────────────────────────────
 
 // TestSearchIGDB_ExternalGameID_Returns403 verifies that an external_game_id
@@ -720,7 +690,7 @@ func TestSearchIGDB_ExternalGameID_Returns403(t *testing.T) {
 			callerUID: "u-caller",
 			egID: func(t *testing.T) string {
 				insertAuthTestUser(t, testDB, "u-owner", "owner", "pass123", true, false)
-				return insertTestExternalGameForUser(t, testDB, "u-owner", "steam", "Owner's Game")
+				return egtest.Insert(t, testDB, egtest.Game{UserID: "u-owner", Storefront: "steam", Title: "Owner's Game"})
 			},
 		},
 		{
@@ -772,8 +742,8 @@ func TestSearchIGDB_ExternalGameID_OwnedPassesPlatformIDs(t *testing.T) {
 
 	insertAuthTestUser(t, testDB, "u-caller-3", "caller3", "pass123", true, false)
 	token := loginAndGetToken(t, e, "caller3", "pass123")
-	egID := insertTestExternalGameForUser(t, testDB, "u-caller-3", "steam", "Owned Title")
-	insertTestExternalGamePlatformForUser(t, testDB, egID, "pc-windows")
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: "u-caller-3", Storefront: "steam", Title: "Owned Title"})
+	egtest.InsertPlatform(t, testDB, egID, "pc-windows", 0)
 
 	body := fmt.Sprintf(`{"query": "x", "limit": 10, "external_game_id": %q}`, egID)
 	rec := postAuth(t, e, "/api/games/search/igdb", token, body)

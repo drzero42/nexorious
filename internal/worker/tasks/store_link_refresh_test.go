@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/storelink"
@@ -50,26 +51,14 @@ func (c *cancelOnceResolver) Resolve(_ context.Context, _ string, _ map[string]s
 	return "", nil
 }
 
-func seedExternalGameSL(t *testing.T, userID, storefront, externalID string, storeLink *string) {
-	t.Helper()
-	_, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, store_link, is_available, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, true, now(), now())`,
-		uuid.NewString(), userID, storefront, externalID, "T-"+externalID, storeLink,
-	).Exec(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestStoreLinkRefreshDispatch_IncrementalSelectsOnlyNullRows(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
 	filled := "440"
-	seedExternalGameSL(t, userID, "steam", "10", nil)
-	seedExternalGameSL(t, userID, "steam", "20", &filled)
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "10", Title: "T-10"})
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "20", Title: "T-20", StoreLink: &filled})
 
 	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB}
 	groups, total, err := w.SelectGroups(ctx, tasks.StoreLinkRefreshDispatchArgs{Force: false})
@@ -87,8 +76,8 @@ func TestStoreLinkRefreshDispatch_ForceSelectsAllRows(t *testing.T) {
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
 	filled := "440"
-	seedExternalGameSL(t, userID, "steam", "10", nil)
-	seedExternalGameSL(t, userID, "steam", "20", &filled)
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "10", Title: "T-10"})
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "20", Title: "T-20", StoreLink: &filled})
 
 	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB}
 	groups, total, err := w.SelectGroups(ctx, tasks.StoreLinkRefreshDispatchArgs{Force: true})
@@ -105,8 +94,8 @@ func TestStoreLinkRefreshDispatch_ScopeFiltersStorefront(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
-	seedExternalGameSL(t, userID, "steam", "10", nil)
-	seedExternalGameSL(t, userID, "gog", "99", nil)
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "10", Title: "T-10"})
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "gog", ExternalID: "99", Title: "T-99"})
 
 	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB}
 	groups, _, err := w.SelectGroups(ctx, tasks.StoreLinkRefreshDispatchArgs{UserID: userID, Storefront: "gog"})
@@ -129,8 +118,8 @@ func TestStoreLinkRefreshItem_ResolvesGroupRows(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
-	seedExternalGameSL(t, userID, "steam", "10", nil)
-	seedExternalGameSL(t, userID, "steam", "20", nil)
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "10", Title: "T-10"})
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "20", Title: "T-20"})
 
 	lc := newTestLC(t)
 	jobID, itemID, rid := seedStoreLinkJobItem(t, lc, userID, "steam")
@@ -164,7 +153,7 @@ func TestStoreLinkRefreshItem_ResolverErrorMarksFailed(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
-	seedExternalGameSL(t, userID, "steam", "10", nil)
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "10", Title: "T-10"})
 	lc := newTestLC(t)
 	_, itemID, rid := seedStoreLinkJobItem(t, lc, userID, "steam")
 
@@ -192,8 +181,8 @@ func TestStoreLinkRefreshItem_InterruptedIsNotFailed(t *testing.T) {
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
 	// Two rows so the loop runs a second iteration after the context is cancelled.
-	seedExternalGameSL(t, userID, "steam", "10", nil)
-	seedExternalGameSL(t, userID, "steam", "20", nil)
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "10", Title: "T-10"})
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "20", Title: "T-20"})
 	lc := newTestLC(t)
 	_, itemID, rid := seedStoreLinkJobItem(t, lc, userID, "steam")
 
@@ -259,7 +248,7 @@ func TestStoreLinkRefreshDispatch_AfterSync(t *testing.T) {
 		t.Fatalf("nothing to resolve created %d jobs", jobs)
 	}
 
-	seedExternalGameSL(t, userID, "steam", "10", nil)
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "10", Title: "T-10"})
 	if err := w.Work(ctx, riverJob(2, 1, args)); err != nil {
 		t.Fatal(err)
 	}

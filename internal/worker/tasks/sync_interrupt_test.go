@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -101,7 +102,7 @@ func TestDispatchSync_InterruptedAfterFetch_NotMarkedComplete(t *testing.T) {
 	truncateAllTables(t)
 	userID, jobID := seedGOGSyncJob(t, "pending")
 	// Known game the fetch does not return: an unguarded sweep would remove it.
-	insertTestExternalGame(t, userID, "gog", "gone", "Gone Game", "pc-windows")
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "gog", ExternalID: "gone", Title: "Gone Game", Platforms: []string{"pc-windows"}})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -160,13 +161,7 @@ func TestDispatchSync_RerunAfterInterrupt_NoDuplicates(t *testing.T) {
 	truncateAllTables(t)
 	userID, jobID := seedGOGSyncJob(t, "pending")
 	bg := context.Background()
-	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
-		 VALUES (?, ?, 'gog', '2', 'Skipped Game', true, true)`,
-		uuid.NewString(), userID,
-	).Exec(bg); err != nil {
-		t.Fatalf("insert skipped game: %v", err)
-	}
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "gog", ExternalID: "2", Title: "Skipped Game", Skipped: true})
 	batches := [][]tasks.ExternalGameEntry{{
 		{ExternalID: "1", Title: "Game One", Platforms: []string{"pc-windows"}},
 		{ExternalID: "2", Title: "Skipped Game", Platforms: []string{"pc-windows"}},
