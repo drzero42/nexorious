@@ -287,7 +287,7 @@ While the server runs, the rule leaves the item of a `running` River job alone. 
 - A Job covered by either of the two rules above that is more than a day old is failed instead of being run.
 - Sync: an active Job with `dispatch_complete = false` and `completed_at` set is a failed sync that an older "retry failed" reopened. It is failed again.
 - Imports: `processing` items of active Jobs become `pending`. A nexorious import Job that is `pending` becomes `processing` (older versions kept it `pending` until it completed), unless it has no game items at all, in which case it is failed.
-- Every kind: an item still `processing` is moved by the rules above: `pending` in an active Job, `failed` in a `completed` one, `cancelled` in a `failed` or `cancelled` one. The CHECK constraint then rejects `processing`.
+- Every kind: an item still `processing` is moved by the rules above, then the CHECK constraint rejects `processing`.
 - Every kind: a Job or item whose status is not one of today's values is failed (older installs may hold items with the removed status `igdb_failed`). The database then rejects any other status with a CHECK constraint, so a status added to `models.JobStatus` or `models.JobItemStatus` needs a migration that widens it.
 - A Job the migration fails gets `completed_at`, an error message, and its open items cancelled. It sends no notification. Items the migration fails or cancels get `processed_at`.
 
