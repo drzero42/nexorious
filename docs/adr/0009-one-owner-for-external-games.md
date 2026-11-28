@@ -15,7 +15,7 @@ Derived editions (ADR 0008) make this more than tidiness. Which games are editio
 ## Considered options
 
 - **Column-level ownership** (only the title, match and skip columns). Rejected: the upsert and the match writes have to be in the module anyway, and a table-level rule can be checked with a source scan, a column-level one cannot. The price is a few one-statement functions (`SetStoreLink`, `DeleteForStorefront`, `DeleteForAllUsers`, `PrunePlatforms`, `MarkUnavailable`).
-- **An allowlist** for the resets. Rejected: they go through the module like everything else, so the guard has no exceptions.
+- **An allowlist** for the resets. Rejected: they go through the module like everything else, so the guard has no exceptions for production code. It later gained one for tests, the fixture package `egtest` (#1506, under Consequences).
 - **A lint rule or `depguard`.** Rejected: the repo has no `depguard` setup, and a test is enough to fail CI.
 
 ## Consequences
