@@ -107,11 +107,9 @@ func syncEffects(ctx context.Context, db *bun.DB, e joblifecycle.Effect) error {
 // sync diff, then queues the store-link refresh for the storefront.
 func syncCompletedEffects(ctx context.Context, db *bun.DB, e joblifecycle.Effect) error {
 	job := e.Job
-	var failed int
-	if err := db.NewRaw(
-		`SELECT count(*) FROM job_items WHERE job_id = ? AND status = ?`, job.ID, models.JobItemStatusFailed,
-	).Scan(ctx, &failed); err != nil {
-		return fmt.Errorf("count failed items: %w", err)
+	failed, err := joblifecycle.FailedItemCount(ctx, db, job.ID)
+	if err != nil {
+		return err
 	}
 	events := make([]notify.EmitParams, 0, 2)
 	if failed > 0 {

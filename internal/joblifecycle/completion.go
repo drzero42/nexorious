@@ -77,15 +77,27 @@ func (m *Module) observeJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind
 	if k.Observer == nil {
 		return nil
 	}
-	var failed int
-	if err := tx.NewRaw(
-		`SELECT count(*) FROM job_items WHERE job_id = ? AND status = ?`, job.ID, models.JobItemStatusFailed,
-	).Scan(ctx, &failed); err != nil {
-		return fmt.Errorf("count failed items: %w", err)
+	failed, err := FailedItemCount(ctx, tx, job.ID)
+	if err != nil {
+		return err
 	}
 	jobCopy := *job
 	st.onCommit(func(ctx context.Context) { k.Observer.JobEnded(ctx, jobCopy, outcome, failed) })
 	return nil
+}
+
+// FailedItemCount is the one definition of a Job's failed-item count: the
+// number its observer and ending effects report, and the one that decides
+// between "completed" and "completed with errors". Effects count at the time
+// they run, so a Retry queued before them is reflected.
+func FailedItemCount(ctx context.Context, db bun.IDB, jobID string) (int, error) {
+	var n int
+	if err := db.NewRaw(
+		`SELECT count(*) FROM job_items WHERE job_id = ? AND status = ?`, jobID, models.JobItemStatusFailed,
+	).Scan(ctx, &n); err != nil {
+		return 0, fmt.Errorf("count failed items: %w", err)
+	}
+	return n, nil
 }
 
 // EffectsArgs is the River job that runs a Job's ending effects.
