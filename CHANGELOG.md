@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.101.0 (2026-11-28)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Features
+* feat: derive a game's editions instead of storing parent and Child games by @drzero42 in https://github.com/drzero42/nexorious/pull/1453
+* feat: decide one edition on its own by @drzero42 in https://github.com/drzero42/nexorious/pull/1457
+### Bug fixes
+* fix: batch doctor apply/ignore/restore under the 200-id request cap by @drzero42 in https://github.com/drzero42/nexorious/pull/1415
+* fix: point MCP sync tool descriptions at sync_status for storefront slugs by @drzero42 in https://github.com/drzero42/nexorious/pull/1417
+* fix: paginate the library-health Dismissed list by @drzero42 in https://github.com/drzero42/nexorious/pull/1418
+* fix: refuse Skip on a Child game by @drzero42 in https://github.com/drzero42/nexorious/pull/1421
+* fix: keep matched games in the unreferenced-games cleanup by @drzero42 in https://github.com/drzero42/nexorious/pull/1424
+* fix: clear a child's match when unskipping an unmatched parent by @drzero42 in https://github.com/drzero42/nexorious/pull/1431
+* fix: align UI, CLI, MCP and code wording with the glossary by @drzero42 in https://github.com/drzero42/nexorious/pull/1446
+* fix: a Child game only inherits the match of its current parent by @drzero42 in https://github.com/drzero42/nexorious/pull/1448
+* fix: stub new IGDB games with their IGDB title by @drzero42 in https://github.com/drzero42/nexorious/pull/1465
+* fix: count each game once per platform in collection stats by @drzero42 in https://github.com/drzero42/nexorious/pull/1467
+* fix: list each game once in a sync's change lists by @drzero42 in https://github.com/drzero42/nexorious/pull/1468
+* fix: list a skipped game once and count games, not editions, in the sync status by @drzero42 in https://github.com/drzero42/nexorious/pull/1480
+* fix: validate ownership_status in one place and stop storing an empty one on update by @drzero42 in https://github.com/drzero42/nexorious/pull/1499
+* fix: stop collection stats miscounting owned games when a platform has no ownership status by @drzero42 in https://github.com/drzero42/nexorious/pull/1503
+* fix: stop empty platform or storefront values returning a 500 when adding or updating a platform by @drzero42 in https://github.com/drzero42/nexorious/pull/1504
+* fix: reject CSV import mappings with an unknown play status by @drzero42 in https://github.com/drzero42/nexorious/pull/1511
+* fix: reject invalid Job and Job item statuses in the database by @drzero42 in https://github.com/drzero42/nexorious/pull/1517
+* fix: reject invalid ownership statuses in the database by @drzero42 in https://github.com/drzero42/nexorious/pull/1518
+* fix: drop the unused processing Job item status and define the open Job item statuses once by @drzero42 in https://github.com/drzero42/nexorious/pull/1519
+* fix: reject unknown status and job_type values on the Jobs endpoints with 400 by @drzero42 in https://github.com/drzero42/nexorious/pull/1521
+* fix: return one error shape from the user-game platform handlers by @drzero42 in https://github.com/drzero42/nexorious/pull/1523
+
+
+**Full Changelog**: https://github.com/drzero42/nexorious/compare/v0.100.0...v0.101.0
+
 ## 0.100.0 (2026-11-23)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
