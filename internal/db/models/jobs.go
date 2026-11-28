@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -45,6 +46,16 @@ const (
 	JobStatusCancelled  JobStatus = "cancelled"
 )
 
+// ActiveJobStatuses returns the statuses of a Job that has not ended.
+func ActiveJobStatuses() []JobStatus {
+	return []JobStatus{JobStatusPending, JobStatusProcessing}
+}
+
+// TerminalJobStatuses returns the statuses of a Job that has ended.
+func TerminalJobStatuses() []JobStatus {
+	return []JobStatus{JobStatusCompleted, JobStatusFailed, JobStatusCancelled}
+}
+
 // Job priority constants.
 const (
 	JobPriorityLow    = "low"
@@ -73,16 +84,14 @@ type Job struct {
 	CompletedAt *time.Time `bun:"completed_at"             json:"completed_at"`
 }
 
-// IsActive returns true if the job is pending or processing.
+// IsActive reports whether the job has not ended (ActiveJobStatuses).
 func (j *Job) IsActive() bool {
-	return j.Status == JobStatusPending || j.Status == JobStatusProcessing
+	return slices.Contains(ActiveJobStatuses(), j.Status)
 }
 
-// IsTerminal returns true if the job has reached a terminal state.
+// IsTerminal reports whether the job has ended (TerminalJobStatuses).
 func (j *Job) IsTerminal() bool {
-	return j.Status == JobStatusCompleted ||
-		j.Status == JobStatusFailed ||
-		j.Status == JobStatusCancelled
+	return slices.Contains(TerminalJobStatuses(), j.Status)
 }
 
 // DurationSeconds returns elapsed seconds from StartedAt to CompletedAt

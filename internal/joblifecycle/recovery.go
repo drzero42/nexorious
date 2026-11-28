@@ -84,8 +84,8 @@ func (m *Module) Recover(ctx context.Context) (RecoveryResult, error) {
 		Source  string `bun:"source"`
 	}
 	if err := m.db.NewRaw(
-		`SELECT id, job_type, source FROM jobs WHERE status IN (?, ?) AND job_type IN (?) ORDER BY created_at`,
-		models.JobStatusPending, models.JobStatusProcessing, bun.List(types),
+		`SELECT id, job_type, source FROM jobs WHERE status IN (?) AND job_type IN (?) ORDER BY created_at`,
+		bun.List(models.ActiveJobStatuses()), bun.List(types),
 	).Scan(ctx, &jobs); err != nil {
 		return total, fmt.Errorf("list active jobs: %w", err)
 	}

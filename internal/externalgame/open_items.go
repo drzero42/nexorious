@@ -42,12 +42,12 @@ func openItemJobs(ctx context.Context, db bun.IDB, userID, id, cond string) ([]s
 		JOIN external_games g ON g.id = ? AND g.user_id = ?
 		WHERE `+cond+`
 		  AND ji.status IN (?, ?)
-		  AND j.status IN (?, ?)
+		  AND j.status IN (?)
 		GROUP BY ji.job_id
 		ORDER BY bool_or(eg.id = g.id) DESC, max(j.created_at) DESC`,
 		id, userID,
 		models.JobItemStatusPending, models.JobItemStatusPendingReview,
-		models.JobStatusPending, models.JobStatusProcessing,
+		bun.List(models.ActiveJobStatuses()),
 	).Scan(ctx, &jobIDs)
 	if err != nil {
 		return nil, fmt.Errorf("find the Jobs with open items: %w", err)

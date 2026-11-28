@@ -27,17 +27,17 @@ func FailAllAfterRestore(ctx context.Context, tx bun.Tx, msg string) error {
 	if _, err := tx.NewRaw(`
 		UPDATE job_items SET status = ?, processed_at = ?, river_job_id = NULL
 		WHERE status IN (?, ?, ?)
-		  AND job_id IN (SELECT id FROM jobs WHERE status IN (?, ?))`,
+		  AND job_id IN (SELECT id FROM jobs WHERE status IN (?))`,
 		models.JobItemStatusCancelled, now,
 		models.JobItemStatusPending, models.JobItemStatusProcessing, models.JobItemStatusPendingReview,
-		models.JobStatusPending, models.JobStatusProcessing,
+		bun.List(models.ActiveJobStatuses()),
 	).Exec(ctx); err != nil {
 		return fmt.Errorf("cancel open items: %w", err)
 	}
 	if _, err := tx.NewRaw(`
 		UPDATE jobs SET status = ?, error_message = ?, completed_at = ?, river_job_id = NULL
-		WHERE status IN (?, ?)`,
-		models.JobStatusFailed, scrub(msg), now, models.JobStatusPending, models.JobStatusProcessing,
+		WHERE status IN (?)`,
+		models.JobStatusFailed, scrub(msg), now, bun.List(models.ActiveJobStatuses()),
 	).Exec(ctx); err != nil {
 		return fmt.Errorf("fail active jobs: %w", err)
 	}

@@ -523,8 +523,8 @@ func (m *Module) endJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind, jo
 	}
 	if _, err := tx.NewRaw(
 		`UPDATE jobs SET status = ?, completed_at = ?, error_message = COALESCE(?, error_message), river_job_id = NULL
-		 WHERE id = ? AND status IN (?, ?)`,
-		status, now, errMsg, job.ID, models.JobStatusPending, models.JobStatusProcessing,
+		 WHERE id = ? AND status IN (?)`,
+		status, now, errMsg, job.ID, bun.List(models.ActiveJobStatuses()),
 	).Exec(ctx); err != nil {
 		return false, fmt.Errorf("end job: %w", err)
 	}

@@ -306,7 +306,7 @@ func activeDuplicate(ctx context.Context, tx bun.Tx, jobType string, key DupKey,
 	q := tx.NewSelect().Table("jobs").Column("id").
 		Where("job_type = ?", jobType).
 		Where("source = ?", key.Source).
-		Where("status IN (?)", bun.List([]models.JobStatus{models.JobStatusPending, models.JobStatusProcessing})).
+		Where("status IN (?)", bun.List(models.ActiveJobStatuses())).
 		Limit(1)
 	if key.UserID != "" {
 		q = q.Where("user_id = ?", key.UserID)

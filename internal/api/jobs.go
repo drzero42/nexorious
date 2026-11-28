@@ -234,11 +234,11 @@ func (h *JobsHandler) HandleJobsSummary(c *echo.Context) error {
 	}
 	err := h.db.NewRaw(`
 		SELECT
-			COUNT(*) FILTER (WHERE status IN (?, ?)) AS running,
+			COUNT(*) FILTER (WHERE status IN (?)) AS running,
 			COUNT(*) FILTER (WHERE status = ?) AS failed
 		FROM jobs
 		WHERE user_id = ?`,
-		models.JobStatusPending, models.JobStatusProcessing, models.JobStatusFailed,
+		bun.List(models.ActiveJobStatuses()), models.JobStatusFailed,
 		userID,
 	).Scan(context.Background(), &result)
 	if err != nil {
@@ -270,7 +270,7 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 		SELECT j.source, COUNT(*) AS count
 		FROM job_items ji
 		JOIN jobs j ON ji.job_id = j.id
-		WHERE ji.user_id = ? AND ji.status = ? AND j.job_type <> 'sync'
+		WHERE ji.user_id = ? AND ji.status = ? AND j.job_type <> ?
 		GROUP BY j.source
 		UNION ALL
 		SELECT source, COUNT(*) AS count FROM (
@@ -280,7 +280,7 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 			WHERE `+syncSetInReview+`
 		) sets
 		GROUP BY source`,
-		userID, models.JobItemStatusPendingReview, userID,
+		userID, models.JobItemStatusPendingReview, models.JobTypeSync, userID,
 	).Scan(context.Background(), &rows)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count pending reviews")
@@ -314,8 +314,8 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 	var activeJobID *string
 	var activeID string
 	err := h.db.NewRaw(
-		`SELECT id FROM jobs WHERE user_id = ? AND job_type = ? AND status IN (?, ?) ORDER BY created_at DESC LIMIT 1`,
-		userID, jobType, models.JobStatusPending, models.JobStatusProcessing,
+		`SELECT id FROM jobs WHERE user_id = ? AND job_type = ? AND status IN (?) ORDER BY created_at DESC LIMIT 1`,
+		userID, jobType, bun.List(models.ActiveJobStatuses()),
 	).Scan(ctx, &activeID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job status")
@@ -331,8 +331,8 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 		CompletedAt *time.Time `bun:"completed_at"`
 	}
 	err = h.db.NewRaw(
-		`SELECT id, completed_at FROM jobs WHERE user_id = ? AND job_type = ? AND status IN (?, ?, ?) ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 1`,
-		userID, jobType, models.JobStatusCompleted, models.JobStatusFailed, models.JobStatusCancelled,
+		`SELECT id, completed_at FROM jobs WHERE user_id = ? AND job_type = ? AND status IN (?) ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 1`,
+		userID, jobType, bun.List(models.TerminalJobStatuses()),
 	).Scan(ctx, &last)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job status")

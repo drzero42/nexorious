@@ -298,9 +298,9 @@ func BuildPeriodicJobs(cfg *config.Config) []*river.PeriodicJob {
 func CleanupOldJobs(ctx context.Context, db *bun.DB) {
 	result, err := db.NewRaw(
 		`DELETE FROM jobs
-		 WHERE status IN (?, ?, ?)
+		 WHERE status IN (?)
 		   AND completed_at < now() - interval '30 days'`,
-		models.JobStatusCompleted, models.JobStatusFailed, models.JobStatusCancelled,
+		bun.List(models.TerminalJobStatuses()),
 	).Exec(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "cleanup: failed to delete old jobs", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
