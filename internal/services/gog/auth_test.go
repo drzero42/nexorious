@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/services/gog"
@@ -73,6 +74,42 @@ func TestExchangeCode_TokenEndpointError(t *testing.T) {
 	_, err := c.ExchangeCode(context.Background(), "bad-code")
 	if err == nil {
 		t.Fatal("expected error for non-200 token response")
+	}
+}
+
+// A token request that never reaches GOG fails without quoting the request
+// URL, whose query holds the client secret and the code or refresh token
+// (#1528).
+func TestTokenRequestError_OmitsCredentials(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	srv.Close() // nothing listens: the request fails before any response
+
+	c := gog.NewClientWithURLs(srv.URL, srv.URL)
+	for name, call := range map[string]func() error{
+		"exchange code": func() error {
+			_, err := c.ExchangeCode(context.Background(), "secret-auth-code")
+			return err
+		},
+		"refresh token": func() error {
+			_, err := c.RefreshToken(context.Background(), "secret-refresh-token")
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := call()
+			if err == nil {
+				t.Fatal("expected an error from an unreachable token endpoint")
+			}
+			msg := err.Error()
+			for _, leak := range []string{"secret-auth-code", "secret-refresh-token", "client_secret", "?"} {
+				if strings.Contains(msg, leak) {
+					t.Errorf("error %q contains %q", msg, leak)
+				}
+			}
+			if !strings.Contains(msg, srv.URL+"/token") {
+				t.Errorf("error %q does not name the token endpoint", msg)
+			}
+		})
 	}
 }
 

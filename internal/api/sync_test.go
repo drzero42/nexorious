@@ -2988,17 +2988,19 @@ func TestGOGConnection_NoClient(t *testing.T) {
 	}
 }
 
-// Each GOG connect rejection answers 400 with the message it always had.
+// Each GOG connect rejection answers 400 with its message; GOG's own answer
+// to a failed exchange is logged, not echoed (#1528).
 func TestGOGConnect_RejectionMessages(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		body     map[string]any
 		status   int // what GOG's token endpoint answers
 		wantBody string
+		notBody  string
 	}{
-		{"no code", map[string]any{}, http.StatusOK, "auth_code is required"},
-		{"not gog's login url", map[string]any{"auth_code": "https://example.com/?code=x"}, http.StatusOK, "that doesn't look like a GOG login URL"},
-		{"gog rejects the code", map[string]any{"auth_code": "bad"}, http.StatusBadRequest, "gog auth failed: gog: token HTTP 400"},
+		{"no code", map[string]any{}, http.StatusOK, "auth_code is required", ""},
+		{"not gog's login url", map[string]any{"auth_code": "https://example.com/?code=x"}, http.StatusOK, "that doesn't look like a GOG login URL", ""},
+		{"gog rejects the code", map[string]any{"auth_code": "bad"}, http.StatusBadRequest, "gog auth failed", "token HTTP"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			truncateAllTables(t)
@@ -3009,6 +3011,9 @@ func TestGOGConnect_RejectionMessages(t *testing.T) {
 			rec := putJSONAuth(t, app, "/api/sync/gog/connection", tc.body, token)
 			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), tc.wantBody) {
 				t.Errorf("got %d %s, want 400 %q", rec.Code, rec.Body.String(), tc.wantBody)
+			}
+			if tc.notBody != "" && strings.Contains(rec.Body.String(), tc.notBody) {
+				t.Errorf("body %s echoes GOG's answer %q", rec.Body.String(), tc.notBody)
 			}
 		})
 	}

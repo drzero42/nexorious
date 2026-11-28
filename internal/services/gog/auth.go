@@ -118,6 +118,11 @@ func (c *Client) postToken(ctx context.Context, form url.Values) (*TokenResponse
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		// The client's *url.Error quotes the request URL, whose query holds
+		// the client secret and the code or refresh token (#1528).
+		if uerr, ok := errors.AsType[*url.Error](err); ok {
+			uerr.URL = c.tokenBase + "/token"
+		}
 		return nil, fmt.Errorf("gog: token request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
