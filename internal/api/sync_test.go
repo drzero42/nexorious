@@ -20,6 +20,9 @@ import (
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/externalgame/egtest"
+	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
+	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
+	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
 	"github.com/drzero42/nexorious/internal/storefront"
 )
@@ -34,15 +37,28 @@ func (s *stubSteamClient) GetPlayerSummaries(_ context.Context, _, _ string) (*s
 }
 
 type stubPlaystationStoreClient struct {
-	info *api.PlaystationStoreAccountInfo
+	info *playstationstoresvc.PSNAccountInfo
 	err  error
 }
 
-func (s *stubPlaystationStoreClient) GetAccountInfo(_ context.Context, _ string) (*api.PlaystationStoreAccountInfo, error) {
+func (s *stubPlaystationStoreClient) GetAccountInfo(_ context.Context, _ string) (*playstationstoresvc.PSNAccountInfo, error) {
 	return s.info, s.err
 }
 
-func newSyncTestApp(t *testing.T, db *bun.DB, steam storefront.SteamClient, psn api.PlaystationStoreClient) interface {
+type stubHumbleBundleClient struct{ err error }
+
+func (s *stubHumbleBundleClient) Verify(context.Context, string) error { return s.err }
+
+func newSyncTestApp(t *testing.T, db *bun.DB, steam storefront.SteamClient, psn storefront.PlayStationStoreClient) interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+} {
+	t.Helper()
+	return newSyncTestAppWithClients(t, db, storefront.Clients{Steam: steam, PlayStationStore: psn})
+}
+
+// newSyncTestAppWithClients builds the sync app whose Connections reach the
+// storefronts through clients.
+func newSyncTestAppWithClients(t *testing.T, db *bun.DB, clients storefront.Clients) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
@@ -50,7 +66,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam storefront.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, storefront.Clients{Steam: steam}), PlaystationStore: psn})
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, clients)})
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -488,7 +504,7 @@ func TestPlaystationStoreConnect_ShortToken(t *testing.T) {
 func TestPlaystationStoreConnect_StubSuccess(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubPlaystationStoreClient{
-		info: &api.PlaystationStoreAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
+		info: &playstationstoresvc.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-ok")
@@ -897,7 +913,7 @@ func TestSyncGetConfig_InvalidStorefront(t *testing.T) {
 func TestPlaystationStoreStatus_WithCredentials(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubPlaystationStoreClient{
-		info: &api.PlaystationStoreAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
+		info: &playstationstoresvc.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-stat-cred")
@@ -992,7 +1008,8 @@ func TestStatus_CorruptedCredentials(t *testing.T) {
 			newApp: func(t *testing.T) interface {
 				ServeHTTP(http.ResponseWriter, *http.Request)
 			} {
-				return newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubGOGClient{})
+				gog, _ := newFakeGOG(t, http.StatusOK, "")
+				return newSyncTestAppWithGOG(t, gog)
 			},
 		},
 		{
@@ -1834,7 +1851,7 @@ func (s *stubEpicGamesStoreClient) Configured() bool {
 
 // newSyncTestAppWithEpicGamesStore builds the sync app with a custom EpicGamesStoreClient. Used by
 // the Epic connection tests.
-func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam storefront.SteamClient, psn api.PlaystationStoreClient, epic api.EpicGamesStoreClient) interface {
+func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam storefront.SteamClient, psn storefront.PlayStationStoreClient, epic api.EpicGamesStoreClient) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
@@ -1842,29 +1859,30 @@ func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam storefront
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, storefront.Clients{Steam: steam}), PlaystationStore: psn, EpicGamesStore: epic})
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, storefront.Clients{Steam: steam, PlayStationStore: psn}), EpicGamesStore: epic})
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
 }
 
-type stubGOGClient struct {
-	authURL string
-	token   *api.GOGTokenResponse
-	err     error
-	gotCode string
-}
-
-func (s *stubGOGClient) BuildAuthURL() string {
-	if s.authURL != "" {
-		return s.authURL
-	}
-	return "https://login.gog.com/auth?test=1"
-}
-
-func (s *stubGOGClient) ExchangeCode(_ context.Context, code string) (*api.GOGTokenResponse, error) {
-	s.gotCode = code
-	return s.token, s.err
+// newFakeGOG serves GOG's token endpoint: it answers with status, or with
+// tokens for username when status is 200. The returned string is the code
+// the last token request carried.
+func newFakeGOG(t *testing.T, status int, username string) (*gogsvc.Client, *string) {
+	t.Helper()
+	var gotCode string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			gotCode = r.URL.Query().Get("code")
+		}
+		if status != http.StatusOK {
+			w.WriteHeader(status)
+			return
+		}
+		fmt.Fprintf(w, `{"access_token":"a","refresh_token":"r","expires_in":3600,"user_id":"1","username":%q}`, username)
+	}))
+	t.Cleanup(srv.Close)
+	return gogsvc.NewClientWithURLs(srv.URL, srv.URL), &gotCode
 }
 
 // The trigger creates the Job and its dispatch River job in one transaction
@@ -1908,18 +1926,11 @@ func TestSyncTrigger_CreatesJobWithItsDispatch(t *testing.T) {
 	}
 }
 
-func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam storefront.SteamClient, psn api.PlaystationStoreClient, gog api.GOGClient) interface {
+func newSyncTestAppWithGOG(t *testing.T, gog *gogsvc.Client) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
-	cfg := testCfg()
-	e := echo.New()
-	ah := api.NewAuthHandler(testDB, cfg)
-	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, storefront.Clients{Steam: steam}), PlaystationStore: psn, GOG: gog})
-	g := e.Group("/api/sync", auth.AuthMiddleware(db))
-	synch.RegisterRoutes(g)
-	return e
+	return newSyncTestAppWithClients(t, testDB, storefront.Clients{GOG: gog})
 }
 
 func TestHandleEpicGamesStoreConnect_503WhenNotConfigured(t *testing.T) {
@@ -2223,7 +2234,7 @@ func newSyncTestAppWithAmazonGames(t *testing.T, amazon *stubAmazonGamesClient) 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, testCfg())
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: testDB, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(testDB, testEncrypter, storefront.Clients{}), PlaystationStore: &stubPlaystationStoreClient{}, AmazonGames: amazon})
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: testDB, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(testDB, testEncrypter, storefront.Clients{}), AmazonGames: amazon})
 	g := e.Group("/api/sync", auth.AuthMiddleware(testDB))
 	synch.RegisterRoutes(g)
 	return e, synch
@@ -2812,12 +2823,68 @@ func TestAmazonGamesDisconnect_ReconnectDuringSignOutIsKept(t *testing.T) {
 	}
 }
 
+// ─── Humble Bundle connection-handler tests ──────────────────────────────────
+
+// Each way Humble Bundle connect rejects a cookie answers its own status and
+// message, and stores nothing.
+func TestHumbleConnect_Rejections(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		cookie     string
+		verifyErr  error
+		wantStatus int
+		wantBody   string
+	}{
+		{"blank cookie", "  ", nil, http.StatusBadRequest, "session_cookie is required"},
+		{"rejected cookie", "c", humblesvc.ErrCredentials, http.StatusBadRequest, "invalid_session_cookie"},
+		{"humble unreachable", "c", errors.New("dial tcp: timeout"), http.StatusBadGateway, "could not reach Humble Bundle"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			app := newSyncTestAppWithClients(t, testDB, storefront.Clients{HumbleBundle: &stubHumbleBundleClient{err: tc.verifyErr}})
+			userID, token := setupTagUser(t, testDB, app, "humble-conn-reject")
+
+			rec := putJSONAuth(t, app, "/api/sync/humble-bundle/connection", map[string]any{"session_cookie": tc.cookie}, token)
+			if rec.Code != tc.wantStatus || !strings.Contains(rec.Body.String(), tc.wantBody) {
+				t.Fatalf("got %d %s, want %d %q", rec.Code, rec.Body.String(), tc.wantStatus, tc.wantBody)
+			}
+			var n int
+			if err := testDB.NewRaw(`SELECT count(*) FROM user_sync_configs WHERE user_id = ? AND storefront_credentials IS NOT NULL`, userID).
+				Scan(context.Background(), &n); err != nil {
+				t.Fatal(err)
+			}
+			if n != 0 {
+				t.Error("a rejected cookie was stored")
+			}
+		})
+	}
+}
+
+func TestHumbleConnect_Success(t *testing.T) {
+	truncateAllTables(t)
+	app := newSyncTestAppWithClients(t, testDB, storefront.Clients{HumbleBundle: &stubHumbleBundleClient{}})
+	_, token := setupTagUser(t, testDB, app, "humble-conn-ok")
+
+	rec := putJSONAuth(t, app, "/api/sync/humble-bundle/connection", map[string]any{"session_cookie": " sess "}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = getAuth(t, app, "/api/sync/humble-bundle/connection", token)
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["is_configured"] != true {
+		t.Errorf("status after connect = %v, want configured", body)
+	}
+}
+
 // ─── GOG connection-handler tests ────────────────────────────────────────────
 
 func TestGOGConnect_MissingAuthCode(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubGOGClient{}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	gog, _ := newFakeGOG(t, http.StatusOK, "")
+	app := newSyncTestAppWithGOG(t, gog)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-missing")
 
 	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{}, token)
@@ -2828,8 +2895,8 @@ func TestGOGConnect_MissingAuthCode(t *testing.T) {
 
 func TestGOGConnect_ExchangeFailure(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubGOGClient{err: fmt.Errorf("invalid code")}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	gog, _ := newFakeGOG(t, http.StatusBadRequest, "")
+	app := newSyncTestAppWithGOG(t, gog)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-fail")
 
 	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{"auth_code": "bad"}, token)
@@ -2843,13 +2910,8 @@ func TestGOGConnect_ExchangeFailure(t *testing.T) {
 // carries the resolved username.
 func TestGOGConnect_FullURL(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubGOGClient{
-		token: &api.GOGTokenResponse{
-			RefreshToken: "ref",
-			Username:     "goguser",
-		},
-	}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	gog, gotCode := newFakeGOG(t, http.StatusOK, "goguser")
+	app := newSyncTestAppWithGOG(t, gog)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-url")
 
 	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{
@@ -2858,8 +2920,8 @@ func TestGOGConnect_FullURL(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if stub.gotCode != "XXX" {
-		t.Errorf("ExchangeCode received %q, want extracted code %q", stub.gotCode, "XXX")
+	if *gotCode != "XXX" {
+		t.Errorf("ExchangeCode received %q, want extracted code %q", *gotCode, "XXX")
 	}
 	var body map[string]string
 	_ = json.NewDecoder(rec.Body).Decode(&body)
@@ -2870,8 +2932,8 @@ func TestGOGConnect_FullURL(t *testing.T) {
 
 func TestGOGDisconnect_Idempotent(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubGOGClient{}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	gog, _ := newFakeGOG(t, http.StatusOK, "")
+	app := newSyncTestAppWithGOG(t, gog)
 	_, token := setupTagUser(t, testDB, app, "gog-disc")
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/sync/gog/connection", nil)
@@ -2885,8 +2947,8 @@ func TestGOGDisconnect_Idempotent(t *testing.T) {
 
 func TestGOGConnection_NotConnected(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubGOGClient{}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	gog, _ := newFakeGOG(t, http.StatusOK, "")
+	app := newSyncTestAppWithGOG(t, gog)
 	_, token := setupTagUser(t, testDB, app, "gog-status-notconn")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/gog/connection", nil)
@@ -2901,14 +2963,60 @@ func TestGOGConnection_NotConnected(t *testing.T) {
 	if body["connected"] != false {
 		t.Errorf("want connected=false, got %v", body["connected"])
 	}
+	if url, _ := body["auth_url"].(string); !strings.HasPrefix(url, "https://login.gog.com/auth?") {
+		t.Errorf("auth_url = %q, want GOG's login page", url)
+	}
+}
+
+// Without a GOG client the status still answers, with an empty auth_url.
+func TestGOGConnection_NoClient(t *testing.T) {
+	truncateAllTables(t)
+	app := newSyncTestAppWithClients(t, testDB, storefront.Clients{})
+	_, token := setupTagUser(t, testDB, app, "gog-status-noclient")
+
+	rec := getAuth(t, app, "/api/sync/gog/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["auth_url"] != "" {
+		t.Errorf("auth_url = %v, want empty", body["auth_url"])
+	}
+}
+
+// Each GOG connect rejection answers 400 with the message it always had.
+func TestGOGConnect_RejectionMessages(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		body     map[string]any
+		status   int // what GOG's token endpoint answers
+		wantBody string
+	}{
+		{"no code", map[string]any{}, http.StatusOK, "auth_code is required"},
+		{"not gog's login url", map[string]any{"auth_code": "https://example.com/?code=x"}, http.StatusOK, "that doesn't look like a GOG login URL"},
+		{"gog rejects the code", map[string]any{"auth_code": "bad"}, http.StatusBadRequest, "gog auth failed: gog: token HTTP 400"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			gog, _ := newFakeGOG(t, tc.status, "")
+			app := newSyncTestAppWithGOG(t, gog)
+			_, token := setupTagUser(t, testDB, app, "gog-conn-msg")
+
+			rec := putJSONAuth(t, app, "/api/sync/gog/connection", tc.body, token)
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), tc.wantBody) {
+				t.Errorf("got %d %s, want 400 %q", rec.Code, rec.Body.String(), tc.wantBody)
+			}
+		})
+	}
 }
 
 func TestGOGConnection_Connected(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubGOGClient{
-		token: &api.GOGTokenResponse{Username: "goguser", RefreshToken: "r"},
-	}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	gog, _ := newFakeGOG(t, http.StatusOK, "goguser")
+	app := newSyncTestAppWithGOG(t, gog)
 	userID, token := setupTagUser(t, testDB, app, "gog-status-conn")
 
 	rawCreds := `{"access_token":"a","refresh_token":"r","user_id":"u1","username":"goguser"}`
@@ -3046,7 +3154,8 @@ func TestGetConnection_DBCredentialsErrorFlag(t *testing.T) {
 			newApp: func(t *testing.T) interface {
 				ServeHTTP(http.ResponseWriter, *http.Request)
 			} {
-				return newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubGOGClient{})
+				gog, _ := newFakeGOG(t, http.StatusOK, "")
+				return newSyncTestAppWithGOG(t, gog)
 			},
 		},
 		{
@@ -3130,7 +3239,7 @@ func TestConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 				ServeHTTP(http.ResponseWriter, *http.Request)
 			} {
 				stub := &stubPlaystationStoreClient{
-					info: &api.PlaystationStoreAccountInfo{OnlineID: "MyPSN", AccountID: "123"},
+					info: &playstationstoresvc.PSNAccountInfo{OnlineID: "MyPSN", AccountID: "123"},
 				}
 				return newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 			},

@@ -11,10 +11,10 @@
 // The stored shapes:
 //
 //   - Steam, PlayStation Store, GOG and Humble Bundle store a typed value
-//     (SteamCredentials and friends). The connect handler stores it, and every
-//     reader decodes it, through that one type, so a field the connect handler
-//     starts storing survives a sync's refresh. Unknown fields in older rows
-//     are ignored on decode.
+//     (SteamCredentials and friends). Connect stores it, and every reader
+//     decodes it, through that one type, so a field connect starts storing
+//     survives a sync's refresh. Unknown fields in older rows are ignored on
+//     decode.
 //   - Epic Games Store and Amazon Games store an opaque value the service
 //     package owns: legendary's state snapshot and nile's user data. This
 //     package stores and loads them unchanged.
@@ -24,10 +24,12 @@
 // tests stand fakes in for the third parties. There is no common connect
 // operation: each storefront's flow differs (a key and an id, a token, a
 // cookie, an auth code, a two-step sign-in), so each gets its own, which
-// validates its input and returns typed errors, never HTTP ones. So far Steam
-// has one (ConnectSteam). What is the same for every storefront is shared:
-// Status reports a Connection with its account's display name, decoded from
-// the stored sign-in, and Disconnect removes it.
+// validates its input and returns typed errors, never HTTP ones (ConnectSteam,
+// ConnectPlayStationStore, ConnectGOG, ConnectHumbleBundle). Epic Games Store
+// and Amazon Games still connect in internal/api (#1485). What is the same
+// for every storefront is shared: Status reports a Connection with its
+// account's display name, decoded from the stored sign-in, and Disconnect
+// removes it.
 //
 // Below that, Connections stores, takes and loads the stored sign-in. Store
 // also clears credentials_error, so a reconnect heals a sign-in a sync found

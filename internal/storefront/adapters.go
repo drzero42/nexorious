@@ -21,10 +21,12 @@ import (
 // storefronts through. They are passed in so tests can stand fakes in for the
 // third parties; Epic's also needs LEGENDARY_WORK_DIR.
 type Clients struct {
-	Steam  SteamClient
-	Epic   *epicgamesstoresvc.Client
-	Amazon amazongamessvc.LibraryClient
-	GOG    *gogsvc.Client
+	Steam            SteamClient
+	PlayStationStore PlayStationStoreClient
+	Epic             *epicgamesstoresvc.Client
+	GOG              *gogsvc.Client
+	HumbleBundle     HumbleBundleClient
+	Amazon           amazongamessvc.LibraryClient
 }
 
 // AdapterFactory is the sync worker's adapter factory: it builds the
