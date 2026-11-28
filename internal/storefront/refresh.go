@@ -3,6 +3,7 @@ package storefront
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -45,7 +46,7 @@ func (w *storedCredentialsWriter) ciphertext() string {
 func (w *storedCredentialsWriter) save(ctx context.Context, plain []byte) error {
 	ciphertext, err := w.conns.encrypter.Encrypt(plain)
 	if err != nil {
-		return err
+		return fmt.Errorf("save refreshed %s sign-in: encrypt: %w", w.storefront, err)
 	}
 	return w.write(ctx, ciphertext)
 }
@@ -59,7 +60,7 @@ func (w *storedCredentialsWriter) write(ctx context.Context, ciphertext string) 
 		ciphertext, w.userID, w.storefront, w.current,
 	).Exec(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("save refreshed %s sign-in: %w", w.storefront, err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // RowsAffected never errors for this driver; 0 reads as "replaced"
 		slog.InfoContext(ctx, "sync: refreshed sign-in dropped: the store was reconnected during the sync", logging.KeySource, w.storefront)

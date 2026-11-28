@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -35,11 +36,11 @@ func NewConnections(db *bun.DB, encrypter *crypto.Encrypter) *Connections {
 func (c *Connections) Store(ctx context.Context, userID, storefront string, creds any) error {
 	credsJSON, err := json.Marshal(creds)
 	if err != nil {
-		return err
+		return fmt.Errorf("store %s connection: marshal: %w", storefront, err)
 	}
 	ciphertext, err := c.encrypter.Encrypt(credsJSON)
 	if err != nil {
-		return err
+		return fmt.Errorf("store %s connection: encrypt: %w", storefront, err)
 	}
 	now := time.Now().UTC()
 	row := &models.UserSyncConfig{
@@ -56,7 +57,10 @@ func (c *Connections) Store(ctx context.Context, userID, storefront string, cred
 	_, err = c.db.NewInsert().Model(row).
 		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, credentials_error = false, updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
-	return err
+	if err != nil {
+		return fmt.Errorf("store %s connection: %w", storefront, err)
+	}
+	return nil
 }
 
 // Clear removes the user's stored sign-in for the storefront. Clearing an
@@ -66,13 +70,17 @@ func (c *Connections) Clear(ctx context.Context, userID, storefront string) erro
 		`UPDATE user_sync_configs SET storefront_credentials = NULL, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 		userID, storefront,
 	).Exec(ctx)
-	return err
+	if err != nil {
+		return fmt.Errorf("clear %s connection: %w", storefront, err)
+	}
+	return nil
 }
 
 // Take clears the user's stored sign-in for the storefront and returns the
-// ciphertext it cleared, in one statement, so nothing stored after it can be
-// returned. It returns nil when nothing was stored.
-func (c *Connections) Take(ctx context.Context, userID, storefront string) (*string, error) {
+// sign-in it cleared, decrypted. The clear and the read are one statement, so
+// nothing stored after it can be returned. It returns nil when nothing was
+// stored, and when the cleared sign-in does not decrypt (logged).
+func (c *Connections) Take(ctx context.Context, userID, storefront string) ([]byte, error) {
 	var removed *string
 	err := c.db.NewRaw(
 		`UPDATE user_sync_configs u SET storefront_credentials = NULL, updated_at = now()
@@ -84,7 +92,18 @@ func (c *Connections) Take(ctx context.Context, userID, storefront string) (*str
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
-	return removed, err
+	if err != nil {
+		return nil, fmt.Errorf("take %s connection: %w", storefront, err)
+	}
+	if removed == nil {
+		return nil, nil
+	}
+	plain, err := c.encrypter.Decrypt(*removed)
+	if err != nil {
+		slog.WarnContext(logging.WithUserID(ctx, userID), "storefront: removed sign-in does not decrypt", logging.KeySource, storefront, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+		return nil, nil
+	}
+	return plain, nil
 }
 
 // Loaded is the state of a user's stored Connection.
@@ -113,7 +132,7 @@ func (c *Connections) Load(ctx context.Context, userID, storefront string) (Load
 	}
 	plain, err := c.encrypter.Decrypt(*row.StorefrontCredentials)
 	if err != nil {
-		slog.WarnContext(logging.WithUserID(ctx, userID), "sync: credentials decrypt failed", logging.KeySource, storefront, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+		slog.WarnContext(logging.WithUserID(ctx, userID), "storefront: stored sign-in does not decrypt", logging.KeySource, storefront, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 		return Loaded{Connected: true, CredentialsError: true}, nil
 	}
 	return Loaded{Connected: true, CredentialsError: row.CredentialsError, Plaintext: plain}, nil

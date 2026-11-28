@@ -1140,25 +1140,20 @@ func (h *SyncHandler) HandleAmazonGamesDisconnect(c *echo.Context) error {
 		// Detached from the request so the answer does not wait for Amazon,
 		// keeping the request's logging values.
 		ctx := context.WithoutCancel(c.Request().Context())
-		h.amazonSignOuts.Go(func() { h.signOutAmazonDevice(ctx, *removed) })
+		h.amazonSignOuts.Go(func() { h.signOutAmazonDevice(ctx, removed) })
 	}
 	return c.NoContent(http.StatusNoContent)
 }
 
 // signOutAmazonDevice runs nile's logout with a removed Amazon sign-in, under
 // a time limit; any failure is logged and otherwise ignored.
-func (h *SyncHandler) signOutAmazonDevice(ctx context.Context, ciphertext string) {
+func (h *SyncHandler) signOutAmazonDevice(ctx context.Context, userData json.RawMessage) {
 	limit := amazonSignOutLimit
 	if h.amazonSignOutTimeout > 0 {
 		limit = h.amazonSignOutTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
-	userData, err := h.encrypter.Decrypt(ciphertext)
-	if err != nil {
-		slog.WarnContext(ctx, "amazon: device sign-out skipped: the removed sign-in does not decrypt", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
-		return
-	}
 	if err := h.amazonGamesClient.Logout(ctx, userData); err != nil {
 		slog.WarnContext(ctx, "amazon: device sign-out after disconnect failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
 		return

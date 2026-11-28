@@ -3,7 +3,11 @@
 //
 // The stored value is the interface between "connect" and "sync". This
 // package defines it once per storefront and is the one place it is
-// encrypted, decrypted and decoded:
+// encrypted and decrypted, with one exception left: the store-link resolver
+// in cmd/nexorious reads the PlayStation Store sign-in itself, through
+// PlayStationStoreCredentials, until it moves here (#1487).
+//
+// The stored shapes:
 //
 //   - Steam, PlayStation Store, GOG and Humble Bundle store a typed value
 //     (SteamCredentials and friends). The connect handler stores it, and every
@@ -16,6 +20,8 @@
 //
 // Connections stores, clears, takes and loads a Connection. Store also clears
 // credentials_error, so a reconnect heals a sign-in a sync found expired.
+// Take and Load hand back the sign-in decrypted; callers decode it into the
+// storefront's credentials type.
 //
 // Connections.AdapterFactory builds a storefront's library adapter from a
 // stored Connection, through a registry with one definition per storefront.

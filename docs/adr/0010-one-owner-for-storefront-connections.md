@@ -5,7 +5,7 @@ A user's Connection to a storefront is the sign-in stored, encrypted, in `user_s
 We decided that `internal/storefront` owns the Connection (#1411, #1483):
 
 - **The stored shape**, defined once per storefront. Steam, PlayStation Store, GOG and Humble Bundle have exported typed credentials that the connect handlers store and every reader decodes. Epic's legendary snapshot and Amazon's nile user data stay opaque: their service packages own those shapes, and the module stores and loads them unchanged.
-- **Persistence**: `Connections` stores (clearing `credentials_error`), clears, takes and loads a Connection.
+- **Persistence**: `Connections` stores (clearing `credentials_error`), clears, takes and loads a Connection. Take and Load return the sign-in decrypted, so no caller holds the encrypter for it.
 - **Building the library adapter** from a stored Connection, through a registry with one definition per storefront. The shared load path (no sign-in, a failed decrypt, an undecodable value: `ErrCredentials`) is written once.
 - **Saving a refreshed sign-in**, only while the stored ciphertext is still the one the sync last read or wrote, in one `UPDATE`, and binding a credentials failure to that ciphertext (`storefrontadapter.CredentialsErrorFor`).
 
