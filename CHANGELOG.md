@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.101.1 (2026-11-28)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Bug fixes
+* fix: move Steam's connect into the storefront module and report its rate limit by @drzero42 in https://github.com/drzero42/nexorious/pull/1526
+
+
+**Full Changelog**: https://github.com/drzero42/nexorious/compare/v0.101.0...v0.101.1
+
 ## 0.101.0 (2026-11-28)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
