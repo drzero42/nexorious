@@ -141,9 +141,9 @@ func TestConnectHumbleBundle(t *testing.T) {
 		want      error
 		wantCalls int
 	}{
-		{name: "cookie is blank", cookie: "  \n", want: ErrHumbleCookieMissing},
-		{name: "humble rejects the cookie", cookie: "c", client: fakeHumbleBundleClient{err: humblesvc.ErrCredentials}, want: ErrInvalidHumbleCookie, wantCalls: 1},
-		{name: "humble unreachable", cookie: "c", client: fakeHumbleBundleClient{err: errors.New("dial tcp: timeout")}, want: ErrHumbleUnavailable, wantCalls: 1},
+		{name: "cookie is blank", cookie: "  \n", want: ErrHumbleBundleCookieMissing},
+		{name: "humble rejects the cookie", cookie: "c", client: fakeHumbleBundleClient{err: humblesvc.ErrCredentials}, want: ErrInvalidHumbleBundleCookie, wantCalls: 1},
+		{name: "humble unreachable", cookie: "c", client: fakeHumbleBundleClient{err: errors.New("dial tcp: timeout")}, want: ErrHumbleBundleUnavailable, wantCalls: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			truncateAllTables(t)
@@ -187,12 +187,12 @@ func TestConnectGOG(t *testing.T) {
 		code       string
 		status     int
 		want       error
-		wantReason string // the message, when it is the reason shown to the user
+		wantReason string // the start of the message
 	}{
-		{name: "no code", code: "", status: http.StatusOK, want: ErrGOGAuthCodeMissing, wantReason: "auth_code is required"},
+		{name: "no code", code: "", status: http.StatusOK, want: ErrGOGAuthCodeMissing, wantReason: "gog: auth code is required"},
 		{name: "url is not gog's login redirect", code: "https://example.com/?code=x", status: http.StatusOK, want: ErrInvalidGOGAuthCode, wantReason: "that doesn't look like a GOG login URL"},
 		{name: "login redirect without a code", code: "https://embed.gog.com/on_login_success?origin=client", status: http.StatusOK, want: ErrInvalidGOGAuthCode, wantReason: "couldn't find an authorization code"},
-		{name: "gog rejects the code", code: "bad", status: http.StatusBadRequest, want: ErrGOGSignInFailed, wantReason: "gog auth failed: "},
+		{name: "gog rejects the code", code: "bad", status: http.StatusBadRequest, want: ErrGOGSignInFailed, wantReason: "gog: token HTTP 400"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			truncateAllTables(t)

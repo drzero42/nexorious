@@ -683,11 +683,11 @@ func (h *SyncHandler) HandleHumbleConnect(c *echo.Context) error {
 
 	err := h.connections.ConnectHumbleBundle(c.Request().Context(), userID, req.SessionCookie)
 	switch {
-	case errors.Is(err, storefront.ErrHumbleCookieMissing):
+	case errors.Is(err, storefront.ErrHumbleBundleCookieMissing):
 		return echo.NewHTTPError(http.StatusBadRequest, "session_cookie is required")
-	case errors.Is(err, storefront.ErrInvalidHumbleCookie):
+	case errors.Is(err, storefront.ErrInvalidHumbleBundleCookie):
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid_session_cookie")
-	case errors.Is(err, storefront.ErrHumbleUnavailable):
+	case errors.Is(err, storefront.ErrHumbleBundleUnavailable):
 		slog.ErrorContext(c.Request().Context(), "humble: verify failed", logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusBadGateway, "could not reach Humble Bundle")
 	case err != nil:
@@ -1406,11 +1406,14 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 
 	username, err := h.connections.ConnectGOG(c.Request().Context(), userID, body.AuthCode)
 	switch {
-	case errors.Is(err, storefront.ErrGOGAuthCodeMissing),
-		errors.Is(err, storefront.ErrInvalidGOGAuthCode),
-		errors.Is(err, storefront.ErrGOGSignInFailed):
-		// The rejection's message is the reason shown to the user.
+	case errors.Is(err, storefront.ErrGOGAuthCodeMissing):
+		return echo.NewHTTPError(http.StatusBadRequest, "auth_code is required")
+	case errors.Is(err, storefront.ErrInvalidGOGAuthCode):
+		// The message is only the reason, worded for the user.
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	case errors.Is(err, storefront.ErrGOGSignInFailed):
+		// The message is only GOG's answer (#1528).
+		return echo.NewHTTPError(http.StatusBadRequest, "gog auth failed: "+err.Error())
 	case err != nil:
 		slog.ErrorContext(c.Request().Context(), "gog: persist credentials failed", logging.KeyErr, err, logging.KeySource, "gog", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist GOG connection")

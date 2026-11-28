@@ -18,13 +18,13 @@ type HumbleBundleClient interface {
 // The ways ConnectHumbleBundle rejects a sign-in. Nothing is stored after any
 // of them.
 var (
-	// ErrHumbleCookieMissing: the cookie is empty once trimmed.
-	ErrHumbleCookieMissing = errors.New("humble bundle: session cookie is required")
-	// ErrInvalidHumbleCookie: Humble Bundle did not accept the cookie.
-	ErrInvalidHumbleCookie = errors.New("humble bundle: invalid session cookie")
-	// ErrHumbleUnavailable: Humble Bundle could not be reached or gave no
+	// ErrHumbleBundleCookieMissing: the cookie is empty once trimmed.
+	ErrHumbleBundleCookieMissing = errors.New("humble bundle: session cookie is required")
+	// ErrInvalidHumbleBundleCookie: Humble Bundle did not accept the cookie.
+	ErrInvalidHumbleBundleCookie = errors.New("humble bundle: invalid session cookie")
+	// ErrHumbleBundleUnavailable: Humble Bundle could not be reached or gave no
 	// usable answer. The error wraps the cause.
-	ErrHumbleUnavailable = errors.New("humble bundle: unavailable")
+	ErrHumbleBundleUnavailable = errors.New("humble bundle: unavailable")
 )
 
 // ConnectHumbleBundle verifies a pasted session cookie against Humble
@@ -33,15 +33,15 @@ var (
 func (c *Connections) ConnectHumbleBundle(ctx context.Context, userID, sessionCookie string) error {
 	sessionCookie = strings.TrimSpace(sessionCookie)
 	if sessionCookie == "" {
-		return ErrHumbleCookieMissing
+		return ErrHumbleBundleCookieMissing
 	}
 	err := c.clients.HumbleBundle.Verify(ctx, sessionCookie)
 	switch {
 	case errors.Is(err, humblesvc.ErrCredentials):
-		return ErrInvalidHumbleCookie
+		return ErrInvalidHumbleBundleCookie
 	case err != nil:
 		// The cookie travels in a header, so the cause does not carry it.
-		return fmt.Errorf("%w: %w", ErrHumbleUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrHumbleBundleUnavailable, err)
 	}
 	// Humble Bundle accepted the sign-in; storing it does not depend on the
 	// caller still waiting.

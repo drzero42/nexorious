@@ -3,26 +3,25 @@ package storefront
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 )
 
 // The ways ConnectGOG rejects a sign-in. Nothing is stored after any of them.
-// The error's message is the reason to show the user.
 var (
 	// ErrGOGAuthCodeMissing: no code or login URL was given.
-	ErrGOGAuthCodeMissing = errors.New("auth_code is required")
+	ErrGOGAuthCodeMissing = errors.New("gog: auth code is required")
 	// ErrInvalidGOGAuthCode: the input is a URL that is not GOG's login
-	// redirect, or carries no code. The error's message is the reason.
+	// redirect, or carries no code. The error's message is only the reason,
+	// worded for the user.
 	ErrInvalidGOGAuthCode = errors.New("gog: invalid auth code")
 	// ErrGOGSignInFailed: GOG did not exchange the code for tokens. The
-	// error wraps GOG's answer.
-	ErrGOGSignInFailed = errors.New("gog auth failed")
+	// error's message is only GOG's answer.
+	ErrGOGSignInFailed = errors.New("gog: sign-in failed")
 )
 
 // reasonError is a rejection that errors.Is its sentinel, and whose message
-// is the reason alone.
+// is the reason alone, without the sentinel's.
 type reasonError struct{ sentinel, reason error }
 
 func (e reasonError) Error() string   { return e.reason.Error() }
@@ -50,7 +49,7 @@ func (c *Connections) ConnectGOG(ctx context.Context, userID, authCode string) (
 	}
 	tok, err := c.clients.GOG.ExchangeCode(ctx, code)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrGOGSignInFailed, err)
+		return "", reasonError{sentinel: ErrGOGSignInFailed, reason: err}
 	}
 	creds := GOGCredentials{RefreshToken: tok.RefreshToken, Username: tok.Username}
 	// GOG accepted the sign-in; storing it does not depend on the caller

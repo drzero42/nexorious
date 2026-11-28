@@ -2963,6 +2963,54 @@ func TestGOGConnection_NotConnected(t *testing.T) {
 	if body["connected"] != false {
 		t.Errorf("want connected=false, got %v", body["connected"])
 	}
+	if url, _ := body["auth_url"].(string); !strings.HasPrefix(url, "https://login.gog.com/auth?") {
+		t.Errorf("auth_url = %q, want GOG's login page", url)
+	}
+}
+
+// Without a GOG client the status still answers, with an empty auth_url.
+func TestGOGConnection_NoClient(t *testing.T) {
+	truncateAllTables(t)
+	app := newSyncTestAppWithClients(t, testDB, storefront.Clients{})
+	_, token := setupTagUser(t, testDB, app, "gog-status-noclient")
+
+	rec := getAuth(t, app, "/api/sync/gog/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["auth_url"] != "" {
+		t.Errorf("auth_url = %v, want empty", body["auth_url"])
+	}
+}
+
+// Each GOG connect rejection answers 400 with the message it always had.
+func TestGOGConnect_RejectionMessages(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		body     map[string]any
+		status   int // what GOG's token endpoint answers
+		wantBody string
+	}{
+		{"no code", map[string]any{}, http.StatusOK, "auth_code is required"},
+		{"not gog's login url", map[string]any{"auth_code": "https://example.com/?code=x"}, http.StatusOK, "that doesn't look like a GOG login URL"},
+		{"gog rejects the code", map[string]any{"auth_code": "bad"}, http.StatusBadRequest, "gog auth failed: gog: token HTTP 400"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			gog, _ := newFakeGOG(t, tc.status, "")
+			app := newSyncTestAppWithGOG(t, gog)
+			_, token := setupTagUser(t, testDB, app, "gog-conn-msg")
+
+			rec := putJSONAuth(t, app, "/api/sync/gog/connection", tc.body, token)
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), tc.wantBody) {
+				t.Errorf("got %d %s, want 400 %q", rec.Code, rec.Body.String(), tc.wantBody)
+			}
+		})
+	}
 }
 
 func TestGOGConnection_Connected(t *testing.T) {
