@@ -19,10 +19,22 @@
 //     package owns: legendary's state snapshot and nile's user data. This
 //     package stores and loads them unchanged.
 //
-// Connections stores, clears, takes and loads a Connection. Store also clears
-// credentials_error, so a reconnect heals a sign-in a sync found expired.
-// Load hands back the sign-in decrypted, and callers decode it into the
-// storefront's credentials type.
+// Connections connects, reports and disconnects a Connection, reaching the
+// storefronts through the service clients it is built with (Clients), so
+// tests stand fakes in for the third parties. There is no common connect
+// operation: each storefront's flow differs (a key and an id, a token, a
+// cookie, an auth code, a two-step sign-in), so each gets its own, which
+// validates its input and returns typed errors, never HTTP ones. So far Steam
+// has one (ConnectSteam). What is the same for every storefront is shared:
+// Status reports a Connection with its account's display name, decoded from
+// the stored sign-in, and Disconnect removes it.
+//
+// Below that, Connections stores, takes and loads the stored sign-in. Store
+// also clears credentials_error, so a reconnect heals a sign-in a sync found
+// expired. Load hands back the sign-in decrypted.
+//
+// The registry holds one definition per storefront, in the order the sync
+// API lists them (Slugs).
 //
 // Connections.AdapterFactory builds a storefront's library adapter from a
 // stored Connection, through a registry with one definition per storefront.

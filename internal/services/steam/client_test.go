@@ -380,3 +380,17 @@ func TestGetOwnedGames_EmptyGamesWithZeroCount_ReturnsEmptyLibrary(t *testing.T)
 		t.Fatalf("want 0 games, got %d", len(games))
 	}
 }
+
+// A 429 on the player summary is ErrRateLimited, so connecting can tell it
+// from an unreachable Steam (#1485).
+func TestGetPlayerSummaries_429IsRateLimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
+	if _, err := c.GetPlayerSummaries(context.Background(), "key", "76561198000000000"); !errors.Is(err, steam.ErrRateLimited) {
+		t.Fatalf("err = %v, want ErrRateLimited", err)
+	}
+}

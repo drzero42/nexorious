@@ -257,11 +257,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
 		DB: db,
 		LC: lifecycle,
-		Adapter: storefront.NewConnections(db, encrypter).AdapterFactory(storefront.Clients{
+		Adapter: storefront.NewConnections(db, encrypter, storefront.Clients{
 			Epic:   epicClient,
 			Amazon: amazongamessvc.NewClient(),
 			GOG:    gogsvc.NewClient(),
-		}),
+		}).AdapterFactory(),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,

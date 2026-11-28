@@ -17,10 +17,11 @@ import (
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
 )
 
-// Clients are the service clients a library adapter needs that are not made
-// per sync: Epic's needs LEGENDARY_WORK_DIR, and tests stand fakes in for
-// nile and GOG.
+// Clients are the storefront service clients Connections reaches the
+// storefronts through. They are passed in so tests can stand fakes in for the
+// third parties; Epic's also needs LEGENDARY_WORK_DIR.
 type Clients struct {
+	Steam  SteamClient
 	Epic   *epicgamesstoresvc.Client
 	Amazon amazongamessvc.LibraryClient
 	GOG    *gogsvc.Client
@@ -36,16 +37,20 @@ type definition struct {
 	// adapter builds the library adapter from a decrypted stored sign-in.
 	// It returns ErrCredentials when the sign-in does not decode.
 	adapter func(s *signIn) (storefrontadapter.Adapter, error)
+	// account decodes the account's display name from a decrypted stored
+	// sign-in; nil for a storefront that stores none.
+	account func(plain []byte) (string, error)
 }
 
-// definitions is the registry: one definition per storefront.
+// definitions is the registry: one definition per storefront, in the order
+// the sync API lists them (GET /sync/config).
 var definitions = []definition{
-	{slug: "steam", adapter: steamAdapter},
-	{slug: "playstation-store", adapter: playStationStoreAdapter},
-	{slug: "gog", adapter: gogAdapter},
+	{slug: "steam", adapter: steamAdapter, account: steamAccount},
+	{slug: "playstation-store", adapter: playStationStoreAdapter, account: playStationStoreAccount},
+	{slug: "epic-games-store", adapter: epicGamesStoreAdapter, account: epicGamesStoreAccount},
+	{slug: "gog", adapter: gogAdapter, account: gogAccount},
 	{slug: "humble-bundle", adapter: humbleBundleAdapter},
-	{slug: "epic-games-store", adapter: epicGamesStoreAdapter},
-	{slug: "amazon-games", adapter: amazonGamesAdapter},
+	{slug: "amazon-games", adapter: amazonGamesAdapter, account: amazonGamesAccount},
 }
 
 func lookup(storefront string) (definition, bool) {
@@ -55,6 +60,21 @@ func lookup(storefront string) (definition, bool) {
 		}
 	}
 	return definition{}, false
+}
+
+// Slugs returns the storefronts' slugs, in the order the sync API lists them.
+func Slugs() []string {
+	slugs := make([]string, len(definitions))
+	for i, d := range definitions {
+		slugs[i] = d.slug
+	}
+	return slugs
+}
+
+// Known reports whether slug is a storefront in the registry.
+func Known(slug string) bool {
+	_, ok := lookup(slug)
+	return ok
 }
 
 // signIn is a stored Connection as a sync loaded it.
@@ -74,7 +94,7 @@ func (s *signIn) save(plain []byte) error {
 }
 
 // AdapterFactory returns the sync worker's adapter factory.
-func (c *Connections) AdapterFactory(clients Clients) AdapterFactory {
+func (c *Connections) AdapterFactory() AdapterFactory {
 	return func(ctx context.Context, storefront string, cfg models.UserSyncConfig) (storefrontadapter.Adapter, error) {
 		def, ok := lookup(storefront)
 		if !ok {
@@ -90,7 +110,7 @@ func (c *Connections) AdapterFactory(clients Clients) AdapterFactory {
 			return nil, storefrontadapter.ErrCredentials
 		}
 		stored := newStoredCredentialsWriter(c, cfg.UserID, storefront, loaded)
-		inner, err := def.adapter(&signIn{ctx: ctx, userID: cfg.UserID, plaintext: plain, clients: clients, stored: stored})
+		inner, err := def.adapter(&signIn{ctx: ctx, userID: cfg.UserID, plaintext: plain, clients: c.clients, stored: stored})
 		if err != nil {
 			return nil, err
 		}

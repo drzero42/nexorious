@@ -32,14 +32,14 @@ func TestConnectionContract(t *testing.T) {
 		t.Run(tc.storefront, func(t *testing.T) {
 			truncateAllTables(t)
 			userID := seedUser(t)
-			conns := NewConnections(testDB, testEncrypter(t))
+			conns := NewConnections(testDB, testEncrypter(t), Clients{})
 			ctx := context.Background()
 			if err := conns.Store(ctx, userID, tc.storefront, tc.stored); err != nil {
 				t.Fatalf("store: %v", err)
 			}
 
 			cfg := syncConfig(t, userID, tc.storefront)
-			adapter, err := conns.AdapterFactory(Clients{})(ctx, tc.storefront, cfg)
+			adapter, err := conns.AdapterFactory()(ctx, tc.storefront, cfg)
 			if err != nil {
 				t.Fatalf("factory: %v", err)
 			}
@@ -68,7 +68,7 @@ func TestConnectionContract(t *testing.T) {
 func TestStore_ClearsCredentialsError(t *testing.T) {
 	truncateAllTables(t)
 	userID := seedUser(t)
-	conns := NewConnections(testDB, testEncrypter(t))
+	conns := NewConnections(testDB, testEncrypter(t), Clients{})
 	ctx := context.Background()
 	if err := conns.Store(ctx, userID, "humble-bundle", HumbleBundleCredentials{SessionCookie: "old"}); err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestStore_ClearsCredentialsError(t *testing.T) {
 func TestTake(t *testing.T) {
 	truncateAllTables(t)
 	userID := seedUser(t)
-	conns := NewConnections(testDB, testEncrypter(t))
+	conns := NewConnections(testDB, testEncrypter(t), Clients{})
 	ctx := context.Background()
 	if removed, err := conns.Take(ctx, userID, "amazon-games"); err != nil || removed != nil {
 		t.Fatalf("take with nothing stored = %v, %v; want nil, nil", removed, err)
@@ -114,11 +114,7 @@ func TestTake(t *testing.T) {
 func TestGOGRefreshKeepsStoredFields(t *testing.T) {
 	truncateAllTables(t)
 	userID := seedUser(t)
-	conns := NewConnections(testDB, testEncrypter(t))
 	ctx := context.Background()
-	if err := conns.Store(ctx, userID, "gog", GOGCredentials{RefreshToken: "old", Username: "ana"}); err != nil {
-		t.Fatal(err)
-	}
 
 	var usedToken string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +130,11 @@ func TestGOGRefreshKeepsStoredFields(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	adapter, err := conns.AdapterFactory(Clients{GOG: gogsvc.NewClientWithURLs(srv.URL, srv.URL)})(ctx, "gog", syncConfig(t, userID, "gog"))
+	conns := NewConnections(testDB, testEncrypter(t), Clients{GOG: gogsvc.NewClientWithURLs(srv.URL, srv.URL)})
+	if err := conns.Store(ctx, userID, "gog", GOGCredentials{RefreshToken: "old", Username: "ana"}); err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := conns.AdapterFactory()(ctx, "gog", syncConfig(t, userID, "gog"))
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}

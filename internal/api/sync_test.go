@@ -20,14 +20,16 @@ import (
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/externalgame/egtest"
+	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
+	"github.com/drzero42/nexorious/internal/storefront"
 )
 
 type stubSteamClient struct {
-	summary *api.SteamPlayerSummary
+	summary *steamsvc.SteamPlayerSummary
 	err     error
 }
 
-func (s *stubSteamClient) GetPlayerSummaries(_ context.Context, _, _ string) (*api.SteamPlayerSummary, error) {
+func (s *stubSteamClient) GetPlayerSummaries(_ context.Context, _, _ string) (*steamsvc.SteamPlayerSummary, error) {
 	return s.summary, s.err
 }
 
@@ -40,7 +42,7 @@ func (s *stubPlaystationStoreClient) GetAccountInfo(_ context.Context, _ string)
 	return s.info, s.err
 }
 
-func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PlaystationStoreClient) interface {
+func newSyncTestApp(t *testing.T, db *bun.DB, steam storefront.SteamClient, psn api.PlaystationStoreClient) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
@@ -48,7 +50,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.Pla
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Steam: steam, PlaystationStore: psn})
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, storefront.Clients{Steam: steam}), PlaystationStore: psn})
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -76,8 +78,13 @@ func TestSyncConfig_ListDefaults(t *testing.T) {
 	if len(configs) != 6 {
 		t.Fatalf("expected 6 configs, got %d", len(configs))
 	}
-	for _, c := range configs {
+	// The order is part of the API: clients list the storefronts in it.
+	wantOrder := []string{"steam", "playstation-store", "epic-games-store", "gog", "humble-bundle", "amazon-games"}
+	for i, c := range configs {
 		cfg := c.(map[string]any)
+		if cfg["storefront"] != wantOrder[i] {
+			t.Errorf("configs[%d].storefront = %v, want %s", i, cfg["storefront"], wantOrder[i])
+		}
 		if cfg["is_configured"].(bool) {
 			t.Fatalf("expected is_configured=false for virtual default, storefront=%v", cfg["storefront"])
 		}
@@ -375,7 +382,7 @@ func TestSteamConnect_BadAPIKey(t *testing.T) {
 func TestSteamConnect_StubSuccess(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubSteamClient{
-		summary: &api.SteamPlayerSummary{PersonaName: "Frostbyte", CommunityVisibilityState: 3},
+		summary: &steamsvc.SteamPlayerSummary{PersonaName: "Frostbyte", CommunityVisibilityState: 3},
 	}
 	e := newSyncTestApp(t, testDB, stub, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "sv-ok")
@@ -1791,7 +1798,7 @@ func (s *stubEpicGamesStoreClient) Configured() bool {
 
 // newSyncTestAppWithEpicGamesStore builds the sync app with a custom EpicGamesStoreClient. Used by
 // the Epic connection tests.
-func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PlaystationStoreClient, epic api.EpicGamesStoreClient) interface {
+func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam storefront.SteamClient, psn api.PlaystationStoreClient, epic api.EpicGamesStoreClient) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
@@ -1799,7 +1806,7 @@ func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam api.SteamC
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Steam: steam, PlaystationStore: psn, EpicGamesStore: epic})
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, storefront.Clients{Steam: steam}), PlaystationStore: psn, EpicGamesStore: epic})
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1865,7 +1872,7 @@ func TestSyncTrigger_CreatesJobWithItsDispatch(t *testing.T) {
 	}
 }
 
-func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PlaystationStoreClient, gog api.GOGClient) interface {
+func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam storefront.SteamClient, psn api.PlaystationStoreClient, gog api.GOGClient) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
@@ -1873,7 +1880,7 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Steam: steam, PlaystationStore: psn, GOG: gog})
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, storefront.Clients{Steam: steam}), PlaystationStore: psn, GOG: gog})
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -2180,7 +2187,7 @@ func newSyncTestAppWithAmazonGames(t *testing.T, amazon *stubAmazonGamesClient) 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, testCfg())
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: testDB, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Steam: &stubSteamClient{}, PlaystationStore: &stubPlaystationStoreClient{}, AmazonGames: amazon})
+	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: testDB, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(testDB, testEncrypter, storefront.Clients{}), PlaystationStore: &stubPlaystationStoreClient{}, AmazonGames: amazon})
 	g := e.Group("/api/sync", auth.AuthMiddleware(testDB))
 	synch.RegisterRoutes(g)
 	return e, synch
@@ -3072,7 +3079,7 @@ func TestConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 				ServeHTTP(http.ResponseWriter, *http.Request)
 			} {
 				stub := &stubSteamClient{
-					summary: &api.SteamPlayerSummary{PersonaName: "TestUser", CommunityVisibilityState: 3},
+					summary: &steamsvc.SteamPlayerSummary{PersonaName: "TestUser", CommunityVisibilityState: 3},
 				}
 				return newSyncTestApp(t, testDB, stub, &stubPlaystationStoreClient{})
 			},
