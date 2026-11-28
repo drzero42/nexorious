@@ -16,7 +16,7 @@ var (
 	// worded for the user.
 	ErrInvalidGOGAuthCode = errors.New("gog: invalid auth code")
 	// ErrGOGSignInFailed: GOG did not exchange the code for tokens. The
-	// error's message is only GOG's answer.
+	// error's message is only GOG's answer, for the log rather than the user.
 	ErrGOGSignInFailed = errors.New("gog: sign-in failed")
 )
 

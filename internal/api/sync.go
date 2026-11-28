@@ -1228,8 +1228,9 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 		// The message is only the reason, worded for the user.
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	case errors.Is(err, storefront.ErrGOGSignInFailed):
-		// The message is only GOG's answer (#1528).
-		return echo.NewHTTPError(http.StatusBadRequest, "gog auth failed: "+err.Error())
+		// GOG's answer is logged, not echoed (#1528).
+		slog.WarnContext(c.Request().Context(), "gog: code exchange failed", logging.KeyErr, err, logging.KeySource, "gog", logging.Cat(logging.CategoryExternalAPI))
+		return echo.NewHTTPError(http.StatusBadRequest, "gog auth failed")
 	case err != nil:
 		slog.ErrorContext(c.Request().Context(), "gog: persist credentials failed", logging.KeyErr, err, logging.KeySource, "gog", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist GOG connection")
