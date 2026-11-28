@@ -760,8 +760,8 @@ func TestHandleGetJobItems_NotFound(t *testing.T) {
 	}
 }
 
-// An unknown status or job_type filter is a 400 naming the valid values, not an
-// empty 200 a client can't tell from "no rows match" (#1514). Each endpoint
+// An unknown status or job_type is a 400 naming the valid values, not an empty
+// 200 a client can't tell from "no rows match" (#1514). Each endpoint
 // checks its own status set: processing is a Job status but not a Job item
 // status, pending_review the other way round.
 func TestListJobsAndItems_RejectUnknownFilter(t *testing.T) {
@@ -784,6 +784,8 @@ func TestListJobsAndItems_RejectUnknownFilter(t *testing.T) {
 		{"jobs misspelt job_type", "/api/jobs?job_type=snyc",
 			"sync, import, export, metadata_refresh, store_link_refresh"},
 		{"recent misspelt job_type in a list", "/api/jobs/recent?job_type=import,snyc",
+			"sync, import, export, metadata_refresh, store_link_refresh"},
+		{"job type status misspelt", "/api/jobs/status/snyc",
 			"sync, import, export, metadata_refresh, store_link_refresh"},
 	}
 	for _, tc := range cases {

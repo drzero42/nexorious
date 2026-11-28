@@ -123,10 +123,10 @@ func toJobResponse(job *models.Job, progress map[string]any) map[string]any {
 	}
 }
 
-// invalidFilter is the 400 for a list filter query parameter whose value is
-// not one of valid, naming the values the endpoint accepts so a misspelt
-// filter is not mistaken for an empty result.
-func invalidFilter[S ~string](param string, value S, valid []S) error {
+// invalidValue is the 400 for a query or path parameter whose value is not one
+// of valid, naming the values the endpoint accepts so a misspelt value is not
+// mistaken for an empty result.
+func invalidValue[S ~string](param string, value S, valid []S) error {
 	names := make([]string, len(valid))
 	for i, v := range valid {
 		names[i] = string(v)
@@ -144,11 +144,11 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 
 	status := models.JobStatus(c.QueryParam("status"))
 	if status != "" && !status.Valid() {
-		return invalidFilter("status", status, models.JobStatuses())
+		return invalidValue("status", status, models.JobStatuses())
 	}
 	jobType := c.QueryParam("job_type")
 	if jobType != "" && !slices.Contains(models.JobTypes(), jobType) {
-		return invalidFilter("job_type", jobType, models.JobTypes())
+		return invalidValue("job_type", jobType, models.JobTypes())
 	}
 	// source is not checked: Jobs from retired sources (darkadia, before
 	// #1032) stay in the table and must stay filterable.
@@ -328,6 +328,9 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	jobType := c.Param("job_type")
+	if !slices.Contains(models.JobTypes(), jobType) {
+		return invalidValue("job_type", jobType, models.JobTypes())
+	}
 	ctx := context.Background()
 
 	var activeJobID *string
@@ -520,7 +523,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		for t := range strings.SplitSeq(raw, ",") {
 			if t = strings.TrimSpace(t); t != "" {
 				if !slices.Contains(models.JobTypes(), t) {
-					return invalidFilter("job_type", t, models.JobTypes())
+					return invalidValue("job_type", t, models.JobTypes())
 				}
 				jobTypes = append(jobTypes, t)
 			}
@@ -649,7 +652,7 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 
 	status := models.JobItemStatus(c.QueryParam("status"))
 	if status != "" && !status.Valid() {
-		return invalidFilter("status", status, models.JobItemStatuses())
+		return invalidValue("status", status, models.JobItemStatuses())
 	}
 
 	jobID := c.Param("id")
