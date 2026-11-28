@@ -28,10 +28,14 @@ func (m *Module) evaluate(ctx context.Context, tx bun.Tx, st *txState, k *Kind, 
 		Review  int `bun:"review"`
 	}
 	if err := tx.NewRaw(
-		`SELECT count(*) FILTER (WHERE status = 'pending' AND river_job_id IS NOT NULL) AS owned,
-		        count(*) FILTER (WHERE status IN ('pending', 'processing')) AS pending,
-		        count(*) FILTER (WHERE status = 'pending_review') AS review
-		 FROM job_items WHERE job_id = ?`, job.ID,
+		`SELECT count(*) FILTER (WHERE status = ? AND river_job_id IS NOT NULL) AS owned,
+		        count(*) FILTER (WHERE status IN (?, ?)) AS pending,
+		        count(*) FILTER (WHERE status = ?) AS review
+		 FROM job_items WHERE job_id = ?`,
+		models.JobItemStatusPending,
+		models.JobItemStatusPending, models.JobItemStatusProcessing,
+		models.JobItemStatusPendingReview,
+		job.ID,
 	).Scan(ctx, &c); err != nil {
 		return fmt.Errorf("evaluate completion: %w", err)
 	}
@@ -51,8 +55,8 @@ func (m *Module) evaluate(ctx context.Context, tx bun.Tx, st *txState, k *Kind, 
 	first := job.CompletedAt == nil
 	now := time.Now().UTC()
 	if _, err := tx.NewRaw(
-		`UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ? AND status = 'processing'`,
-		now, job.ID,
+		`UPDATE jobs SET status = ?, completed_at = ? WHERE id = ? AND status = ?`,
+		models.JobStatusCompleted, now, job.ID, models.JobStatusProcessing,
 	).Exec(ctx); err != nil {
 		return fmt.Errorf("complete job: %w", err)
 	}
@@ -74,7 +78,9 @@ func (m *Module) observeJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind
 		return nil
 	}
 	var failed int
-	if err := tx.NewRaw(`SELECT count(*) FROM job_items WHERE job_id = ? AND status = 'failed'`, job.ID).Scan(ctx, &failed); err != nil {
+	if err := tx.NewRaw(
+		`SELECT count(*) FROM job_items WHERE job_id = ? AND status = ?`, job.ID, models.JobItemStatusFailed,
+	).Scan(ctx, &failed); err != nil {
 		return fmt.Errorf("count failed items: %w", err)
 	}
 	jobCopy := *job

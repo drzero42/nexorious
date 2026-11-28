@@ -89,7 +89,9 @@ func syncEffects(ctx context.Context, db *bun.DB, e joblifecycle.Effect) error {
 		return syncFailedEffects(ctx, db, e)
 	case joblifecycle.OutcomeAwaitingReview:
 		var n int
-		if err := db.NewRaw(`SELECT count(*) FROM job_items WHERE job_id = ? AND status = 'pending_review'`, e.Job.ID).Scan(ctx, &n); err != nil {
+		if err := db.NewRaw(
+			`SELECT count(*) FROM job_items WHERE job_id = ? AND status = ?`, e.Job.ID, models.JobItemStatusPendingReview,
+		).Scan(ctx, &n); err != nil {
 			return fmt.Errorf("count items in review: %w", err)
 		}
 		return emitAll(ctx, db, notify.EmitParams{
@@ -106,7 +108,9 @@ func syncEffects(ctx context.Context, db *bun.DB, e joblifecycle.Effect) error {
 func syncCompletedEffects(ctx context.Context, db *bun.DB, e joblifecycle.Effect) error {
 	job := e.Job
 	var failed int
-	if err := db.NewRaw(`SELECT count(*) FROM job_items WHERE job_id = ? AND status = 'failed'`, job.ID).Scan(ctx, &failed); err != nil {
+	if err := db.NewRaw(
+		`SELECT count(*) FROM job_items WHERE job_id = ? AND status = ?`, job.ID, models.JobItemStatusFailed,
+	).Scan(ctx, &failed); err != nil {
 		return fmt.Errorf("count failed items: %w", err)
 	}
 	events := make([]notify.EmitParams, 0, 2)
@@ -218,7 +222,8 @@ func emitAll(ctx context.Context, db *bun.DB, events ...notify.EmitParams) error
 // Credential failures do not count, since they send their own notice. The
 // caller joins previous_job (with the store's user_id and source) and cfg, and
 // binds credentialsErrorMessage.
-const outageFailure = `previous_job.job_type = 'sync' AND previous_job.status = 'failed'
+const outageFailure = `previous_job.job_type = '` + models.JobTypeSync + `'
+	AND previous_job.status = '` + models.JobStatusFailed + `'
 	AND previous_job.error_message IS DISTINCT FROM ?
 	AND (cfg.last_fetched_at IS NULL OR previous_job.completed_at > cfg.last_fetched_at)`
 

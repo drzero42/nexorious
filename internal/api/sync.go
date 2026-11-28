@@ -655,8 +655,8 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 	var activeJobID *string
 	var jobID string
 	err := h.db.NewRaw(
-		`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
-		userID, sf,
+		`SELECT id FROM jobs WHERE user_id = ? AND job_type = ? AND source = ? AND status IN (?, ?) LIMIT 1`,
+		userID, models.JobTypeSync, sf, models.JobStatusPending, models.JobStatusProcessing,
 	).Scan(ctx, &jobID)
 	switch {
 	case err == nil:
@@ -1521,8 +1521,8 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 	// deleted below.
 	var activeJobs []string
 	if err := h.db.NewRaw(
-		`SELECT id FROM jobs WHERE user_id = ? AND source = ? AND job_type = 'sync' AND status IN ('pending', 'processing')`,
-		userID, sf,
+		`SELECT id FROM jobs WHERE user_id = ? AND source = ? AND job_type = ? AND status IN (?, ?)`,
+		userID, sf, models.JobTypeSync, models.JobStatusPending, models.JobStatusProcessing,
 	).Scan(ctx, &activeJobs); err != nil {
 		slog.ErrorContext(c.Request().Context(), "sync: find active jobs failed", logging.KeyErr, err, logging.KeySource, sf, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel active job")

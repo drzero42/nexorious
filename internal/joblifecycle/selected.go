@@ -57,7 +57,8 @@ func (m *Module) endSelected(ctx context.Context, op, jobID, status string, sel 
 		}
 		var items []models.JobItem
 		if err := tx.NewSelect().Model(&items).
-			Where("job_id = ? AND id IN (?) AND status IN ('pending', 'pending_review')", job.ID, bun.List(ids)).
+			Where("job_id = ? AND id IN (?) AND status IN (?, ?)",
+				job.ID, bun.List(ids), models.JobItemStatusPending, models.JobItemStatusPendingReview).
 			Order("created_at", "id").
 			Scan(ctx); err != nil {
 			return fmt.Errorf("load items: %w", err)
@@ -76,8 +77,9 @@ func (m *Module) endSelected(ctx context.Context, op, jobID, status string, sel 
 		}
 		if _, err := tx.NewRaw(
 			`UPDATE job_items SET status = ?, processed_at = ?, river_job_id = NULL
-			 WHERE id IN (?) AND status IN ('pending', 'pending_review')`,
+			 WHERE id IN (?) AND status IN (?, ?)`,
 			status, time.Now().UTC(), bun.List(done),
+			models.JobItemStatusPending, models.JobItemStatusPendingReview,
 		).Exec(ctx); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}

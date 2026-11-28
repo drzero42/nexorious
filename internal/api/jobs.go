@@ -74,8 +74,9 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[stri
 	}
 
 	m := map[string]int{
-		"pending": 0, "processing": 0, "completed": 0,
-		"pending_review": 0, "skipped": 0, "failed": 0, "cancelled": 0,
+		models.JobItemStatusPending: 0, models.JobItemStatusProcessing: 0, models.JobItemStatusCompleted: 0,
+		models.JobItemStatusPendingReview: 0, models.JobItemStatusSkipped: 0, models.JobItemStatusFailed: 0,
+		models.JobItemStatusCancelled: 0,
 	}
 	for _, sc := range counts {
 		m[sc.Status] = sc.Count
@@ -84,16 +85,17 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[stri
 	for _, v := range m {
 		total += v
 	}
-	done := m["completed"] + m["skipped"]
+	done := m[models.JobItemStatusCompleted] + m[models.JobItemStatusSkipped]
 	percent := 0
 	if total > 0 {
 		percent = done * 100 / total
 	}
 	return map[string]any{
-		"pending": m["pending"], "processing": m["processing"],
-		"completed": m["completed"], "pending_review": m["pending_review"],
-		"skipped": m["skipped"], "failed": m["failed"], "cancelled": m["cancelled"],
-		"done": done, "total": total, "percent": percent,
+		"pending": m[models.JobItemStatusPending], "processing": m[models.JobItemStatusProcessing],
+		"completed": m[models.JobItemStatusCompleted], "pending_review": m[models.JobItemStatusPendingReview],
+		"skipped": m[models.JobItemStatusSkipped], "failed": m[models.JobItemStatusFailed],
+		"cancelled": m[models.JobItemStatusCancelled],
+		"done":      done, "total": total, "percent": percent,
 	}, nil
 }
 
@@ -232,10 +234,11 @@ func (h *JobsHandler) HandleJobsSummary(c *echo.Context) error {
 	}
 	err := h.db.NewRaw(`
 		SELECT
-			COUNT(*) FILTER (WHERE status IN ('pending', 'processing')) AS running,
-			COUNT(*) FILTER (WHERE status = 'failed') AS failed
+			COUNT(*) FILTER (WHERE status IN (?, ?)) AS running,
+			COUNT(*) FILTER (WHERE status = ?) AS failed
 		FROM jobs
 		WHERE user_id = ?`,
+		models.JobStatusPending, models.JobStatusProcessing, models.JobStatusFailed,
 		userID,
 	).Scan(context.Background(), &result)
 	if err != nil {
@@ -311,8 +314,8 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 	var activeJobID *string
 	var activeID string
 	err := h.db.NewRaw(
-		`SELECT id FROM jobs WHERE user_id = ? AND job_type = ? AND status IN ('pending', 'processing') ORDER BY created_at DESC LIMIT 1`,
-		userID, jobType,
+		`SELECT id FROM jobs WHERE user_id = ? AND job_type = ? AND status IN (?, ?) ORDER BY created_at DESC LIMIT 1`,
+		userID, jobType, models.JobStatusPending, models.JobStatusProcessing,
 	).Scan(ctx, &activeID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job status")
@@ -328,8 +331,8 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 		CompletedAt *time.Time `bun:"completed_at"`
 	}
 	err = h.db.NewRaw(
-		`SELECT id, completed_at FROM jobs WHERE user_id = ? AND job_type = ? AND status IN ('completed', 'failed', 'cancelled') ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 1`,
-		userID, jobType,
+		`SELECT id, completed_at FROM jobs WHERE user_id = ? AND job_type = ? AND status IN (?, ?, ?) ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 1`,
+		userID, jobType, models.JobStatusCompleted, models.JobStatusFailed, models.JobStatusCancelled,
 	).Scan(ctx, &last)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job status")
@@ -518,7 +521,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	var jobs []models.Job
 	q := h.db.NewSelect().Model(&jobs).
 		Where("user_id = ?", userID).
-		Where("status IN ('completed', 'failed')").
+		Where("status IN (?, ?)", models.JobStatusCompleted, models.JobStatusFailed).
 		Where("created_at >= now() - make_interval(days => ?)", daysBack).
 		Order("created_at DESC").
 		Limit(int64(limit))
@@ -655,16 +658,16 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 	q := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID).Where("item_key <> ?", tasks.PoolsItemKey)
 	countQ := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID).Where("item_key <> ?", tasks.PoolsItemKey)
 
-	if statusParam != "" && statusParam != "pending_review" {
+	if statusParam != "" && statusParam != models.JobItemStatusPendingReview {
 		q = q.Where("status = ?", statusParam)
 		countQ = countQ.Where("status = ?", statusParam)
 	}
 
 	var total int64
-	if statusParam == "pending_review" {
+	if statusParam == models.JobItemStatusPendingReview {
 		if err := h.db.NewRaw(
-			`SELECT COUNT(DISTINCT source_title) FROM job_items WHERE job_id = ? AND status = 'pending_review'`,
-			jobID,
+			`SELECT COUNT(DISTINCT source_title) FROM job_items WHERE job_id = ? AND status = ?`,
+			jobID, models.JobItemStatusPendingReview,
 		).Scan(context.Background(), &total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count job items")
 		}
@@ -678,10 +681,10 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 
 	var items []models.JobItem
 	if offset, hasRows := pageOffset(page, perPage, total); hasRows {
-		if statusParam == "pending_review" {
+		if statusParam == models.JobItemStatusPendingReview {
 			if err := h.db.NewRaw(
-				`SELECT DISTINCT ON (source_title) * FROM job_items WHERE job_id = ? AND status = 'pending_review' ORDER BY source_title ASC, created_at ASC, id ASC LIMIT ? OFFSET ?`,
-				jobID, perPage, offset,
+				`SELECT DISTINCT ON (source_title) * FROM job_items WHERE job_id = ? AND status = ? ORDER BY source_title ASC, created_at ASC, id ASC LIMIT ? OFFSET ?`,
+				jobID, models.JobItemStatusPendingReview, perPage, offset,
 			).Scan(context.Background(), &items); err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
 			}

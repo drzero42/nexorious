@@ -181,8 +181,8 @@ func (m *Module) StartDispatch(ctx context.Context, jobID string, riverJobID int
 		if job.Status == models.JobStatusPending {
 			now := time.Now().UTC()
 			if _, err := tx.NewRaw(
-				`UPDATE jobs SET status = 'processing', started_at = COALESCE(started_at, ?) WHERE id = ? AND status = 'pending'`,
-				now, job.ID,
+				`UPDATE jobs SET status = ?, started_at = COALESCE(started_at, ?) WHERE id = ? AND status = ?`,
+				models.JobStatusProcessing, now, job.ID, models.JobStatusPending,
 			).Exec(ctx); err != nil {
 				return fmt.Errorf("start dispatch: %w", err)
 			}
@@ -293,7 +293,7 @@ func (m *Module) MarkDispatched(ctx context.Context, jobID string, riverJobID in
 		job.RiverJobID = nil
 		if _, err := tx.NewUpdate().Model(job).
 			Column("total_items", "file_path", "dispatch_complete", "river_job_id").
-			Where("id = ? AND status = 'processing'", job.ID).
+			Where("id = ? AND status = ?", job.ID, models.JobStatusProcessing).
 			Exec(ctx); err != nil {
 			return fmt.Errorf("mark dispatched: %w", err)
 		}
@@ -415,7 +415,7 @@ func (m *Module) endItem(ctx context.Context, tx bun.Tx, st *txState, k *Kind, j
 		Set("processed_at = ?", now).
 		Set("error_message = ?", errMsg).
 		Set("river_job_id = NULL").
-		Where("id = ? AND status = 'pending'", item.ID)
+		Where("id = ? AND status = ?", item.ID, models.JobItemStatusPending)
 	if result != nil {
 		q = q.Set("result = ?", result)
 	}
@@ -509,9 +509,10 @@ func (m *Module) endJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind, jo
 	}
 	now := time.Now().UTC()
 	if _, err := tx.NewRaw(
-		`UPDATE job_items SET status = 'cancelled', processed_at = ?, river_job_id = NULL
-		 WHERE job_id = ? AND status IN ('pending', 'pending_review', 'processing')`,
-		now, job.ID,
+		`UPDATE job_items SET status = ?, processed_at = ?, river_job_id = NULL
+		 WHERE job_id = ? AND status IN (?, ?, ?)`,
+		models.JobItemStatusCancelled, now, job.ID,
+		models.JobItemStatusPending, models.JobItemStatusPendingReview, models.JobItemStatusProcessing,
 	).Exec(ctx); err != nil {
 		return false, fmt.Errorf("cancel items: %w", err)
 	}
@@ -522,8 +523,8 @@ func (m *Module) endJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind, jo
 	}
 	if _, err := tx.NewRaw(
 		`UPDATE jobs SET status = ?, completed_at = ?, error_message = COALESCE(?, error_message), river_job_id = NULL
-		 WHERE id = ? AND status IN ('pending', 'processing')`,
-		status, now, errMsg, job.ID,
+		 WHERE id = ? AND status IN (?, ?)`,
+		status, now, errMsg, job.ID, models.JobStatusPending, models.JobStatusProcessing,
 	).Exec(ctx); err != nil {
 		return false, fmt.Errorf("end job: %w", err)
 	}
@@ -558,7 +559,7 @@ func (m *Module) Retry(ctx context.Context, jobID string, itemIDs []string) (int
 			return ErrNotRetryable
 		}
 		var items []models.JobItem
-		q := tx.NewSelect().Model(&items).Where("job_id = ? AND status = 'failed'", job.ID).Order("created_at", "id")
+		q := tx.NewSelect().Model(&items).Where("job_id = ? AND status = ?", job.ID, models.JobItemStatusFailed).Order("created_at", "id")
 		if len(itemIDs) > 0 {
 			q = q.Where("id IN (?)", bun.List(itemIDs))
 		}
@@ -584,7 +585,10 @@ func (m *Module) Retry(ctx context.Context, jobID string, itemIDs []string) (int
 					return ErrDuplicateActive
 				}
 			}
-			if _, err := tx.NewRaw(`UPDATE jobs SET status = 'processing' WHERE id = ? AND status = 'completed'`, job.ID).Exec(ctx); err != nil {
+			if _, err := tx.NewRaw(
+				`UPDATE jobs SET status = ? WHERE id = ? AND status = ?`,
+				models.JobStatusProcessing, job.ID, models.JobStatusCompleted,
+			).Exec(ctx); err != nil {
 				return fmt.Errorf("reopen job: %w", err)
 			}
 			job.Status = models.JobStatusProcessing
@@ -594,8 +598,9 @@ func (m *Module) Retry(ctx context.Context, jobID string, itemIDs []string) (int
 			ids[i] = items[i].ID
 		}
 		if _, err := tx.NewRaw(
-			`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL
-			 WHERE id IN (?) AND status = 'failed'`, bun.List(ids),
+			`UPDATE job_items SET status = ?, error_message = NULL, processed_at = NULL
+			 WHERE id IN (?) AND status = ?`,
+			models.JobItemStatusPending, bun.List(ids), models.JobItemStatusFailed,
 		).Exec(ctx); err != nil {
 			return fmt.Errorf("reset items: %w", err)
 		}

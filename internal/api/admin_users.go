@@ -378,9 +378,9 @@ func (h *AdminUsersHandler) HandleDeletionImpact(c *echo.Context) error {
 	queries := []countQuery{
 		{`SELECT COUNT(*) FROM user_games WHERE user_id = ?`, []any{id}, &games},
 		{`SELECT COUNT(*) FROM tags WHERE user_id = ?`, []any{id}, &tags},
-		{`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'import'`, []any{id}, &importJobs},
-		{`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'export'`, []any{id}, &exportJobs},
-		{`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, []any{id}, &syncJobs},
+		{`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = ?`, []any{id, models.JobTypeImport}, &importJobs},
+		{`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = ?`, []any{id, models.JobTypeExport}, &exportJobs},
+		{`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = ?`, []any{id, models.JobTypeSync}, &syncJobs},
 		{`SELECT COUNT(*) FROM user_sync_configs WHERE user_id = ?`, []any{id}, &syncConfigs},
 		{`SELECT COUNT(*) FROM user_sessions WHERE user_id = ?`, []any{id}, &sessions},
 	}

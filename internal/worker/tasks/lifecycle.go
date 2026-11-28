@@ -140,7 +140,9 @@ func importEffects(ctx context.Context, db *bun.DB, e joblifecycle.Effect) error
 	switch e.Outcome {
 	case joblifecycle.OutcomeCompleted:
 		var failed int
-		if err := db.NewRaw(`SELECT count(*) FROM job_items WHERE job_id = ? AND status = 'failed'`, e.Job.ID).Scan(ctx, &failed); err != nil {
+		if err := db.NewRaw(
+			`SELECT count(*) FROM job_items WHERE job_id = ? AND status = ?`, e.Job.ID, models.JobItemStatusFailed,
+		).Scan(ctx, &failed); err != nil {
 			return fmt.Errorf("count failed items: %w", err)
 		}
 		if failed > 0 {

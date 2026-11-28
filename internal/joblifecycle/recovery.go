@@ -84,8 +84,8 @@ func (m *Module) Recover(ctx context.Context) (RecoveryResult, error) {
 		Source  string `bun:"source"`
 	}
 	if err := m.db.NewRaw(
-		`SELECT id, job_type, source FROM jobs WHERE status IN ('pending', 'processing') AND job_type IN (?) ORDER BY created_at`,
-		bun.List(types),
+		`SELECT id, job_type, source FROM jobs WHERE status IN (?, ?) AND job_type IN (?) ORDER BY created_at`,
+		models.JobStatusPending, models.JobStatusProcessing, bun.List(types),
 	).Scan(ctx, &jobs); err != nil {
 		return total, fmt.Errorf("list active jobs: %w", err)
 	}
@@ -140,7 +140,7 @@ func (m *Module) recoverJob(ctx context.Context, tx bun.Tx, st *txState, jobID s
 	}
 
 	var items []models.JobItem
-	if err := tx.NewSelect().Model(&items).Where("job_id = ? AND status = 'pending'", job.ID).Order("created_at", "id").Scan(ctx); err != nil {
+	if err := tx.NewSelect().Model(&items).Where("job_id = ? AND status = ?", job.ID, models.JobItemStatusPending).Order("created_at", "id").Scan(ctx); err != nil {
 		return fmt.Errorf("load pending items: %w", err)
 	}
 	owners := make([]int64, 0, len(items))

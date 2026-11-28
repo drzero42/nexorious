@@ -111,7 +111,8 @@ func (e *batchError) Unwrap() error { return e.err }
 func shareLockActiveJob(ctx context.Context, tx bun.Tx, jobID string) error {
 	var one []int
 	if err := tx.NewRaw(
-		`SELECT 1 FROM jobs WHERE id = ? AND status IN ('pending', 'processing') FOR KEY SHARE`, jobID,
+		`SELECT 1 FROM jobs WHERE id = ? AND status IN (?, ?) FOR KEY SHARE`,
+		jobID, models.JobStatusPending, models.JobStatusProcessing,
 	).Scan(ctx, &one); err != nil {
 		return fmt.Errorf("lock job: %w", err)
 	}

@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 
+	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/externalgame"
 )
@@ -32,27 +33,29 @@ const syncNewestItemJoin = `
 // active Job (an older Job that "retry failed" reopened: it blocks new syncs
 // until the game is reviewed).
 const syncNeedsReview = `(
-	COALESCE(ni.status = 'pending_review'
+	COALESCE(ni.status = '` + models.JobItemStatusPendingReview + `'
 	         AND (eg.library_written_at IS NULL OR eg.library_written_at < ni.created_at), false)
 	OR EXISTS (
 		SELECT 1 FROM job_items r JOIN jobs rj ON rj.id = r.job_id
-		WHERE r.external_game_id = eg.id AND r.status = 'pending_review'
-		  AND rj.status IN ('pending', 'processing')))`
+		WHERE r.external_game_id = eg.id AND r.status = '` + models.JobItemStatusPendingReview + `'
+		  AND rj.status IN ('` + models.JobStatusPending + `', '` + models.JobStatusProcessing + `')))`
 
 // syncFailed: the newest item failed and no write happened since.
-const syncFailed = `COALESCE(ni.status = 'failed'
+const syncFailed = `COALESCE(ni.status = '` + models.JobItemStatusFailed + `'
 	AND (eg.library_written_at IS NULL OR eg.library_written_at < COALESCE(ni.processed_at, ni.created_at)), false)`
 
 // syncRetryable: the game shows as failed and Retry could work: the newest
 // item's Job is active or completed. Retry never reopens a failed or
 // cancelled Job, so the view offers no retry there.
 const syncRetryable = `(` + syncFailed + ` AND NOT ` + syncNeedsReview + `
-	AND COALESCE(nj.status IN ('pending', 'processing', 'completed'), false))`
+	AND COALESCE(nj.status IN ('` + models.JobStatusPending + `', '` + models.JobStatusProcessing + `', '` +
+	models.JobStatusCompleted + `'), false))`
 
 // syncInFlight: the newest item is pending in an active Job, so a sync worker
 // still acts on it. No item is open in an ended Job (the lifecycle
 // module cancels them with it).
-const syncInFlight = `COALESCE(ni.status IN ('pending', 'processing') AND nj.status IN ('pending', 'processing'), false)`
+const syncInFlight = `COALESCE(ni.status IN ('` + models.JobItemStatusPending + `', '` + models.JobItemStatusProcessing + `')
+	AND nj.status IN ('` + models.JobStatusPending + `', '` + models.JobStatusProcessing + `'), false)`
 
 // syncRepresentativeOrder orders the editions of a set (External games aliased
 // a) so that the first is the set's representative: the oldest edition still
