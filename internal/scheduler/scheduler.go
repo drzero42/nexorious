@@ -300,7 +300,7 @@ func CleanupOldJobs(ctx context.Context, db *bun.DB) {
 		`DELETE FROM jobs
 		 WHERE status IN (?)
 		   AND completed_at < now() - interval '30 days'`,
-		bun.List(models.TerminalJobStatuses()),
+		bun.List(models.EndedJobStatuses()),
 	).Exec(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "cleanup: failed to delete old jobs", logging.Cat(logging.CategoryDB), logging.KeyErr, err)

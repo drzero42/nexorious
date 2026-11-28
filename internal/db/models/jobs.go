@@ -51,8 +51,8 @@ func ActiveJobStatuses() []JobStatus {
 	return []JobStatus{JobStatusPending, JobStatusProcessing}
 }
 
-// TerminalJobStatuses returns the statuses of a Job that has ended.
-func TerminalJobStatuses() []JobStatus {
+// EndedJobStatuses returns the statuses of a Job that has ended.
+func EndedJobStatuses() []JobStatus {
 	return []JobStatus{JobStatusCompleted, JobStatusFailed, JobStatusCancelled}
 }
 
@@ -89,9 +89,9 @@ func (j *Job) IsActive() bool {
 	return slices.Contains(ActiveJobStatuses(), j.Status)
 }
 
-// IsTerminal reports whether the job has ended (TerminalJobStatuses).
+// IsTerminal reports whether the job has ended (EndedJobStatuses).
 func (j *Job) IsTerminal() bool {
-	return slices.Contains(TerminalJobStatuses(), j.Status)
+	return slices.Contains(EndedJobStatuses(), j.Status)
 }
 
 // DurationSeconds returns elapsed seconds from StartedAt to CompletedAt
@@ -123,6 +123,14 @@ const (
 	JobItemStatusFailed        JobItemStatus = "failed"
 	JobItemStatusCancelled     JobItemStatus = "cancelled"
 )
+
+// JobItemStatuses returns every Job item status.
+func JobItemStatuses() []JobItemStatus {
+	return []JobItemStatus{
+		JobItemStatusPending, JobItemStatusProcessing, JobItemStatusCompleted, JobItemStatusPendingReview,
+		JobItemStatusSkipped, JobItemStatusFailed, JobItemStatusCancelled,
+	}
+}
 
 type JobItem struct {
 	bun.BaseModel `bun:"table:job_items"`

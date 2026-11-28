@@ -725,7 +725,10 @@ func TestRecoveryDispatch(t *testing.T) {
 	if res.Failed != 2 || res.Requeued != 1 {
 		t.Fatalf("result = %+v", res)
 	}
-	for id, want := range map[string]models.JobStatus{discarded: "failed", noDone: "failed", lost: "pending", unrecorded: "pending", live: "pending"} {
+	for id, want := range map[string]models.JobStatus{
+		discarded: models.JobStatusFailed, noDone: models.JobStatusFailed,
+		lost: models.JobStatusPending, unrecorded: models.JobStatusPending, live: models.JobStatusPending,
+	} {
 		if s := loadJob(t, id).Status; s != want {
 			t.Errorf("job %s = %s, want %s", id, s, want)
 		}

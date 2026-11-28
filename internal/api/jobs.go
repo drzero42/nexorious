@@ -73,30 +73,32 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[stri
 		return nil, err
 	}
 
-	m := map[models.JobItemStatus]int{
-		models.JobItemStatusPending: 0, models.JobItemStatusProcessing: 0, models.JobItemStatusCompleted: 0,
-		models.JobItemStatusPendingReview: 0, models.JobItemStatusSkipped: 0, models.JobItemStatusFailed: 0,
-		models.JobItemStatusCancelled: 0,
-	}
+	byStatus := make(map[models.JobItemStatus]int, len(counts))
 	for _, sc := range counts {
-		m[sc.Status] = sc.Count
+		byStatus[sc.Status] = sc.Count
+	}
+	return itemProgress(byStatus), nil
+}
+
+// itemProgress builds a Job's progress for the API response from its item
+// counts by status: one count per Job item status (zero when absent), plus
+// done (completed and skipped), total and percent done.
+func itemProgress(byStatus map[models.JobItemStatus]int) map[string]any {
+	progress := make(map[string]any, len(byStatus)+3)
+	for _, s := range models.JobItemStatuses() {
+		progress[string(s)] = byStatus[s]
 	}
 	total := 0
-	for _, v := range m {
-		total += v
+	for _, n := range byStatus {
+		total += n
 	}
-	done := m[models.JobItemStatusCompleted] + m[models.JobItemStatusSkipped]
+	done := byStatus[models.JobItemStatusCompleted] + byStatus[models.JobItemStatusSkipped]
 	percent := 0
 	if total > 0 {
 		percent = done * 100 / total
 	}
-	return map[string]any{
-		"pending": m[models.JobItemStatusPending], "processing": m[models.JobItemStatusProcessing],
-		"completed": m[models.JobItemStatusCompleted], "pending_review": m[models.JobItemStatusPendingReview],
-		"skipped": m[models.JobItemStatusSkipped], "failed": m[models.JobItemStatusFailed],
-		"cancelled": m[models.JobItemStatusCancelled],
-		"done":      done, "total": total, "percent": percent,
-	}, nil
+	progress["done"], progress["total"], progress["percent"] = done, total, percent
+	return progress
 }
 
 // toJobResponse builds the complete job API response DTO including computed fields.
@@ -332,7 +334,7 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 	}
 	err = h.db.NewRaw(
 		`SELECT id, completed_at FROM jobs WHERE user_id = ? AND job_type = ? AND status IN (?) ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 1`,
-		userID, jobType, bun.List(models.TerminalJobStatuses()),
+		userID, jobType, bun.List(models.EndedJobStatuses()),
 	).Scan(ctx, &last)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job status")
@@ -556,10 +558,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		progress, err := h.jobItemCounts(ctx, j.ID)
 		if err != nil {
 			slog.ErrorContext(reqCtx, "HandleRecentJobs: failed to count job items", logging.KeyJobID, j.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			progress = map[string]any{
-				"pending": 0, "processing": 0, "completed": 0, "pending_review": 0,
-				"skipped": 0, "failed": 0, "cancelled": 0, "done": 0, "total": 0, "percent": 0,
-			}
+			progress = itemProgress(nil)
 		}
 
 		var allChanges []changeRow
