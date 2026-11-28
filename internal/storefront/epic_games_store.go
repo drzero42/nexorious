@@ -47,6 +47,9 @@ func (c *Connections) ConnectEpicGamesStore(ctx context.Context, userID, authCod
 	if err != nil {
 		return EpicGamesStoreAccount{}, reasonError{sentinel: ErrEpicGamesStoreSignInFailed, reason: err}
 	}
+	if info == nil {
+		return EpicGamesStoreAccount{}, errors.New("epic games store: legendary signed in without an account")
+	}
 	// Epic accepted the sign-in; storing it does not depend on the caller
 	// still waiting.
 	if err := c.Store(context.WithoutCancel(ctx), userID, "epic-games-store", snapshot); err != nil {
@@ -57,8 +60,9 @@ func (c *Connections) ConnectEpicGamesStore(ctx context.Context, userID, authCod
 
 // DisconnectEpicGamesStore removes the user's stored Epic sign-in, then the
 // legendary files versions before per-operation sessions left on disk for
-// them. A failure to remove those is logged and otherwise ignored: the stored
-// sign-in is already gone, so the disconnect itself succeeded.
+// them. A failure to remove those is logged as a warning and otherwise
+// ignored: the stored sign-in is already gone, so the disconnect itself
+// succeeded.
 func (c *Connections) DisconnectEpicGamesStore(ctx context.Context, userID string) error {
 	// Removing a sign-in does not depend on the caller still waiting.
 	ctx = context.WithoutCancel(ctx)
@@ -69,7 +73,7 @@ func (c *Connections) DisconnectEpicGamesStore(ctx context.Context, userID strin
 		return nil
 	}
 	if err := c.clients.Epic.Cleanup(ctx, userID); err != nil {
-		slog.ErrorContext(ctx, "storefront: epic cleanup failed", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryExternalAPI))
+		slog.WarnContext(ctx, "epic: cleanup failed", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryExternalAPI))
 	}
 	return nil
 }

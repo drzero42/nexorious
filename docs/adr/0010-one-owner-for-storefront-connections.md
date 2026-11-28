@@ -18,7 +18,7 @@ The module imports the storefront service packages, `storefrontadapter`, `intern
 
 ## Consequences
 
-- **Moved in stages.** This first slice moves the stored shape, persistence and adapter building. The connect, status and disconnect handlers stay in `internal/api` and only call the module (#1485). The store-link resolver factory stays in `serve.go` but decodes PlayStation credentials through the module's type (#1487). The Amazon disconnect still decrypts the sign-in `Take` returns, in its background device sign-out, until the disconnect handlers move in. No guard test checks the ownership yet; #1487 adds one.
+- **Moved in stages.** This first slice moves the stored shape, persistence and adapter building. The connect, status and disconnect handlers stay in `internal/api` and only call the module (#1485). The store-link resolver factory stays in `serve.go` but decodes PlayStation credentials through the module's type (#1487). The Amazon disconnect still decrypts the sign-in `Take` returns, in its background device sign-out, until the disconnect handlers move in (since moved; see the update below). No guard test checks the ownership yet; #1487 adds one.
 - **Outside by design:** `credentials_error` is storefront health (#1410). `Store` still clears it, as connecting did before, and the worker's `flagCredentialsError` still compares `storefront_credentials` in its `UPDATE`; whichever of #1410 and the later slices lands second replaces those direct column writes with a call.
 - **Compatible with stored data:** the JSON field names are unchanged and decoding ignores unknown fields (older PlayStation rows carry four nobody reads), so existing Connections keep working without reconnecting.
 
