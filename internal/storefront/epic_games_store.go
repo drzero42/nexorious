@@ -19,6 +19,9 @@ var (
 	// ErrEpicGamesStoreSignInFailed: legendary did not sign in with the code.
 	// The error's message is only legendary's reason.
 	ErrEpicGamesStoreSignInFailed = errors.New("epic games store: sign-in failed")
+	// ErrEpicGamesStoreNoAccount: legendary signed in but left no account
+	// behind (no user.json).
+	ErrEpicGamesStoreNoAccount = errors.New("epic games store: no account after sign-in")
 )
 
 // EpicGamesStoreAccount is the Epic account a connected sign-in belongs to.
@@ -48,7 +51,7 @@ func (c *Connections) ConnectEpicGamesStore(ctx context.Context, userID, authCod
 		return EpicGamesStoreAccount{}, reasonError{sentinel: ErrEpicGamesStoreSignInFailed, reason: err}
 	}
 	if info == nil {
-		return EpicGamesStoreAccount{}, errors.New("epic games store: legendary signed in without an account")
+		return EpicGamesStoreAccount{}, ErrEpicGamesStoreNoAccount
 	}
 	// Epic accepted the sign-in; storing it does not depend on the caller
 	// still waiting.

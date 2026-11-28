@@ -350,6 +350,7 @@ type fakeAmazonGames struct {
 	notInstalled bool
 	loginErr     error
 	registerErr  error
+	noAccount    bool // Register succeeds without an account
 	gotCode      string
 	gotLogin     amazongamessvc.Login
 	signedOut    chan string // receives the user data each Logout was given
@@ -372,6 +373,9 @@ func (f *fakeAmazonGames) Register(_ context.Context, code string, login amazong
 	f.gotCode, f.gotLogin = code, login
 	if f.registerErr != nil {
 		return nil, nil, f.registerErr
+	}
+	if f.noAccount {
+		return nil, json.RawMessage(amazonOldUserData), nil
 	}
 	return &amazongamessvc.Account{UserID: "amzn1.account.X", Name: "Ama"}, json.RawMessage(amazonOldUserData), nil
 }
@@ -446,10 +450,18 @@ func TestConnectAmazonGames(t *testing.T) {
 		{name: "landing address without a code", attempt: start, redirect: "https://www.amazon.com/?openid.mode=cancel", want: ErrInvalidAmazonGamesRedirect, wantReason: "that address has no sign-in code"},
 		{name: "no landing address", attempt: start, redirect: "", want: ErrInvalidAmazonGamesRedirect, wantReason: "paste the address Amazon took you to"},
 		{name: "attempt id is not ours", attempt: func(*testing.T, *Connections, string) string { return "enc:v1:garbage" }, redirect: amazonLanding, want: ErrAmazonGamesAttemptUnusable},
+		{name: "a stored sign-in pasted as the attempt id", attempt: func(t *testing.T, _ *Connections, _ string) string {
+			ct, err := testEncrypter(t).Encrypt([]byte(amazonOldUserData))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return ct
+		}, redirect: amazonLanding, want: ErrAmazonGamesAttemptUnusable},
 		{name: "attempt id is too long", attempt: func(*testing.T, *Connections, string) string { return strings.Repeat("a", maxAmazonAttemptIDLen+1) }, redirect: amazonLanding, want: ErrAmazonGamesAttemptUnusable},
 		{name: "another user's attempt", attempt: func(t *testing.T, conns *Connections, _ string) string { return start(t, conns, "someone-else") }, redirect: amazonLanding, want: ErrAmazonGamesAttemptUnusable},
 		{name: "attempt older than fifteen minutes", attempt: start, redirect: amazonLanding, later: 16 * time.Minute, want: ErrAmazonGamesAttemptUnusable},
 		{name: "amazon rejects the sign-in", client: fakeAmazonGames{registerErr: errors.New("nile: register failed")}, attempt: start, redirect: amazonLanding, want: ErrAmazonGamesSignInRejected},
+		{name: "nile registers without an account", client: fakeAmazonGames{noAccount: true}, attempt: start, redirect: amazonLanding, want: ErrAmazonGamesNoAccount},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			truncateAllTables(t)

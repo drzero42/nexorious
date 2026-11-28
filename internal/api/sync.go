@@ -683,6 +683,9 @@ func (h *SyncHandler) HandleEpicGamesStoreConnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "auth_code is required")
 	case errors.Is(err, storefront.ErrEpicGamesStoreSignInFailed):
 		return echo.NewHTTPError(http.StatusBadRequest, "epic auth failed: "+err.Error())
+	case errors.Is(err, storefront.ErrEpicGamesStoreNoAccount):
+		slog.ErrorContext(c.Request().Context(), "epic: no account after sign-in", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryExternalAPI))
+		return echo.NewHTTPError(http.StatusInternalServerError, "epic: user.json missing after auth")
 	case err != nil:
 		slog.ErrorContext(c.Request().Context(), "epic: persist storefront credentials failed", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Epic connection")
@@ -799,6 +802,9 @@ func (h *SyncHandler) HandleAmazonGamesConnect(c *echo.Context) error {
 	case errors.Is(err, storefront.ErrAmazonGamesSignInRejected):
 		slog.WarnContext(c.Request().Context(), "amazon: device registration failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusBadRequest, "Amazon did not accept that sign-in; start again and paste the address you land on")
+	case errors.Is(err, storefront.ErrAmazonGamesNoAccount):
+		slog.ErrorContext(c.Request().Context(), "amazon: no account after registration", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Amazon Games connection")
 	case err != nil:
 		slog.ErrorContext(c.Request().Context(), "amazon: persist storefront credentials failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Amazon Games connection")

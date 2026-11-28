@@ -50,6 +50,9 @@ var (
 	// ErrAmazonGamesSignInRejected: Amazon did not register the device. The
 	// error wraps the cause.
 	ErrAmazonGamesSignInRejected = errors.New("amazon games: sign-in rejected")
+	// ErrAmazonGamesNoAccount: nile registered the device but returned no
+	// account.
+	ErrAmazonGamesNoAccount = errors.New("amazon games: no account after registration")
 )
 
 // amazonLoginTTL bounds how long a started Amazon sign-in can be finished.
@@ -137,6 +140,9 @@ func (c *Connections) ConnectAmazonGames(ctx context.Context, userID, attemptID,
 	account, userData, err := c.clients.Amazon.Register(ctx, code, login)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrAmazonGamesSignInRejected, err)
+	}
+	if account == nil {
+		return "", ErrAmazonGamesNoAccount
 	}
 	// Amazon registered the device; storing it does not depend on the caller
 	// still waiting.
