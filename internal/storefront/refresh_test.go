@@ -44,7 +44,7 @@ func TestBind(t *testing.T) {
 // The factory initially binds every store to the stored sign-in it decrypted.
 func TestAdapterFactory_BindsStoresToLoadedSignIn(t *testing.T) {
 	enc := testEncrypter(t)
-	factory := NewConnections(nil, enc).AdapterFactory(Clients{})
+	factory := NewConnections(nil, enc, Clients{}).AdapterFactory()
 	for _, tc := range []struct {
 		storefront string
 		creds      string
@@ -80,7 +80,7 @@ func TestAdapterFactory_BindsStoresToLoadedSignIn(t *testing.T) {
 // for every storefront; an unknown storefront is not.
 func TestAdapterFactory_UnusableSignIn(t *testing.T) {
 	enc := testEncrypter(t)
-	factory := NewConnections(nil, enc).AdapterFactory(Clients{})
+	factory := NewConnections(nil, enc, Clients{}).AdapterFactory()
 	notJSON, err := enc.Encrypt([]byte("not json"))
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func TestStoredCredentialsWriter_SavesWhileStillStored(t *testing.T) {
 	truncateAllTables(t)
 	userID := seedUser(t)
 	seedStoredSignIn(t, userID, "gog", "loaded-ct")
-	w := newStoredCredentialsWriter(NewConnections(testDB, testEncrypter(t)), userID, "gog", "loaded-ct")
+	w := newStoredCredentialsWriter(NewConnections(testDB, testEncrypter(t), Clients{}), userID, "gog", "loaded-ct")
 	ctx := context.Background()
 	if err := w.write(ctx, "refreshed-1"); err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestStoredCredentialsWriter_KeepsReconnect(t *testing.T) {
 	truncateAllTables(t)
 	userID := seedUser(t)
 	seedStoredSignIn(t, userID, "epic-games-store", "loaded-ct")
-	w := newStoredCredentialsWriter(NewConnections(testDB, testEncrypter(t)), userID, "epic-games-store", "loaded-ct")
+	w := newStoredCredentialsWriter(NewConnections(testDB, testEncrypter(t), Clients{}), userID, "epic-games-store", "loaded-ct")
 	if _, err := testDB.ExecContext(context.Background(),
 		`UPDATE user_sync_configs SET storefront_credentials = 'reconnected-ct' WHERE user_id = ?`, userID); err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestStoredCredentialsWriter_KeepsDisconnect(t *testing.T) {
 	truncateAllTables(t)
 	userID := seedUser(t)
 	seedStoredSignIn(t, userID, "epic-games-store", "loaded-ct")
-	w := newStoredCredentialsWriter(NewConnections(testDB, testEncrypter(t)), userID, "epic-games-store", "loaded-ct")
+	w := newStoredCredentialsWriter(NewConnections(testDB, testEncrypter(t), Clients{}), userID, "epic-games-store", "loaded-ct")
 	if _, err := testDB.ExecContext(context.Background(),
 		`UPDATE user_sync_configs SET storefront_credentials = NULL WHERE user_id = ?`, userID); err != nil {
 		t.Fatal(err)

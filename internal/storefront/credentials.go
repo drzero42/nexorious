@@ -1,5 +1,10 @@
 package storefront
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 // The stored credential shape of each storefront with a typed Connection. The
 // JSON field names are the stored format: renaming one breaks every existing
 // Connection.
@@ -29,4 +34,59 @@ type GOGCredentials struct {
 // HumbleBundleCredentials is a stored Humble Bundle Connection.
 type HumbleBundleCredentials struct {
 	SessionCookie string `json:"session_cookie"`
+}
+
+// The account display name each storefront's status reports, decoded from its
+// stored sign-in.
+
+func steamAccount(plain []byte) (string, error) {
+	var creds SteamCredentials
+	err := json.Unmarshal(plain, &creds)
+	return creds.DisplayName, err
+}
+
+func playStationStoreAccount(plain []byte) (string, error) {
+	var creds PlayStationStoreCredentials
+	err := json.Unmarshal(plain, &creds)
+	return creds.OnlineID, err
+}
+
+func gogAccount(plain []byte) (string, error) {
+	var creds GOGCredentials
+	err := json.Unmarshal(plain, &creds)
+	return creds.Username, err
+}
+
+// epicGamesStoreAccount reads displayName from the user.json in legendary's
+// state snapshot (a map of relative path to file content). A snapshot without
+// user.json has no name.
+func epicGamesStoreAccount(plain []byte) (string, error) {
+	var snapshot map[string]string
+	if err := json.Unmarshal(plain, &snapshot); err != nil {
+		return "", err
+	}
+	userJSON, ok := snapshot["user.json"]
+	if !ok {
+		return "", nil
+	}
+	var user struct {
+		DisplayName string `json:"displayName"`
+	}
+	if err := json.Unmarshal([]byte(userJSON), &user); err != nil {
+		return "", fmt.Errorf("user.json: %w", err)
+	}
+	return user.DisplayName, nil
+}
+
+// amazonGamesAccount reads customer_info.given_name from nile's user data.
+func amazonGamesAccount(plain []byte) (string, error) {
+	var userData struct {
+		Extensions struct {
+			CustomerInfo struct {
+				GivenName string `json:"given_name"`
+			} `json:"customer_info"`
+		} `json:"extensions"`
+	}
+	err := json.Unmarshal(plain, &userData)
+	return userData.Extensions.CustomerInfo.GivenName, err
 }

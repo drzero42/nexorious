@@ -38,6 +38,7 @@ import (
 	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
 	"github.com/drzero42/nexorious/internal/services/updatecheck"
+	"github.com/drzero42/nexorious/internal/storefront"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 	"github.com/drzero42/nexorious/ui"
 )
@@ -554,7 +555,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 			DB:               db,
 			River:            riverClient,
 			Lifecycle:        lifecycle,
-			Steam:            &steamClientAdapter{c: steamSvc},
+			Connections:      storefront.NewConnections(db, encrypter, storefront.Clients{Steam: steamSvc}),
 			PlaystationStore: &playstationStoreClientAdapter{c: psnSvc},
 			EpicGamesStore:   &epicGamesStoreClientAdapter{c: epicSvc},
 			GOG:              &gogClientAdapter{c: gogSvc},
@@ -579,21 +580,6 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 	// SPA catch-all — serves ui.UIBox; falls back to index.html
 	e.GET("/*", spaHandler())
-}
-
-// steamClientAdapter bridges steamsvc.Client to the SteamClient interface
-// without creating an import cycle between internal/api and internal/services/steam.
-type steamClientAdapter struct{ c *steamsvc.Client }
-
-func (a *steamClientAdapter) GetPlayerSummaries(ctx context.Context, apiKey, steamID string) (*SteamPlayerSummary, error) {
-	s, err := a.c.GetPlayerSummaries(ctx, apiKey, steamID)
-	if s == nil {
-		return nil, err
-	}
-	return &SteamPlayerSummary{
-		PersonaName:              s.PersonaName,
-		CommunityVisibilityState: s.CommunityVisibilityState,
-	}, err
 }
 
 // playstationStoreClientAdapter bridges playstationstoresvc.Client to the PlaystationStoreClient interface

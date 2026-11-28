@@ -17,16 +17,19 @@ import (
 	"github.com/drzero42/nexorious/internal/logging"
 )
 
-// Connections stores and loads users' storefront Connections.
+// Connections connects, reports and disconnects users' storefront
+// Connections, and stores and loads them.
 type Connections struct {
 	db        *bun.DB
 	encrypter *crypto.Encrypter
+	clients   Clients
 }
 
 // NewConnections returns the Connections backed by db, encrypting stored
-// sign-ins with encrypter.
-func NewConnections(db *bun.DB, encrypter *crypto.Encrypter) *Connections {
-	return &Connections{db: db, encrypter: encrypter}
+// sign-ins with encrypter and reaching the storefronts through clients. A
+// client may be left nil as long as nothing that needs it is called.
+func NewConnections(db *bun.DB, encrypter *crypto.Encrypter, clients Clients) *Connections {
+	return &Connections{db: db, encrypter: encrypter, clients: clients}
 }
 
 // Store saves creds as the user's Connection to the storefront, replacing any
@@ -63,15 +66,18 @@ func (c *Connections) Store(ctx context.Context, userID, storefront string, cred
 	return nil
 }
 
-// Clear removes the user's stored sign-in for the storefront. Clearing an
-// absent Connection is a no-op.
-func (c *Connections) Clear(ctx context.Context, userID, storefront string) error {
+// Disconnect removes the user's stored sign-in for the storefront.
+// Disconnecting an absent Connection is a no-op.
+func (c *Connections) Disconnect(ctx context.Context, userID, storefront string) error {
+	if !Known(storefront) {
+		return fmt.Errorf("disconnect: unknown storefront: %s", storefront)
+	}
 	_, err := c.db.NewRaw(
 		`UPDATE user_sync_configs SET storefront_credentials = NULL, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 		userID, storefront,
 	).Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("clear %s connection: %w", storefront, err)
+		return fmt.Errorf("disconnect %s: %w", storefront, err)
 	}
 	return nil
 }
@@ -127,4 +133,47 @@ func (c *Connections) Load(ctx context.Context, userID, storefront string) (Load
 		return Loaded{Connected: true, CredentialsError: true}, nil
 	}
 	return Loaded{Connected: true, CredentialsError: row.CredentialsError, Plaintext: plain}, nil
+}
+
+// Status is a Connection as its status route reports it.
+type Status struct {
+	Connected bool // a sign-in is stored
+	// Undecryptable: the stored sign-in does not decrypt. CredentialsError
+	// is set too, and Account is empty.
+	Undecryptable    bool
+	CredentialsError bool // the sign-in does not decrypt, or a sync flagged it
+	// Account is the account's display name, where the storefront stores
+	// one; empty otherwise.
+	Account string
+}
+
+// ErrUndecodable is a stored sign-in that decrypts but is not the
+// storefront's stored shape.
+var ErrUndecodable = errors.New("stored sign-in does not decode")
+
+// Status loads the user's Connection to the storefront. It returns an error
+// wrapping ErrUndecodable for a stored sign-in that decrypts but does not
+// decode; any other error is a database failure.
+func (c *Connections) Status(ctx context.Context, userID, storefront string) (Status, error) {
+	def, ok := lookup(storefront)
+	if !ok {
+		return Status{}, fmt.Errorf("status: unknown storefront: %s", storefront)
+	}
+	loaded, err := c.Load(ctx, userID, storefront)
+	if err != nil {
+		return Status{}, err
+	}
+	if !loaded.Connected {
+		return Status{}, nil
+	}
+	if loaded.Plaintext == nil {
+		return Status{Connected: true, Undecryptable: true, CredentialsError: true}, nil
+	}
+	st := Status{Connected: true, CredentialsError: loaded.CredentialsError}
+	if def.account != nil {
+		if st.Account, err = def.account(loaded.Plaintext); err != nil {
+			return Status{}, fmt.Errorf("%s status: %w: %w", storefront, ErrUndecodable, err)
+		}
+	}
+	return st, nil
 }

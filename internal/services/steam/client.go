@@ -71,7 +71,8 @@ type Platforms struct {
 }
 
 // GetPlayerSummaries fetches the player summary for the given steamID.
-// Returns nil, nil if no player was found for that steamID.
+// Returns nil, nil if no player was found for that steamID, and
+// ErrRateLimited on HTTP 429.
 func (c *Client) GetPlayerSummaries(ctx context.Context, apiKey, steamID string) (*SteamPlayerSummary, error) {
 	url := fmt.Sprintf(
 		"%s/ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s&format=json",
@@ -87,7 +88,7 @@ func (c *Client) GetPlayerSummaries(ctx context.Context, apiKey, steamID string)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("steam rate limited")
+		return nil, ErrRateLimited
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("steam HTTP %d", resp.StatusCode)
@@ -172,9 +173,10 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 	return games, nil
 }
 
-// ErrRateLimited is returned by GetAppDetailsPlatforms when Steam responds with
-// HTTP 429 and a brief retry does not help. The caller should back off globally
-// before retrying the same request.
+// ErrRateLimited is returned when Steam responds with HTTP 429: by
+// GetAppDetailsPlatforms when a brief retry does not help, and by
+// GetPlayerSummaries at once. The caller should back off globally before
+// retrying the same request.
 var ErrRateLimited = errors.New("steam: rate limited (429)")
 
 // ErrAPIKeyRejected is returned by GetOwnedGames when the Steam API responds
