@@ -88,7 +88,7 @@ func TestPlatformHandlers_ErrorShape(t *testing.T) {
 				return postJSONAuth(t, e, "/api/user-games/ug-err-shape/platforms", map[string]any{"platform": "pc-windows", "acquired_date": "yesterday"}, token)
 			},
 			wantStatus: http.StatusBadRequest,
-			wantMsg:    "invalid acquired_date",
+			wantMsg:    `invalid acquired_date "yesterday" (want YYYY-MM-DD)`,
 		},
 		{
 			name: "update: unknown user game",
@@ -134,7 +134,7 @@ func TestPlatformHandlers_ErrorShape(t *testing.T) {
 				return putJSONAuth(t, e, platformURL, map[string]any{"acquired_date": "yesterday"}, token)
 			},
 			wantStatus: http.StatusBadRequest,
-			wantMsg:    "invalid acquired_date",
+			wantMsg:    `invalid acquired_date "yesterday" (want YYYY-MM-DD)`,
 		},
 	}
 
@@ -151,9 +151,8 @@ func TestPlatformHandlers_ErrorShape(t *testing.T) {
 			if _, ok := body["error"]; ok {
 				t.Errorf("body has an \"error\" key, want only \"message\": %s", rec.Body.String())
 			}
-			msg, _ := body["message"].(string)
-			if !strings.HasPrefix(msg, tt.wantMsg) {
-				t.Errorf("message = %q, want prefix %q", msg, tt.wantMsg)
+			if msg, _ := body["message"].(string); msg != tt.wantMsg {
+				t.Errorf("message = %q, want %q", msg, tt.wantMsg)
 			}
 		})
 	}

@@ -906,28 +906,28 @@ func (h *UserGamesHandler) ownershipError(c *echo.Context, err error) error {
 // name existing rows: 404 when one does not, 500 when the lookup failed.
 func (h *UserGamesHandler) validatePlatformRefs(ctx context.Context, req platformRequest) error {
 	if req.Platform != nil && *req.Platform != "" {
-		exists, err := h.db.NewSelect().Model((*models.Platform)(nil)).
-			Where("name = ?", *req.Platform).
-			Exists(ctx)
-		if err != nil {
-			slog.ErrorContext(ctx, "user_games: platform lookup failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-		}
-		if !exists {
-			return echo.NewHTTPError(http.StatusNotFound, "platform not found: "+*req.Platform)
+		if err := h.checkNameExists(ctx, (*models.Platform)(nil), "platform", *req.Platform); err != nil {
+			return err
 		}
 	}
 	if req.Storefront != nil && *req.Storefront != "" {
-		exists, err := h.db.NewSelect().Model((*models.Storefront)(nil)).
-			Where("name = ?", *req.Storefront).
-			Exists(ctx)
-		if err != nil {
-			slog.ErrorContext(ctx, "user_games: storefront lookup failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		if err := h.checkNameExists(ctx, (*models.Storefront)(nil), "storefront", *req.Storefront); err != nil {
+			return err
 		}
-		if !exists {
-			return echo.NewHTTPError(http.StatusNotFound, "storefront not found: "+*req.Storefront)
-		}
+	}
+	return nil
+}
+
+// checkNameExists answers 404 "<kind> not found: <name>" when model's table
+// has no row with that name, and 500 when the lookup failed.
+func (h *UserGamesHandler) checkNameExists(ctx context.Context, model any, kind, name string) error {
+	exists, err := h.db.NewSelect().Model(model).Where("name = ?", name).Exists(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "user_games: "+kind+" lookup failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if !exists {
+		return echo.NewHTTPError(http.StatusNotFound, kind+" not found: "+name)
 	}
 	return nil
 }
