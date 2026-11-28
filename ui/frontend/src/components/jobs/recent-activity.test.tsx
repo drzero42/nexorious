@@ -40,7 +40,6 @@ const baseJob = (over: Partial<RecentJobDetail>): RecentJobDetail => ({
   failedCount: 0,
   progress: {
     pending: 0,
-    processing: 0,
     completed: 1,
     pendingReview: 0,
     skipped: 0,

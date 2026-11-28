@@ -63,7 +63,7 @@ The module does not import the workers.
 
 `pending` and `pending_review` are *open*. The status of an open item only says who acts next. It never records a decision: the IGDB game chosen for an item is kept in `resolved_igdb_id`.
 
-`processing` remains a legal value of `job_items.status` for rows written by older versions. Nothing writes it any more. Only the old import resolve handler ever did, and the migration that moves the import kinds turns those items into `pending`.
+Older versions had a seventh item status, `processing`, written only by the old import resolve handler. Migrations moved every item that held it (see *Rows from older versions*), and the database now rejects it.
 
 ## Owners
 
@@ -281,12 +281,13 @@ While the server runs, the rule leaves the item of a `running` River job alone. 
 
 **Rows from older versions.** The migration that moves a kind onto the module puts that kind's existing rows into a state the rule understands. No migration touches `river_job`. In each migration the rules that fail Jobs run before the rules for items.
 
-- Every open item of a `failed` or `cancelled` Job (`pending`, `pending_review`, `processing`) becomes `cancelled`. Every open item of a `completed` Job becomes `failed`, so it can be retried: older versions let a single item be retried, sent to review and even resolved without reopening its Job.
+- Every open item of a `failed` or `cancelled` Job (`pending`, `pending_review`, or the old `processing`) becomes `cancelled`. Every open item of a `completed` Job becomes `failed`, so it can be retried: older versions let a single item be retried, sent to review and even resolved without reopening its Job.
 - Sync and a handler-triggered refresh: an active Job that never started its dispatch (still `pending`) gets `dispatch_complete = false`. The column's default is `true`, and older versions only wrote `false` when a sync's dispatch began.
 - Export: every active export Job gets `dispatch_complete = false`, whether it had started or not. Older versions created it with `true`, and it has no items, so nothing else tells an ended export from one that never wrote its file.
 - A Job covered by either of the two rules above that is more than a day old is failed instead of being run.
 - Sync: an active Job with `dispatch_complete = false` and `completed_at` set is a failed sync that an older "retry failed" reopened. It is failed again.
 - Imports: `processing` items of active Jobs become `pending`. A nexorious import Job that is `pending` becomes `processing` (older versions kept it `pending` until it completed), unless it has no game items at all, in which case it is failed.
+- Every kind: an item still `processing` is moved by the rules above: `pending` in an active Job, `failed` in a `completed` one, `cancelled` in a `failed` or `cancelled` one. The CHECK constraint then rejects `processing`.
 - Every kind: a Job or item whose status is not one of today's values is failed (older installs may hold items with the removed status `igdb_failed`). The database then rejects any other status with a CHECK constraint, so a status added to `models.JobStatus` or `models.JobItemStatus` needs a migration that widens it.
 - A Job the migration fails gets `completed_at`, an error message, and its open items cancelled. It sends no notification. Items the migration fails or cancels get `processed_at`.
 

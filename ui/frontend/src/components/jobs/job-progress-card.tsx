@@ -91,9 +91,7 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
               </div>
               <div>
                 <div className="text-muted-foreground">Processing</div>
-                <div className="text-lg font-semibold">
-                  {job.progress.pending + job.progress.processing}
-                </div>
+                <div className="text-lg font-semibold">{job.progress.pending}</div>
               </div>
             </div>
           )}

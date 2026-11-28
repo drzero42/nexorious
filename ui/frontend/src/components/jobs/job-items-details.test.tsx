@@ -30,7 +30,6 @@ vi.mock('@/components/sync/igdb-match-dialog', () => ({ IGDBMatchDialog: () => n
 
 const progress = {
   pending: 0,
-  processing: 0,
   completed: 3,
   pendingReview: 0,
   skipped: 0,

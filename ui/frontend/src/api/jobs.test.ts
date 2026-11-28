@@ -22,7 +22,6 @@ const mockJobApiResponse = {
   priority: 'high',
   progress: {
     pending: 10,
-    processing: 5,
     completed: 30,
     pending_review: 3,
     skipped: 2,

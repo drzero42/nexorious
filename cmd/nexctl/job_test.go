@@ -101,7 +101,7 @@ func TestJobShowProgress(t *testing.T) {
 			"id": "job-1", "job_type": "import", "source": "vglist", "status": "processing",
 			"priority": "normal", "total_items": 10, "created_at": "2026-06-18T00:00:00Z",
 			"progress": map[string]any{
-				"pending": 3, "processing": 1, "completed": 4, "pending_review": 2,
+				"pending": 4, "completed": 4, "pending_review": 2,
 				"skipped": 0, "failed": 0, "cancelled": 3, "total": 10, "percent": 40,
 			},
 		})

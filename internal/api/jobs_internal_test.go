@@ -12,7 +12,7 @@ func TestItemProgressKeys(t *testing.T) {
 	got := slices.Sorted(maps.Keys(itemProgress(nil)))
 	want := []string{
 		"cancelled", "completed", "done", "failed", "pending", "pending_review",
-		"percent", "processing", "skipped", "total",
+		"percent", "skipped", "total",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("progress keys = %v, want %v", got, want)

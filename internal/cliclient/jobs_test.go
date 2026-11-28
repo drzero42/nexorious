@@ -26,7 +26,7 @@ func TestListJobs(t *testing.T) {
 					"status":   "completed",
 					"priority": "high",
 					"progress": map[string]any{
-						"pending": 0, "processing": 0, "completed": 3,
+						"pending": 0, "completed": 3,
 						"pending_review": 0, "skipped": 0, "failed": 0,
 						"total": 3, "percent": 100,
 					},
@@ -103,7 +103,7 @@ func TestGetJob(t *testing.T) {
 			"started_at":       "2026-06-01T10:00:01Z",
 			"completed_at":     "2026-06-01T10:00:13Z",
 			"progress": map[string]any{
-				"pending": 0, "processing": 0, "completed": 5,
+				"pending": 0, "completed": 5,
 				"pending_review": 0, "skipped": 0, "failed": 0,
 				"total": 5, "percent": 100,
 			},
@@ -146,7 +146,7 @@ func TestGetJobNullableFields(t *testing.T) {
 			"file_path": nil, "error_message": nil,
 			"started_at": nil, "completed_at": nil, "duration_seconds": nil,
 			"progress": map[string]any{
-				"pending": 2, "processing": 0, "completed": 0,
+				"pending": 2, "completed": 0,
 				"pending_review": 0, "skipped": 0, "failed": 0,
 				"total": 2, "percent": 0,
 			},
@@ -290,7 +290,7 @@ func TestGetJobPathEscaping(t *testing.T) {
 			"id": "id with spaces", "job_type": "sync", "source": "steam",
 			"status": "pending", "priority": "high",
 			"progress": map[string]any{
-				"pending": 0, "processing": 0, "completed": 0,
+				"pending": 0, "completed": 0,
 				"pending_review": 0, "skipped": 0, "failed": 0,
 				"total": 0, "percent": 0,
 			},

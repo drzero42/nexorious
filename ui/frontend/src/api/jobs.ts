@@ -29,7 +29,6 @@ import type {
 
 interface JobProgressApiResponse {
   pending: number;
-  processing: number;
   completed: number;
   pending_review: number;
   skipped: number;
@@ -169,7 +168,6 @@ interface RecentJobsApiResponse {
 function transformProgress(apiProgress: JobProgressApiResponse): JobProgress {
   return {
     pending: apiProgress.pending,
-    processing: apiProgress.processing,
     completed: apiProgress.completed,
     pendingReview: apiProgress.pending_review,
     skipped: apiProgress.skipped,
@@ -245,7 +243,6 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
     skipped: 0,
     failed: 0,
     pending: 0,
-    processing: 0,
     pending_review: 0,
     cancelled: 0,
     done: 0,
