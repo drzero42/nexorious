@@ -39,17 +39,8 @@ type StorefrontAdapter = storefrontadapter.Adapter
 var ErrCredentials = storefrontadapter.ErrCredentials
 
 // CredentialsErrorFor is a credentials failure that belongs to one stored
-// sign-in: Credentials is the user_sync_configs ciphertext the sync loaded.
-// The worker flags credentials_error, and notifies, only while that sign-in is
-// still the stored one, in the same UPDATE that sets the flag, so a reconnect
-// committed while the sync ran is never marked expired by it.
-type CredentialsErrorFor struct {
-	Credentials *string // nil: the sync loaded no stored sign-in
-	Err         error
-}
-
-func (e *CredentialsErrorFor) Error() string { return e.Err.Error() }
-func (e *CredentialsErrorFor) Unwrap() error { return e.Err }
+// sign-in; see storefrontadapter.CredentialsErrorFor.
+type CredentialsErrorFor = storefrontadapter.CredentialsErrorFor
 
 // ── DispatchSync ──────────────────────────────────────────────────────────────
 

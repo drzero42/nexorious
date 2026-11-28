@@ -1,10 +1,9 @@
-package main
+package storefront
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/crypto"
@@ -12,7 +11,6 @@ import (
 	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
-	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // fakeAmazonLibrary stands in for nile; during runs while the sync is in
@@ -38,21 +36,12 @@ const (
 	amazonReconnectUserData = `{"extensions":{"customer_info":{"user_id":"amzn1.account.Y","given_name":"New"}},"tokens":{"bearer":{"access_token":"reconnected"}}}`
 )
 
-func amazonTestEncrypter(t *testing.T) *crypto.Encrypter {
-	t.Helper()
-	enc, err := crypto.NewEncrypter(strings.Repeat("k", 32))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return enc
-}
-
 // seedAmazonSync stores userData as the user's Amazon connection and returns
 // the row as the sync worker loads it.
 func seedAmazonSync(t *testing.T, enc *crypto.Encrypter, userData string) models.UserSyncConfig {
 	t.Helper()
 	truncateAllTables(t)
-	userID := seedResetUser(t, "amazon-factory", "pw", false)
+	userID := seedUser(t)
 	ct, err := enc.Encrypt([]byte(userData))
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +76,7 @@ func storedAmazonUserData(t *testing.T, enc *crypto.Encrypter, userID string) st
 
 func runAmazonFactory(t *testing.T, enc *crypto.Encrypter, cfg models.UserSyncConfig, lib amazongamessvc.LibraryClient) error {
 	t.Helper()
-	factory := buildAdapterFactoryWithAmazon(testDB, enc, epicgamesstoresvc.NewClient(""), lib)
+	factory := NewConnections(testDB, enc).AdapterFactory(Clients{Epic: epicgamesstoresvc.NewClient(""), Amazon: lib})
 	adapter, err := factory(context.Background(), "amazon-games", cfg)
 	if err != nil {
 		return err
@@ -96,7 +85,7 @@ func runAmazonFactory(t *testing.T, enc *crypto.Encrypter, cfg models.UserSyncCo
 }
 
 func TestAdapterFactory_AmazonGames_RefreshPersistedAfterFailedImport(t *testing.T) {
-	enc := amazonTestEncrypter(t)
+	enc := testEncrypter(t)
 	cfg := seedAmazonSync(t, enc, amazonOldUserData)
 	lib := &fakeAmazonLibrary{refreshed: json.RawMessage(amazonRefreshedUserData), err: errors.New("amazon: nile library sync failed")}
 	if err := runAmazonFactory(t, enc, cfg, lib); err == nil {
@@ -108,7 +97,7 @@ func TestAdapterFactory_AmazonGames_RefreshPersistedAfterFailedImport(t *testing
 }
 
 func TestAdapterFactory_AmazonGames_ReconnectDuringSyncWins(t *testing.T) {
-	enc := amazonTestEncrypter(t)
+	enc := testEncrypter(t)
 	cfg := seedAmazonSync(t, enc, amazonOldUserData)
 	lib := &fakeAmazonLibrary{refreshed: json.RawMessage(amazonRefreshedUserData)}
 	lib.during = func() {
@@ -130,19 +119,19 @@ func TestAdapterFactory_AmazonGames_ReconnectDuringSyncWins(t *testing.T) {
 }
 
 func TestAdapterFactory_AmazonGames_UnusableCredentials(t *testing.T) {
-	enc := amazonTestEncrypter(t)
+	enc := testEncrypter(t)
 	cfg := seedAmazonSync(t, enc, amazonOldUserData)
 
 	noCreds := cfg
 	noCreds.StorefrontCredentials = nil
-	if err := runAmazonFactory(t, enc, noCreds, &fakeAmazonLibrary{}); !errors.Is(err, tasks.ErrCredentials) {
+	if err := runAmazonFactory(t, enc, noCreds, &fakeAmazonLibrary{}); !errors.Is(err, storefrontadapter.ErrCredentials) {
 		t.Errorf("no credentials: err = %v, want ErrCredentials", err)
 	}
 
 	garbage := "enc:v1:not-a-ciphertext"
 	bad := cfg
 	bad.StorefrontCredentials = &garbage
-	if err := runAmazonFactory(t, enc, bad, &fakeAmazonLibrary{}); !errors.Is(err, tasks.ErrCredentials) {
+	if err := runAmazonFactory(t, enc, bad, &fakeAmazonLibrary{}); !errors.Is(err, storefrontadapter.ErrCredentials) {
 		t.Errorf("undecryptable credentials: err = %v, want ErrCredentials", err)
 	}
 }
@@ -158,7 +147,7 @@ func TestAdapterFactory_AmazonGames_BindsAuthFailureToLastSavedSignIn(t *testing
 		{name: "discarded refresh after reconnect", refresh: true, reconnect: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			enc := amazonTestEncrypter(t)
+			enc := testEncrypter(t)
 			cfg := seedAmazonSync(t, enc, amazonOldUserData)
 			lib := &fakeAmazonLibrary{err: amazongamessvc.ErrAuthFailed}
 			if tc.refresh {
@@ -178,7 +167,7 @@ func TestAdapterFactory_AmazonGames_BindsAuthFailureToLastSavedSignIn(t *testing
 			}
 
 			err := runAmazonFactory(t, enc, cfg, lib)
-			var bound *tasks.CredentialsErrorFor
+			var bound *storefrontadapter.CredentialsErrorFor
 			if !errors.As(err, &bound) || bound.Credentials == nil {
 				t.Fatalf("expected a credentials error tied to the sync's sign-in, got %v", err)
 			}
