@@ -26,7 +26,6 @@ import (
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/crypto"
 	nexdb "github.com/drzero42/nexorious/internal/db"
-	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	maint "github.com/drzero42/nexorious/internal/middleware"
@@ -38,12 +37,11 @@ import (
 	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
-	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
-	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
 	"github.com/drzero42/nexorious/internal/services/storelink"
 	"github.com/drzero42/nexorious/internal/services/updatecheck"
+	"github.com/drzero42/nexorious/internal/storefront"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -257,9 +255,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		slog.InfoContext(ctx, "epic: removed session directories left by an earlier crash", "count", n)
 	}
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
-		DB:      db,
-		LC:      lifecycle,
-		Adapter: buildAdapterFactory(db, encrypter, epicClient),
+		DB: db,
+		LC: lifecycle,
+		Adapter: storefront.NewConnections(db, encrypter).AdapterFactory(storefront.Clients{
+			Epic:   epicClient,
+			Amazon: amazongamessvc.NewClient(),
+			GOG:    gogsvc.NewClient(),
+		}),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
@@ -611,164 +613,13 @@ func parseSlogLevel(s string) slog.Level {
 	}
 }
 
-func buildAdapterFactory(
-	db *bun.DB,
-	encrypter *crypto.Encrypter,
-	epicClient *epicgamesstoresvc.Client,
-) func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
-	return buildAdapterFactoryWithAmazon(db, encrypter, epicClient, amazongamessvc.NewClient())
-}
-
-// buildAdapterFactoryWithAmazon is buildAdapterFactory with the nile client
-// passed in, so tests can stand a fake in for nile.
-func buildAdapterFactoryWithAmazon(
-	db *bun.DB,
-	encrypter *crypto.Encrypter,
-	epicClient *epicgamesstoresvc.Client,
-	amazonClient amazongamessvc.LibraryClient,
-) func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
-	return func(ctx context.Context, storefront string, cfg models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
-		switch storefront {
-		case "steam":
-			if cfg.StorefrontCredentials == nil {
-				return nil, tasks.ErrCredentials
-			}
-			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
-			if err != nil {
-				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: steam decrypt failed", logging.KeyErr, err, logging.KeySource, "steam", logging.Cat(logging.CategoryAuth))
-				return nil, tasks.ErrCredentials
-			}
-			var creds struct {
-				WebAPIKey string `json:"web_api_key"`
-				SteamID   string `json:"steam_id"`
-			}
-			if err := json.Unmarshal(plain, &creds); err != nil {
-				return nil, tasks.ErrCredentials
-			}
-			return boundToCredentials(steamsvc.NewAdapter(steamsvc.NewClient(), creds.WebAPIKey, creds.SteamID), *cfg.StorefrontCredentials), nil
-
-		case "playstation-store":
-			if cfg.StorefrontCredentials == nil {
-				return nil, tasks.ErrCredentials
-			}
-			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
-			if err != nil {
-				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: psn decrypt failed", logging.KeyErr, err, logging.KeySource, "playstation-store", logging.Cat(logging.CategoryAuth))
-				return nil, tasks.ErrCredentials
-			}
-			var creds struct {
-				NPSSOToken string `json:"npsso_token"`
-			}
-			if err := json.Unmarshal(plain, &creds); err != nil {
-				return nil, tasks.ErrCredentials
-			}
-			return boundToCredentials(playstationstoresvc.NewAdapter(playstationstoresvc.NewClient(), creds.NPSSOToken), *cfg.StorefrontCredentials), nil
-
-		case "gog":
-			if cfg.StorefrontCredentials == nil {
-				return nil, tasks.ErrCredentials
-			}
-			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
-			if err != nil {
-				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: gog decrypt failed", logging.KeyErr, err, logging.KeySource, "gog", logging.Cat(logging.CategoryAuth))
-				return nil, tasks.ErrCredentials
-			}
-			var creds struct {
-				RefreshToken string `json:"refresh_token"`
-				Username     string `json:"username"`
-			}
-			if err := json.Unmarshal(plain, &creds); err != nil {
-				return nil, tasks.ErrCredentials
-			}
-			stored := newStoredCredentialsWriter(db, cfg.UserID, "gog", *cfg.StorefrontCredentials)
-			onNewTokens := func(refreshToken string) error {
-				creds.RefreshToken = refreshToken
-				newCredsJSON, merr := json.Marshal(creds) //nolint:gosec // marshaled only to encrypt immediately below before storage; never logged or returned
-				if merr != nil {
-					return merr
-				}
-				enc, encErr := encrypter.Encrypt(newCredsJSON)
-				if encErr != nil {
-					return encErr
-				}
-				return stored.write(context.WithoutCancel(ctx), enc)
-			}
-			return stored.bind(gogsvc.NewAdapter(gogsvc.NewClient(), creds.RefreshToken, onNewTokens)), nil
-
-		case "epic-games-store":
-			if cfg.StorefrontCredentials == nil {
-				return nil, tasks.ErrCredentials
-			}
-			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
-			if err != nil {
-				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: epic decrypt failed", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryAuth))
-				return nil, tasks.ErrCredentials
-			}
-			var snapshot map[string]string
-			if err := json.Unmarshal(plain, &snapshot); err != nil {
-				return nil, tasks.ErrCredentials
-			}
-			stored := newStoredCredentialsWriter(db, cfg.UserID, "epic-games-store", *cfg.StorefrontCredentials)
-			onSnapshot := func(s map[string]string) error {
-				newJSON, _ := json.Marshal(s) //nolint:errcheck // marshaling a map[string]string cannot fail
-				enc, encErr := encrypter.Encrypt(newJSON)
-				if encErr != nil {
-					return encErr
-				}
-				return stored.write(context.WithoutCancel(ctx), enc)
-			}
-			return stored.bind(epicgamesstoresvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot)), nil
-
-		case "amazon-games":
-			if cfg.StorefrontCredentials == nil {
-				return nil, tasks.ErrCredentials
-			}
-			loaded := *cfg.StorefrontCredentials
-			plain, err := encrypter.Decrypt(loaded)
-			if err != nil || !json.Valid(plain) {
-				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: amazon-games decrypt failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
-				return nil, tasks.ErrCredentials
-			}
-			stored := newStoredCredentialsWriter(db, cfg.UserID, "amazon-games", loaded)
-			onUserData := func(userData json.RawMessage) error {
-				enc, encErr := encrypter.Encrypt(userData)
-				if encErr != nil {
-					return encErr
-				}
-				return stored.write(context.WithoutCancel(ctx), enc)
-			}
-			return stored.bind(amazongamessvc.NewAdapter(amazonClient, plain, onUserData)), nil
-
-		case "humble-bundle":
-			if cfg.StorefrontCredentials == nil {
-				return nil, tasks.ErrCredentials
-			}
-			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
-			if err != nil {
-				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: humble-bundle decrypt failed", logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryAuth))
-				return nil, tasks.ErrCredentials
-			}
-			var creds struct {
-				SessionCookie string `json:"session_cookie"`
-			}
-			if err := json.Unmarshal(plain, &creds); err != nil {
-				return nil, tasks.ErrCredentials
-			}
-			return boundToCredentials(humblesvc.NewAdapter(humblesvc.NewClient(), creds.SessionCookie), *cfg.StorefrontCredentials), nil
-
-		default:
-			return nil, fmt.Errorf("unknown storefront: %s", storefront)
-		}
-	}
-}
-
 // buildStoreLinkResolverFactory returns a factory the store-link enrichment item
 // worker uses to build a per-storefront resolver. Steam/GOG/Epic resolution is
 // credential-free (public endpoints / a copied appid); only PSN needs the user's
 // decrypted NPSSO token.
 func buildStoreLinkResolverFactory(db *bun.DB, encrypter *crypto.Encrypter) func(context.Context, string, string) (storelink.Resolver, error) {
-	return func(ctx context.Context, storefront, userID string) (storelink.Resolver, error) {
-		switch storefront {
+	return func(ctx context.Context, sf, userID string) (storelink.Resolver, error) {
+		switch sf {
 		case "steam":
 			return storelink.NewSteamResolver(), nil
 		case "gog":
@@ -786,15 +637,13 @@ func buildStoreLinkResolverFactory(db *bun.DB, encrypter *crypto.Encrypter) func
 			if err != nil {
 				return nil, fmt.Errorf("decrypt psn creds: %w", err)
 			}
-			var creds struct {
-				NPSSOToken string `json:"npsso_token"`
-			}
+			var creds storefront.PlayStationStoreCredentials
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, fmt.Errorf("parse psn creds: %w", err)
 			}
 			return storelink.NewPSNResolver(playstationstoresvc.NewClient(), creds.NPSSOToken), nil
 		default:
-			return nil, fmt.Errorf("unknown storefront: %s", storefront)
+			return nil, fmt.Errorf("unknown storefront: %s", sf)
 		}
 	}
 }

@@ -67,6 +67,10 @@ Handing a Job's failed items back to a worker. Retrying reopens a completed Job 
 A Job that brings the library of one connected Storefront into the Collection, Acquiring the Games found there. It runs on the Storefront's schedule or when the user asks.
 _Avoid_: service (the Storefront you connect), refresh, import (a one-off from a file)
 
+**Connection**:
+A user's stored sign-in to a Storefront, made when the user connects it. A Sync needs one; disconnecting removes it.
+_Avoid_: credentials (what a Connection stores), account, integration
+
 **External game**:
 A game as it appears in a connected storefront's library, matched to at most one IGDB game.
 _Avoid_: storefront game
