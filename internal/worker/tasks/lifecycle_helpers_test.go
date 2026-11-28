@@ -9,6 +9,7 @@ import (
 	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 	"github.com/riverqueue/river/rivertype"
 
+	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -58,16 +59,16 @@ func riverJob[T river.JobArgs](riverJobID int64, attempt int, args T) *river.Job
 	return &river.Job[T]{JobRow: &rivertype.JobRow{ID: riverJobID, Attempt: attempt, MaxAttempts: 5}, Args: args}
 }
 
-func jobStatus(t *testing.T, jobID string) string {
+func jobStatus(t *testing.T, jobID string) models.JobStatus {
 	t.Helper()
-	var s string
+	var s models.JobStatus
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(context.Background(), &s); err != nil {
 		t.Fatalf("job status: %v", err)
 	}
 	return s
 }
 
-func itemStatus(t *testing.T, itemID string) (status string, msg *string) {
+func itemStatus(t *testing.T, itemID string) (status models.JobItemStatus, msg *string) {
 	t.Helper()
 	if err := testDB.NewRaw(`SELECT status, error_message FROM job_items WHERE id = ?`, itemID).Scan(context.Background(), &status, &msg); err != nil {
 		t.Fatalf("item status: %v", err)

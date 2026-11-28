@@ -312,7 +312,7 @@ func TestMetadataRefreshItem_Success(t *testing.T) {
 
 	var jobID string
 	_ = testDB.NewRaw(`SELECT job_id FROM job_items WHERE id = ?`, itemID).Scan(ctx, &jobID)
-	var jobStatus string
+	var jobStatus models.JobStatus
 	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
 	if jobStatus != models.JobStatusCompleted {
 		t.Errorf("job status: want completed, got %s", jobStatus)
@@ -400,7 +400,7 @@ func TestMetadataRefreshItem_Failures(t *testing.T) {
 			if tc.checkJobCompleted {
 				var jobID string
 				_ = testDB.NewRaw(`SELECT job_id FROM job_items WHERE id = ?`, itemID).Scan(ctx, &jobID)
-				var jobStatus string
+				var jobStatus models.JobStatus
 				_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
 				if jobStatus != models.JobStatusCompleted {
 					t.Errorf("job status: want completed, got %s", jobStatus)
@@ -660,7 +660,7 @@ func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
 	})
 	_ = w.Work(ctx, riverJob(itemOwner(t, itemID1), 1, tasks.MetadataRefreshItemArgs{JobItemID: itemID1}))
 
-	var jobStatus string
+	var jobStatus models.JobStatus
 	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
 	if jobStatus != models.JobStatusProcessing {
 		t.Errorf("after first item: job status want processing, got %s", jobStatus)

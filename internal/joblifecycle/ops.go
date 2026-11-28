@@ -34,7 +34,7 @@ type Created struct {
 	Created bool
 }
 
-func (nj NewJob) row(status string, dispatchComplete bool) *models.Job {
+func (nj NewJob) row(status models.JobStatus, dispatchComplete bool) *models.Job {
 	id := nj.ID
 	if id == "" {
 		id = uuid.NewString()
@@ -310,9 +310,9 @@ func (m *Module) MarkDispatched(ctx context.Context, jobID string, riverJobID in
 // or the refusal it would get. A worker can stop before expensive work.
 func (m *Module) Owns(ctx context.Context, itemID string, riverJobID int64) error {
 	var row struct {
-		ItemStatus string `bun:"item_status"`
-		RiverJobID *int64 `bun:"river_job_id"`
-		JobStatus  string `bun:"job_status"`
+		ItemStatus models.JobItemStatus `bun:"item_status"`
+		RiverJobID *int64               `bun:"river_job_id"`
+		JobStatus  models.JobStatus     `bun:"job_status"`
 	}
 	err := m.db.NewRaw(
 		`SELECT ji.status AS item_status, ji.river_job_id, j.status AS job_status
@@ -335,8 +335,8 @@ func (m *Module) Owns(ctx context.Context, itemID string, riverJobID int64) erro
 
 // ItemResult is how an item ended.
 type ItemResult struct {
-	Status  string // completed, failed or skipped
-	Message string // the error message of a failed item
+	Status  models.JobItemStatus // completed, failed or skipped
+	Message string               // the error message of a failed item
 	// Own is the caller's own write recording the outcome (invariant 8). A
 	// non-nil result it returns is stored as the item's result.
 	Own func(ctx context.Context, tx bun.Tx) (result json.RawMessage, err error)
@@ -403,7 +403,7 @@ func (m *Module) EndItem(ctx context.Context, itemID string, riverJobID int64, r
 }
 
 // endItem writes an item's ended status and clears its owner.
-func (m *Module) endItem(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, item *models.JobItem, status, msg string, result json.RawMessage) error {
+func (m *Module) endItem(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, item *models.JobItem, status models.JobItemStatus, msg string, result json.RawMessage) error {
 	now := time.Now().UTC()
 	var errMsg *string
 	if status == models.JobItemStatusFailed {
@@ -503,7 +503,7 @@ func (m *Module) Cancel(ctx context.Context, jobID string) error {
 // endJob moves an active Job to failed or cancelled: River jobs first (so
 // the item owners are still recorded), then the items, then the Job. It
 // reports whether this is the Job's first ending.
-func (m *Module) endJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, status, msg string, except int64) (bool, error) {
+func (m *Module) endJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, status models.JobStatus, msg string, except int64) (bool, error) {
 	if err := m.cancelJobRiverJobs(ctx, tx, k, job.ID, except); err != nil {
 		return false, err
 	}

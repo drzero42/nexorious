@@ -1721,7 +1721,7 @@ func TestDispatchSync_Success_ClearsCredentialsFlag(t *testing.T) {
 // dispatch done and one pending item per status in pending (owned by a fake
 // River job) plus the given ended or in-review items. It returns the Job id
 // and the pending items' ids.
-func syncCompletionFixture(t *testing.T, storefront string, dispatchComplete bool, pending int, others ...string) (userID, jobID string, pendingIDs []string) {
+func syncCompletionFixture(t *testing.T, storefront string, dispatchComplete bool, pending int, others ...models.JobItemStatus) (userID, jobID string, pendingIDs []string) {
 	t.Helper()
 	ctx := context.Background()
 	userID, jobID = uuid.NewString(), uuid.NewString()
@@ -1733,7 +1733,7 @@ func syncCompletionFixture(t *testing.T, storefront string, dispatchComplete boo
 	); err != nil {
 		t.Fatalf("insert job: %v", err)
 	}
-	insert := func(status string, owner any) string {
+	insert := func(status models.JobItemStatus, owner any) string {
 		id := uuid.NewString()
 		if _, err := testDB.ExecContext(ctx,
 			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, river_job_id, created_at)
@@ -1753,7 +1753,7 @@ func syncCompletionFixture(t *testing.T, storefront string, dispatchComplete boo
 	return userID, jobID, pendingIDs
 }
 
-func endSyncItem(t *testing.T, lc *joblifecycle.Module, itemID, status string) {
+func endSyncItem(t *testing.T, lc *joblifecycle.Module, itemID string, status models.JobItemStatus) {
 	t.Helper()
 	if err := lc.EndItem(context.Background(), itemID, itemOwner(t, itemID), joblifecycle.ItemResult{Status: status, Message: "boom"}); err != nil {
 		t.Fatalf("end item: %v", err)

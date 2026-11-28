@@ -73,7 +73,7 @@ func (m *Module) evaluate(ctx context.Context, tx bun.Tx, st *txState, k *Kind, 
 }
 
 // observeJob queues the observer's per-Job call for after the commit.
-func (m *Module) observeJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, outcome string) error {
+func (m *Module) observeJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind, job *models.Job, outcome models.JobStatus) error {
 	if k.Observer == nil {
 		return nil
 	}

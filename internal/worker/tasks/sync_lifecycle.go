@@ -62,11 +62,11 @@ type syncFailure struct {
 // outcome on its first ending. A cancelled sync records no outcome.
 type syncObserver struct{}
 
-func (syncObserver) ItemEnded(ctx context.Context, job models.Job, status string) {
-	observability.RecordSyncItems(ctx, job.Source, status, 1)
+func (syncObserver) ItemEnded(ctx context.Context, job models.Job, status models.JobItemStatus) {
+	observability.RecordSyncItems(ctx, job.Source, string(status), 1)
 }
 
-func (syncObserver) JobEnded(ctx context.Context, job models.Job, outcome string, failedItems int) {
+func (syncObserver) JobEnded(ctx context.Context, job models.Job, outcome models.JobStatus, failedItems int) {
 	switch outcome {
 	case models.JobStatusFailed:
 		observability.RecordSyncOutcome(ctx, job.Source, "failed")
@@ -223,7 +223,7 @@ func emitAll(ctx context.Context, db *bun.DB, events ...notify.EmitParams) error
 // caller joins previous_job (with the store's user_id and source) and cfg, and
 // binds credentialsErrorMessage.
 const outageFailure = `previous_job.job_type = '` + models.JobTypeSync + `'
-	AND previous_job.status = '` + models.JobStatusFailed + `'
+	AND previous_job.status = '` + string(models.JobStatusFailed) + `'
 	AND previous_job.error_message IS DISTINCT FROM ?
 	AND (cfg.last_fetched_at IS NULL OR previous_job.completed_at > cfg.last_fetched_at)`
 

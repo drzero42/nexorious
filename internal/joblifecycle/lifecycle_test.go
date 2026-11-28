@@ -31,19 +31,19 @@ func (fakeItemArgs) Kind() string { return "fake_item" }
 
 type recorder struct {
 	mu          sync.Mutex
-	itemCalls   []string
-	jobCalls    []string
+	itemCalls   []models.JobItemStatus
+	jobCalls    []models.JobStatus
 	effects     []Effect
 	effectsFail error
 }
 
-func (r *recorder) ItemEnded(_ context.Context, _ models.Job, status string) {
+func (r *recorder) ItemEnded(_ context.Context, _ models.Job, status models.JobItemStatus) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.itemCalls = append(r.itemCalls, status)
 }
 
-func (r *recorder) JobEnded(_ context.Context, _ models.Job, outcome string, _ int) {
+func (r *recorder) JobEnded(_ context.Context, _ models.Job, outcome models.JobStatus, _ int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.jobCalls = append(r.jobCalls, outcome)
@@ -163,7 +163,7 @@ func mustCreateWithItems(t *testing.T, m *Module, user string, n int) (string, [
 	return c.JobID, loadItems(t, c.JobID)
 }
 
-func end(t *testing.T, m *Module, it models.JobItem, status string) {
+func end(t *testing.T, m *Module, it models.JobItem, status models.JobItemStatus) {
 	t.Helper()
 	if err := m.EndItem(context.Background(), it.ID, *it.RiverJobID, ItemResult{Status: status, Message: "boom"}); err != nil {
 		t.Fatalf("EndItem: %v", err)
@@ -651,7 +651,7 @@ func TestRecoveryItems(t *testing.T) {
 		t.Fatalf("result = %+v, want 2 failed, 2 re-queued", res)
 	}
 	got := loadItems(t, jobID)
-	want := []string{models.JobItemStatusPending, models.JobItemStatusFailed, models.JobItemStatusFailed, models.JobItemStatusPending, models.JobItemStatusPending}
+	want := []models.JobItemStatus{models.JobItemStatusPending, models.JobItemStatusFailed, models.JobItemStatusFailed, models.JobItemStatusPending, models.JobItemStatusPending}
 	for i, it := range got {
 		if it.Status != want[i] {
 			t.Errorf("item %d = %s, want %s", i, it.Status, want[i])
@@ -725,7 +725,7 @@ func TestRecoveryDispatch(t *testing.T) {
 	if res.Failed != 2 || res.Requeued != 1 {
 		t.Fatalf("result = %+v", res)
 	}
-	for id, want := range map[string]string{discarded: "failed", noDone: "failed", lost: "pending", unrecorded: "pending", live: "pending"} {
+	for id, want := range map[string]models.JobStatus{discarded: "failed", noDone: "failed", lost: "pending", unrecorded: "pending", live: "pending"} {
 		if s := loadJob(t, id).Status; s != want {
 			t.Errorf("job %s = %s, want %s", id, s, want)
 		}

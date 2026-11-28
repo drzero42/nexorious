@@ -33,29 +33,29 @@ const syncNewestItemJoin = `
 // active Job (an older Job that "retry failed" reopened: it blocks new syncs
 // until the game is reviewed).
 const syncNeedsReview = `(
-	COALESCE(ni.status = '` + models.JobItemStatusPendingReview + `'
+	COALESCE(ni.status = '` + string(models.JobItemStatusPendingReview) + `'
 	         AND (eg.library_written_at IS NULL OR eg.library_written_at < ni.created_at), false)
 	OR EXISTS (
 		SELECT 1 FROM job_items r JOIN jobs rj ON rj.id = r.job_id
-		WHERE r.external_game_id = eg.id AND r.status = '` + models.JobItemStatusPendingReview + `'
-		  AND rj.status IN ('` + models.JobStatusPending + `', '` + models.JobStatusProcessing + `')))`
+		WHERE r.external_game_id = eg.id AND r.status = '` + string(models.JobItemStatusPendingReview) + `'
+		  AND rj.status IN ('` + string(models.JobStatusPending) + `', '` + string(models.JobStatusProcessing) + `')))`
 
 // syncFailed: the newest item failed and no write happened since.
-const syncFailed = `COALESCE(ni.status = '` + models.JobItemStatusFailed + `'
+const syncFailed = `COALESCE(ni.status = '` + string(models.JobItemStatusFailed) + `'
 	AND (eg.library_written_at IS NULL OR eg.library_written_at < COALESCE(ni.processed_at, ni.created_at)), false)`
 
 // syncRetryable: the game shows as failed and Retry could work: the newest
 // item's Job is active or completed. Retry never reopens a failed or
 // cancelled Job, so the view offers no retry there.
 const syncRetryable = `(` + syncFailed + ` AND NOT ` + syncNeedsReview + `
-	AND COALESCE(nj.status IN ('` + models.JobStatusPending + `', '` + models.JobStatusProcessing + `', '` +
-	models.JobStatusCompleted + `'), false))`
+	AND COALESCE(nj.status IN ('` + string(models.JobStatusPending) + `', '` + string(models.JobStatusProcessing) + `', '` +
+	string(models.JobStatusCompleted) + `'), false))`
 
 // syncInFlight: the newest item is pending in an active Job, so a sync worker
 // still acts on it. No item is open in an ended Job (the lifecycle
 // module cancels them with it).
-const syncInFlight = `COALESCE(ni.status IN ('` + models.JobItemStatusPending + `', '` + models.JobItemStatusProcessing + `')
-	AND nj.status IN ('` + models.JobStatusPending + `', '` + models.JobStatusProcessing + `'), false)`
+const syncInFlight = `COALESCE(ni.status IN ('` + string(models.JobItemStatusPending) + `', '` + string(models.JobItemStatusProcessing) + `')
+	AND nj.status IN ('` + string(models.JobStatusPending) + `', '` + string(models.JobStatusProcessing) + `'), false)`
 
 // syncRepresentativeOrder orders the editions of a set (External games aliased
 // a) so that the first is the set's representative: the oldest edition still

@@ -33,7 +33,7 @@ func (m *Module) CompleteItems(ctx context.Context, jobID string, sel Selector) 
 	return m.endSelected(ctx, "complete_items", jobID, models.JobItemStatusCompleted, sel)
 }
 
-func (m *Module) endSelected(ctx context.Context, op, jobID, status string, sel Selector) (int, error) {
+func (m *Module) endSelected(ctx context.Context, op, jobID string, status models.JobItemStatus, sel Selector) (int, error) {
 	var n int
 	err := m.run(ctx, op, func(ctx context.Context, tx bun.Tx, st *txState) error {
 		n = 0

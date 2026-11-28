@@ -57,9 +57,9 @@ func openItemJobs(ctx context.Context, db bun.IDB, userID, id, cond string) ([]s
 
 // OpenItem is an open item of a set of editions in one Job.
 type OpenItem struct {
-	ID             string `bun:"id"`
-	ExternalGameID string `bun:"external_game_id"`
-	Status         string `bun:"status"`
+	ID             string               `bun:"id"`
+	ExternalGameID string               `bun:"external_game_id"`
+	Status         models.JobItemStatus `bun:"status"`
 }
 
 // EditionsOpenItems returns the open items (pending or in Pending review) of

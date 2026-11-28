@@ -59,8 +59,8 @@ func lifecycleHTTPError(ctx context.Context, err error, what string) error {
 // pools item is not a game, so it is left out, as in the item listing.
 func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[string]any, error) {
 	type statusCount struct {
-		Status string `bun:"status"`
-		Count  int    `bun:"count"`
+		Status models.JobItemStatus `bun:"status"`
+		Count  int                  `bun:"count"`
 	}
 	var counts []statusCount
 	if err := h.db.NewRaw(`
@@ -73,7 +73,7 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[stri
 		return nil, err
 	}
 
-	m := map[string]int{
+	m := map[models.JobItemStatus]int{
 		models.JobItemStatusPending: 0, models.JobItemStatusProcessing: 0, models.JobItemStatusCompleted: 0,
 		models.JobItemStatusPendingReview: 0, models.JobItemStatusSkipped: 0, models.JobItemStatusFailed: 0,
 		models.JobItemStatusCancelled: 0,
@@ -653,7 +653,7 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 		perPage = 100
 	}
 
-	statusParam := c.QueryParam("status")
+	statusParam := models.JobItemStatus(c.QueryParam("status"))
 
 	q := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID).Where("item_key <> ?", tasks.PoolsItemKey)
 	countQ := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID).Where("item_key <> ?", tasks.PoolsItemKey)

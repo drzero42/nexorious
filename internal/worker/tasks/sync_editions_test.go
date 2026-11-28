@@ -77,7 +77,7 @@ func edEnsureGame(t *testing.T, igdbID int32) {
 	}
 }
 
-func edInsertJob(t *testing.T, userID, status string, dispatchComplete bool) string {
+func edInsertJob(t *testing.T, userID string, status models.JobStatus, dispatchComplete bool) string {
 	t.Helper()
 	id := uuid.NewString()
 	if _, err := testDB.NewRaw(
@@ -90,7 +90,7 @@ func edInsertJob(t *testing.T, userID, status string, dispatchComplete bool) str
 	return id
 }
 
-func edInsertItem(t *testing.T, jobID, userID, egID, status string) string {
+func edInsertItem(t *testing.T, jobID, userID, egID string, status models.JobItemStatus) string {
 	t.Helper()
 	id := uuid.NewString()
 	if _, err := testDB.NewRaw(
@@ -155,11 +155,11 @@ func edGet(t *testing.T, userID, extID string) (string, edEG) {
 	return row.ID, row.edEG
 }
 
-func edItemStatus(t *testing.T, itemID string) (status string, msg *string) {
+func edItemStatus(t *testing.T, itemID string) (status models.JobItemStatus, msg *string) {
 	t.Helper()
 	var row struct {
-		Status string  `bun:"status"`
-		Msg    *string `bun:"error_message"`
+		Status models.JobItemStatus `bun:"status"`
+		Msg    *string              `bun:"error_message"`
 	}
 	if err := testDB.NewRaw(`SELECT status, error_message FROM job_items WHERE id = ?`, itemID).Scan(context.Background(), &row); err != nil {
 		t.Fatalf("load item: %v", err)
@@ -176,9 +176,9 @@ func edItemsFor(t *testing.T, jobID, egID string) []string {
 	return ids
 }
 
-func edJobStatus(t *testing.T, jobID string) string {
+func edJobStatus(t *testing.T, jobID string) models.JobStatus {
 	t.Helper()
-	var s string
+	var s models.JobStatus
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(context.Background(), &s); err != nil {
 		t.Fatalf("load job: %v", err)
 	}
@@ -208,8 +208,8 @@ func edCount(t *testing.T, q string, args ...any) int {
 // ── The status guard ──────────────────────────────────────────────────────────
 
 func TestSyncItemWorkers_ItemNotPending_WritesNothing(t *testing.T) {
-	for _, status := range []string{"completed", "failed", "skipped", "cancelled", "pending_review"} {
-		t.Run(status, func(t *testing.T) {
+	for _, status := range []models.JobItemStatus{"completed", "failed", "skipped", "cancelled", "pending_review"} {
+		t.Run(string(status), func(t *testing.T) {
 			userID := edSetup(t)
 			rc := newTestRiverClient(t)
 			jobID := edInsertJob(t, userID, "processing", true)
