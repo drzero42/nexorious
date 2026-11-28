@@ -3,6 +3,8 @@ package externalgame
 import (
 	"context"
 	"testing"
+
+	"github.com/drzero42/nexorious/internal/enum"
 )
 
 func TestSeen_WritesAchievementsOnTheFirstPlatformOnly(t *testing.T) {
@@ -81,5 +83,37 @@ func TestSeen_KnownGameKeepsItsMatchAndMetadata(t *testing.T) {
 	}
 	if row.Resolved == nil || *row.Resolved != 1001 || !row.Available || row.Namespace != "ns-1" {
 		t.Errorf("after Seen: match %v, available %v, namespace %q; want 1001, true, ns-1", row.Resolved, row.Available, row.Namespace)
+	}
+}
+
+// A sighting without an ownership status is stored as owned, never as an empty string,
+// which the external_games_ownership_status_check constraint rejects (#1500).
+func TestSeen_EmptyOwnershipStatusIsOwned(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := seedUser(t)
+
+	for _, tc := range []struct {
+		extID string
+		in    enum.OwnershipStatus
+		want  enum.OwnershipStatus
+	}{
+		{"empty", "", enum.OwnershipOwned},
+		{"sub", enum.OwnershipSubscription, enum.OwnershipSubscription},
+	} {
+		id, _, err := Seen(ctx, testDB, Sighting{
+			UserID: userID, Storefront: "steam", ExternalID: tc.extID, Title: "Game",
+			OwnershipStatus: tc.in, Platforms: []string{"pc-windows"},
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.extID, err)
+		}
+		var got enum.OwnershipStatus
+		if err := testDB.NewRaw(`SELECT ownership_status FROM external_games WHERE id = ?`, id).Scan(ctx, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got != tc.want {
+			t.Errorf("%s: ownership_status = %q, want %q", tc.extID, got, tc.want)
+		}
 	}
 }

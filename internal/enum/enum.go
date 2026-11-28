@@ -90,7 +90,10 @@ func BeatenPlayStatusStrings() []string {
 	return playStatusStrings(BeatenPlayStatuses)
 }
 
-// OwnershipStatus represents valid ownership_status values for user_game_platforms.
+// OwnershipStatus represents valid ownership_status values for
+// user_game_platforms and external_games. The *_ownership_status_check
+// constraints on both tables list every value: a new one needs a migration that
+// widens them.
 type OwnershipStatus string
 
 const (

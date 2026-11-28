@@ -15,10 +15,12 @@ import (
 
 // Sighting is one game as a storefront listed it at a sync.
 type Sighting struct {
-	UserID          string
-	Storefront      string
-	ExternalID      string
-	Title           string
+	UserID     string
+	Storefront string
+	ExternalID string
+	Title      string
+	// OwnershipStatus is owned when empty: a storefront sets it only when it
+	// lists the game as something else (e.g. a subscription).
 	OwnershipStatus enum.OwnershipStatus
 	// SourceMetadata is kept as stored when empty.
 	SourceMetadata map[string]string
@@ -35,6 +37,9 @@ type Sighting struct {
 // decision: its match worker takes a same-title game's decision (precedent) or
 // searches. A known game keeps its match and skip and is available again.
 func Seen(ctx context.Context, db bun.IDB, s Sighting) (id string, skipped bool, err error) {
+	if s.OwnershipStatus == "" {
+		s.OwnershipStatus = enum.OwnershipOwned
+	}
 	var row struct {
 		ID        string `bun:"id"`
 		IsSkipped bool   `bun:"is_skipped"`
