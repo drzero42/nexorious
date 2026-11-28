@@ -138,10 +138,10 @@ func (c *Connections) Load(ctx context.Context, userID, storefront string) (Load
 // Status is a Connection as its status route reports it.
 type Status struct {
 	Connected bool // a sign-in is stored
-	// Unreadable: the stored sign-in does not decrypt. CredentialsError is
-	// set too, and Account is empty.
-	Unreadable       bool
-	CredentialsError bool // the sign-in is unreadable, or a sync flagged it
+	// Undecryptable: the stored sign-in does not decrypt. CredentialsError
+	// is set too, and Account is empty.
+	Undecryptable    bool
+	CredentialsError bool // the sign-in does not decrypt, or a sync flagged it
 	// Account is the account's display name, where the storefront stores
 	// one; empty otherwise.
 	Account string
@@ -167,7 +167,7 @@ func (c *Connections) Status(ctx context.Context, userID, storefront string) (St
 		return Status{}, nil
 	}
 	if loaded.Plaintext == nil {
-		return Status{Connected: true, Unreadable: true, CredentialsError: true}, nil
+		return Status{Connected: true, Undecryptable: true, CredentialsError: true}, nil
 	}
 	st := Status{Connected: true, CredentialsError: loaded.CredentialsError}
 	if def.account != nil {

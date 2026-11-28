@@ -423,6 +423,42 @@ func TestSteamConnect_StubSuccess(t *testing.T) {
 	}
 }
 
+// Each way Steam rejects a sign-in answers 200 with valid false and its error
+// code; nexctl and the frontend read the code.
+func TestSteamConnect_RejectionCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		stub *stubSteamClient
+		want string
+	}{
+		{"private profile", &stubSteamClient{summary: &steamsvc.SteamPlayerSummary{PersonaName: "Ana", CommunityVisibilityState: 1}}, "private_profile"},
+		{"no such player", &stubSteamClient{}, "invalid_steam_id"},
+		{"rate limited", &stubSteamClient{err: steamsvc.ErrRateLimited}, "rate_limited"},
+		{"steam unreachable", &stubSteamClient{err: errors.New("dial tcp: timeout")}, "network_error"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			e := newSyncTestApp(t, testDB, tc.stub, &stubPlaystationStoreClient{})
+			_, token := setupTagUser(t, testDB, e, "sv-reject")
+
+			rec := putJSONAuth(t, e, "/api/sync/steam/connection", map[string]any{
+				"steam_id":    "76561198012345678",
+				"web_api_key": "AABBCCDD00112233445566778899AABB",
+			}, token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			var resp map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal resp: %v", err)
+			}
+			if resp["valid"] != false || resp["error"] != tc.want {
+				t.Fatalf("got valid=%v error=%v, want valid=false error=%s", resp["valid"], resp["error"], tc.want)
+			}
+		})
+	}
+}
+
 func TestSteamDisconnect_Idempotent(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})

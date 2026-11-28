@@ -338,8 +338,8 @@ func (h *SyncHandler) disconnectStorefront(c *echo.Context, sf string) error {
 // serveConnectionStatus is the shared handler body for the GET
 // /sync/<sf>/connection endpoints: authenticate, load the Connection's status,
 // and respond with the storefront-specific shape. notConnected and
-// credentialsError are the fixed responses for no stored sign-in and an
-// unreadable one; respond builds the response for a readable one. A stored
+// credentialsError are the fixed responses for no stored sign-in and one that
+// does not decrypt; respond builds the response for the rest. A stored
 // sign-in that does not decode answers 500. Storefronts with extra
 // preconditions (e.g. Epic's legendary-configured check) run them before
 // delegating here.
@@ -351,7 +351,7 @@ func (h *SyncHandler) serveConnectionStatus(c *echo.Context, sf string, notConne
 
 	st, err := h.connections.Status(c.Request().Context(), userID, sf)
 	if errors.Is(err, storefront.ErrUndecodable) {
-		slog.ErrorContext(c.Request().Context(), sf+": stored credentials are corrupted", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(c.Request().Context(), "sync: stored credentials are corrupted", logging.KeyErr, err, logging.KeySource, sf, logging.Cat(logging.CategoryValidation))
 		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
 	}
 	if err != nil {
@@ -361,7 +361,7 @@ func (h *SyncHandler) serveConnectionStatus(c *echo.Context, sf string, notConne
 	if !st.Connected {
 		return c.JSON(http.StatusOK, notConnected)
 	}
-	if st.Unreadable {
+	if st.Undecryptable {
 		return c.JSON(http.StatusOK, credentialsError)
 	}
 	return c.JSON(http.StatusOK, respond(st))
@@ -615,7 +615,7 @@ func (h *SyncHandler) HandleSteamConnect(c *echo.Context) error {
 	if err != nil {
 		code, ok := steamConnectErrorCode(err)
 		if !ok {
-			slog.ErrorContext(c.Request().Context(), "sync: persist steam credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			slog.ErrorContext(c.Request().Context(), "sync: persist steam credentials failed", logging.KeyErr, err, logging.KeySource, "steam", logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Steam connection")
 		}
 		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: &code})

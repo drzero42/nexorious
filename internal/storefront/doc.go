@@ -33,11 +33,9 @@
 // also clears credentials_error, so a reconnect heals a sign-in a sync found
 // expired. Load hands back the sign-in decrypted.
 //
-// The registry holds one definition per storefront, in the order the sync
-// API lists them (Slugs).
-//
-// Connections.AdapterFactory builds a storefront's library adapter from a
-// stored Connection, through a registry with one definition per storefront.
+// A registry holds one definition per storefront, in the order the sync API
+// lists them (Slugs). Through it, Connections.AdapterFactory builds a
+// storefront's library adapter from a stored Connection.
 // A missing, undecryptable or undecodable sign-in gives
 // storefrontadapter.ErrCredentials. A sign-in the sync refreshed (GOG's
 // refresh token, Epic's snapshot, Amazon's user data) is saved only while the

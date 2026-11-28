@@ -3,7 +3,6 @@ package storefront
 import (
 	"context"
 	"errors"
-	"fmt"
 	"regexp"
 
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
@@ -51,11 +50,13 @@ func (c *Connections) ConnectSteam(ctx context.Context, userID, steamID, webAPIK
 		return "", ErrInvalidSteamAPIKey
 	}
 	summary, err := c.clients.Steam.GetPlayerSummaries(ctx, webAPIKey, steamID)
+	// Only the sentinels are returned: Steam's errors can carry the request
+	// URL, and with it the Web API key.
 	switch {
 	case errors.Is(err, steamsvc.ErrRateLimited):
-		return "", fmt.Errorf("%w: %w", ErrSteamRateLimited, err)
+		return "", ErrSteamRateLimited
 	case err != nil:
-		return "", fmt.Errorf("%w: %w", ErrSteamUnavailable, err)
+		return "", ErrSteamUnavailable
 	case summary == nil:
 		return "", ErrInvalidSteamID
 	case summary.CommunityVisibilityState != steamCommunityVisibilityPublic:

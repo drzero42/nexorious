@@ -53,7 +53,7 @@ func TestStatusStates(t *testing.T) {
 		}
 	})
 
-	t.Run("a sign-in that does not decrypt is unreadable", func(t *testing.T) {
+	t.Run("a sign-in that does not decrypt is undecryptable", func(t *testing.T) {
 		truncateAllTables(t)
 		userID := seedUser(t)
 		seedStoredSignIn(t, userID, "steam", "enc:v1:not-ciphertext")
@@ -61,7 +61,7 @@ func TestStatusStates(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := (Status{Connected: true, Unreadable: true, CredentialsError: true}); st != want {
+		if want := (Status{Connected: true, Undecryptable: true, CredentialsError: true}); st != want {
 			t.Errorf("status = %+v, want %+v", st, want)
 		}
 	})

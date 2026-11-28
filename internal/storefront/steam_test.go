@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
@@ -43,7 +44,7 @@ func TestConnectSteamRejects(t *testing.T) {
 		{name: "no such player", steamID: validSteamID, key: validSteamKey, client: fakeSteamClient{}, want: ErrInvalidSteamID, wantCalls: 1},
 		{name: "profile is private", steamID: validSteamID, key: validSteamKey, client: fakeSteamClient{summary: &steamsvc.SteamPlayerSummary{PersonaName: "Ana", CommunityVisibilityState: 1}}, want: ErrSteamPrivateProfile, wantCalls: 1},
 		{name: "rate limited", steamID: validSteamID, key: validSteamKey, client: fakeSteamClient{err: fmt.Errorf("get summaries: %w", steamsvc.ErrRateLimited)}, want: ErrSteamRateLimited, wantCalls: 1},
-		{name: "steam unreachable", steamID: validSteamID, key: validSteamKey, client: fakeSteamClient{err: errors.New("dial tcp: timeout")}, want: ErrSteamUnavailable, wantCalls: 1},
+		{name: "steam unreachable", steamID: validSteamID, key: validSteamKey, client: fakeSteamClient{err: errors.New(`Get "https://api.steampowered.com/?key=` + validSteamKey + `": dial tcp: timeout`)}, want: ErrSteamUnavailable, wantCalls: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			truncateAllTables(t)
@@ -54,6 +55,9 @@ func TestConnectSteamRejects(t *testing.T) {
 			_, err := conns.ConnectSteam(context.Background(), userID, tc.steamID, tc.key)
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+			if strings.Contains(err.Error(), tc.key) {
+				t.Errorf("err %q carries the Web API key", err)
 			}
 			if client.calls != tc.wantCalls {
 				t.Errorf("Steam called %d times, want %d", client.calls, tc.wantCalls)
