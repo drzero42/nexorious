@@ -75,7 +75,7 @@ One line per package: what it owns and the rule that guards it. Where a package 
 - `internal/services/` — IGDB client, storefront clients, game matching, platform resolution.
 - `internal/usergame/` — the **only** place user games are mutated: API, sync and import all call its operations.
 - `internal/externalgame/` — the **only** non-test code that writes `external_games` / `external_game_platforms` or row-locks them, and the one definition of editions (ADR 0008, ADR 0009). Imports neither `internal/joblifecycle`, `internal/worker/tasks` nor `internal/api`; `guard_test.go` enforces the write and import rules, not the locks.
-- `internal/storefront/` — owns a storefront Connection (`user_sync_configs.storefront_credentials`): its stored shape, storing and loading it, and building the library adapter from it (ADR 0010). Read and write the stored sign-in through it. Imports neither `internal/api`, `internal/worker/tasks` nor `internal/joblifecycle`.
+- `internal/storefront/` — owns a storefront Connection (`user_sync_configs.storefront_credentials`): its stored shape, connecting and disconnecting it, storing and loading it, and building the library adapter from it (ADR 0010). Read and write the stored sign-in through it. Imports neither `internal/api`, `internal/worker/tasks` nor `internal/joblifecycle`.
 - `internal/librarysmells/` — library health: the Checks and their fixes, which go through `internal/usergame`.
 - `internal/auth/` — session + API-key auth. A read-scoped key may only use non-mutating methods; the exemptions are the lists in `scope.go`.
 - `internal/dbrole/` — keeps the app's DB role unprivileged.

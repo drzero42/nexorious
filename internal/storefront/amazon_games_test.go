@@ -23,6 +23,18 @@ type fakeAmazonLibrary struct {
 
 func (f *fakeAmazonLibrary) Configured() bool { return true }
 
+func (f *fakeAmazonLibrary) LoginURL(context.Context) (*amazongamessvc.Login, error) {
+	return nil, errors.New("not used by a sync")
+}
+
+func (f *fakeAmazonLibrary) Register(context.Context, string, amazongamessvc.Login) (*amazongamessvc.Account, json.RawMessage, error) {
+	return nil, nil, errors.New("not used by a sync")
+}
+
+func (f *fakeAmazonLibrary) Logout(context.Context, json.RawMessage) error {
+	return errors.New("not used by a sync")
+}
+
 func (f *fakeAmazonLibrary) Library(context.Context, json.RawMessage) ([]amazongamessvc.Entitlement, json.RawMessage, error) {
 	if f.during != nil {
 		f.during()
@@ -74,7 +86,7 @@ func storedAmazonUserData(t *testing.T, enc *crypto.Encrypter, userID string) st
 	return string(plain)
 }
 
-func runAmazonFactory(t *testing.T, enc *crypto.Encrypter, cfg models.UserSyncConfig, lib amazongamessvc.LibraryClient) error {
+func runAmazonFactory(t *testing.T, enc *crypto.Encrypter, cfg models.UserSyncConfig, lib AmazonGamesClient) error {
 	t.Helper()
 	factory := NewConnections(testDB, enc, Clients{Epic: epicgamesstoresvc.NewClient(""), Amazon: lib}).AdapterFactory()
 	adapter, err := factory(context.Background(), "amazon-games", cfg)

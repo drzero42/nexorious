@@ -84,27 +84,27 @@ func TestStore_ClearsCredentialsError(t *testing.T) {
 	}
 }
 
-// Take returns the sign-in it removed, once.
+// take returns the sign-in it removed, once.
 func TestTake(t *testing.T) {
 	truncateAllTables(t)
 	userID := seedUser(t)
 	conns := NewConnections(testDB, testEncrypter(t), Clients{})
 	ctx := context.Background()
-	if removed, err := conns.Take(ctx, userID, "amazon-games"); err != nil || removed != nil {
+	if removed, err := conns.take(ctx, userID, "amazon-games"); err != nil || removed != nil {
 		t.Fatalf("take with nothing stored = %v, %v; want nil, nil", removed, err)
 	}
 	if err := conns.Store(ctx, userID, "amazon-games", json.RawMessage(amazonOldUserData)); err != nil {
 		t.Fatal(err)
 	}
 	stored := storedSignIn(t, userID, "amazon-games")
-	removed, err := conns.Take(ctx, userID, "amazon-games")
+	removed, err := conns.take(ctx, userID, "amazon-games")
 	if err != nil || removed == nil || *removed != stored {
 		t.Fatalf("take = %v, %v; want the stored sign-in", removed, err)
 	}
 	if loaded, err := conns.Load(ctx, userID, "amazon-games"); err != nil || loaded.Connected {
 		t.Errorf("after take loaded = %+v, err = %v; want not connected", loaded, err)
 	}
-	if removed, err := conns.Take(ctx, userID, "amazon-games"); err != nil || removed != nil {
+	if removed, err := conns.take(ctx, userID, "amazon-games"); err != nil || removed != nil {
 		t.Errorf("second take = %v, %v; want nil, nil", removed, err)
 	}
 }

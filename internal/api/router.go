@@ -1,8 +1,6 @@
 package api
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -545,21 +543,19 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 		// Sync routes (all auth-protected)
 		steamSvc := steamsvc.NewClient()
-		epicSvc := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 		synch := NewSyncHandler(SyncDeps{
-			Encrypter: encrypter,
 			DB:        db,
 			River:     riverClient,
 			Lifecycle: lifecycle,
 			Connections: storefront.NewConnections(db, encrypter, storefront.Clients{
 				Steam:            steamSvc,
 				PlayStationStore: playstationstoresvc.NewClient(),
+				Epic:             epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir),
 				GOG:              gogsvc.NewClient(),
 				HumbleBundle:     humblesvc.NewClient(),
+				Amazon:           amazongamessvc.NewClient(),
 			}),
-			EpicGamesStore: &epicGamesStoreClientAdapter{c: epicSvc},
-			AmazonGames:    &amazonGamesClientAdapter{c: amazongamessvc.NewClient()},
-			IGDB:           igdbClient,
+			IGDB: igdbClient,
 		})
 		syncGroup := e.Group("/api/sync", auth.AuthMiddleware(db))
 		synch.RegisterRoutes(syncGroup)
@@ -578,56 +574,6 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 	// SPA catch-all — serves ui.UIBox; falls back to index.html
 	e.GET("/*", spaHandler())
-}
-
-// epicGamesStoreClientAdapter bridges epicgamesstoresvc.Client to the EpicGamesStoreClient interface
-// without creating an import cycle between internal/api and internal/services/epicgamesstore.
-type epicGamesStoreClientAdapter struct{ c *epicgamesstoresvc.Client }
-
-func (a *epicGamesStoreClientAdapter) Authenticate(ctx context.Context, _, authCode string) (*EpicGamesStoreAccountInfo, map[string]string, error) {
-	info, snapshot, err := a.c.Authenticate(ctx, authCode)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &EpicGamesStoreAccountInfo{DisplayName: info.DisplayName, AccountID: info.AccountID}, snapshot, nil
-}
-
-func (a *epicGamesStoreClientAdapter) Cleanup(ctx context.Context, userID string) error {
-	return a.c.Cleanup(ctx, userID)
-}
-
-func (a *epicGamesStoreClientAdapter) Configured() bool {
-	return a.c.Configured()
-}
-
-// amazonGamesClientAdapter bridges amazongamessvc.Client to the AmazonGamesClient interface
-// without creating an import cycle between internal/api and internal/services/amazongames.
-type amazonGamesClientAdapter struct{ c *amazongamessvc.Client }
-
-func (a *amazonGamesClientAdapter) Configured() bool {
-	return a.c.Configured()
-}
-
-func (a *amazonGamesClientAdapter) LoginURL(ctx context.Context) (*AmazonGamesLogin, error) {
-	l, err := a.c.LoginURL(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &AmazonGamesLogin{URL: l.URL, ClientID: l.ClientID, CodeVerifier: l.CodeVerifier, Serial: l.Serial}, nil
-}
-
-func (a *amazonGamesClientAdapter) Register(ctx context.Context, code string, login AmazonGamesLogin) (*AmazonGamesAccount, json.RawMessage, error) {
-	account, userData, err := a.c.Register(ctx, code, amazongamessvc.Login{
-		URL: login.URL, ClientID: login.ClientID, CodeVerifier: login.CodeVerifier, Serial: login.Serial,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return &AmazonGamesAccount{UserID: account.UserID, Name: account.Name}, userData, nil
-}
-
-func (a *amazonGamesClientAdapter) Logout(ctx context.Context, userData json.RawMessage) error {
-	return a.c.Logout(ctx, userData)
 }
 
 func spaHandler() echo.HandlerFunc {

@@ -20,13 +20,6 @@ var (
 	ErrGOGSignInFailed = errors.New("gog: sign-in failed")
 )
 
-// reasonError is a rejection that errors.Is its sentinel, and whose message
-// is the reason alone, without the sentinel's.
-type reasonError struct{ sentinel, reason error }
-
-func (e reasonError) Error() string   { return e.reason.Error() }
-func (e reasonError) Unwrap() []error { return []error{e.sentinel, e.reason} }
-
 // GOGSignInURL is the GOG login page whose redirect carries the code
 // ConnectGOG takes; empty when there is no GOG client.
 func (c *Connections) GOGSignInURL() string {
