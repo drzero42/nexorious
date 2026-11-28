@@ -19,11 +19,8 @@ import (
 	"github.com/drzero42/nexorious/internal/services/storelink"
 )
 
-// resolvableStorefronts are the slugs the enrichment worker can resolve.
-var resolvableStorefronts = []string{"steam", "gog", "epic-games-store", "playstation-store"}
-
 // resolverFactory builds a storelink.Resolver for a (storefront, user). The real
-// implementation (with creds) is wired in cmd/nexorious/serve.go.
+// implementation is the storefront module's, wired in cmd/nexorious/serve.go.
 type resolverFactory func(ctx context.Context, storefront, userID string) (storelink.Resolver, error)
 
 // ── Dispatch worker ──────────────────────────────────────────────────────────
@@ -53,6 +50,9 @@ type StoreLinkRefreshDispatchWorker struct {
 	river.WorkerDefaults[StoreLinkRefreshDispatchArgs]
 	DB *bun.DB
 	LC *joblifecycle.Module
+	// Storefronts are the slugs whose store links can be resolved: the
+	// storefront module's, wired in cmd/nexorious/serve.go.
+	Storefronts []string
 }
 
 func (w *StoreLinkRefreshDispatchWorker) Timeout(*river.Job[StoreLinkRefreshDispatchArgs]) time.Duration {
@@ -77,7 +77,7 @@ func (w *StoreLinkRefreshDispatchWorker) SelectGroups(ctx context.Context, args 
 		  AND (? = '' OR user_id = ?)
 		  AND (? = '' OR storefront = ?)
 		ORDER BY user_id, storefront`,
-		bun.List(resolvableStorefronts),
+		bun.List(w.Storefronts),
 		args.Force,
 		args.UserID, args.UserID,
 		args.Storefront, args.Storefront,
@@ -93,7 +93,7 @@ func (w *StoreLinkRefreshDispatchWorker) SelectGroups(ctx context.Context, args 
 		  AND (?::bool OR store_link IS NULL)
 		  AND (? = '' OR user_id = ?)
 		  AND (? = '' OR storefront = ?)`,
-		bun.List(resolvableStorefronts),
+		bun.List(w.Storefronts),
 		args.Force,
 		args.UserID, args.UserID,
 		args.Storefront, args.Storefront,

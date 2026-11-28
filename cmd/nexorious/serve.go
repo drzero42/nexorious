@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -38,8 +37,6 @@ import (
 	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/services/igdb"
-	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
-	"github.com/drzero42/nexorious/internal/services/storelink"
 	"github.com/drzero42/nexorious/internal/services/updatecheck"
 	"github.com/drzero42/nexorious/internal/storefront"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -254,14 +251,15 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if n := epicClient.RemoveStaleSessions(ctx, epicgamesstoresvc.StaleSessionAge); n > 0 {
 		slog.InfoContext(ctx, "epic: removed session directories left by an earlier crash", "count", n)
 	}
+	connections := storefront.NewConnections(db, encrypter, storefront.Clients{
+		Epic:   epicClient,
+		Amazon: amazongamessvc.NewClient(),
+		GOG:    gogsvc.NewClient(),
+	})
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
-		DB: db,
-		LC: lifecycle,
-		Adapter: storefront.NewConnections(db, encrypter, storefront.Clients{
-			Epic:   epicClient,
-			Amazon: amazongamessvc.NewClient(),
-			GOG:    gogsvc.NewClient(),
-		}).AdapterFactory(),
+		DB:      db,
+		LC:      lifecycle,
+		Adapter: connections.AdapterFactory(),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
@@ -272,8 +270,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, LC: lifecycle, IGDBClient: igdbClient}
 	userGameWorker := &tasks.UserGameWorker{DB: db, LC: lifecycle, IGDBClient: igdbClient}
 	importMatchWorker := &tasks.ImportMatchWorker{DB: db, LC: lifecycle, IGDBClient: igdbClient}
-	storeLinkDispatchWorker := &tasks.StoreLinkRefreshDispatchWorker{DB: db, LC: lifecycle}
-	storeLinkItemWorker := &tasks.StoreLinkRefreshItemWorker{DB: db, LC: lifecycle, ResolverFor: buildStoreLinkResolverFactory(db, encrypter)}
+	storeLinkDispatchWorker := &tasks.StoreLinkRefreshDispatchWorker{DB: db, LC: lifecycle, Storefronts: storefront.StoreLinkStorefronts()}
+	storeLinkItemWorker := &tasks.StoreLinkRefreshItemWorker{DB: db, LC: lifecycle, ResolverFor: connections.StoreLinkResolverFactory()}
 
 	updateState := updatecheck.NewState()
 	updateClient := updatecheck.NewClient()
@@ -610,40 +608,5 @@ func parseSlogLevel(s string) slog.Level {
 		return slog.LevelError
 	default:
 		return slog.LevelInfo
-	}
-}
-
-// buildStoreLinkResolverFactory returns a factory the store-link enrichment item
-// worker uses to build a per-storefront resolver. Steam/GOG/Epic resolution is
-// credential-free (public endpoints / a copied appid); only PSN needs the user's
-// decrypted NPSSO token.
-func buildStoreLinkResolverFactory(db *bun.DB, encrypter *crypto.Encrypter) func(context.Context, string, string) (storelink.Resolver, error) {
-	return func(ctx context.Context, sf, userID string) (storelink.Resolver, error) {
-		switch sf {
-		case "steam":
-			return storelink.NewSteamResolver(), nil
-		case "gog":
-			return storelink.NewGOGResolver(nil, ""), nil
-		case "epic-games-store":
-			return storelink.NewEpicResolver(nil, ""), nil
-		case "playstation-store":
-			var encCreds string
-			if err := db.NewRaw(
-				`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'playstation-store'`, userID,
-			).Scan(ctx, &encCreds); err != nil {
-				return nil, fmt.Errorf("load psn creds: %w", err)
-			}
-			plain, err := encrypter.Decrypt(encCreds)
-			if err != nil {
-				return nil, fmt.Errorf("decrypt psn creds: %w", err)
-			}
-			var creds storefront.PlayStationStoreCredentials
-			if err := json.Unmarshal(plain, &creds); err != nil {
-				return nil, fmt.Errorf("parse psn creds: %w", err)
-			}
-			return storelink.NewPSNResolver(playstationstoresvc.NewClient(), creds.NPSSOToken), nil
-		default:
-			return nil, fmt.Errorf("unknown storefront: %s", sf)
-		}
 	}
 }

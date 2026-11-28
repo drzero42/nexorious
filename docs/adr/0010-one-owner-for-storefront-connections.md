@@ -18,10 +18,20 @@ The module imports the storefront service packages, `storefrontadapter`, `intern
 
 ## Consequences
 
-- **Moved in stages.** This first slice moves the stored shape, persistence and adapter building. The connect, status and disconnect handlers stay in `internal/api` and only call the module (#1485). The store-link resolver factory stays in `serve.go` but decodes PlayStation credentials through the module's type (#1487). The Amazon disconnect still decrypts the sign-in `Take` returns, in its background device sign-out, until the disconnect handlers move in (since moved; see the update below). No guard test checks the ownership yet; #1487 adds one.
+- **Moved in stages.** This first slice moves the stored shape, persistence and adapter building. The connect, status and disconnect handlers stay in `internal/api` and only call the module (#1485). The store-link resolver factory stays in `serve.go` but decodes PlayStation credentials through the module's type (#1487; since moved, see the second update). The Amazon disconnect still decrypts the sign-in `Take` returns, in its background device sign-out, until the disconnect handlers move in (since moved; see the update below). No guard test checks the ownership yet; #1487 adds one (since added, see the second update).
 - **Outside by design:** `credentials_error` is storefront health (#1410). `Store` still clears it, as connecting did before, and the worker's `flagCredentialsError` still compares `storefront_credentials` in its `UPDATE`; whichever of #1410 and the later slices lands second replaces those direct column writes with a call.
 - **Compatible with stored data:** the JSON field names are unchanged and decoding ignores unknown fields (older PlayStation rows carry four nobody reads), so existing Connections keep working without reconnecting.
 
 ## Update: connecting moved in (#1485)
 
 The connect, status and disconnect flows are now the module's too. Each storefront has its own connect operation (`ConnectSteam`, `ConnectPlayStationStore`, `ConnectGOG`, `ConnectHumbleBundle`, `ConnectEpicGamesStore`, and Amazon's two-step `StartAmazonGamesSignIn` and `ConnectAmazonGames`); there is no common one. Each operation validates its input and returns typed errors, and the handlers in `internal/api` map those to the unchanged HTTP responses. Epic's legendary cleanup and Amazon's background device sign-out are part of their storefront's disconnect (`DisconnectEpicGamesStore`, `DisconnectAmazonGames`). Amazon's sealed sign-in attempt moved unchanged. With that, the module is the only place a stored sign-in is decrypted, apart from the store-link resolver (#1487), and the handler no longer holds the encrypter.
+
+## Update: store links moved in, and the guard (#1487)
+
+Store links are now an optional part of a storefront's definition: how to build a product-page URL from one (`StoreURL`) and how to build its resolver (`Connections.StoreLinkResolverFactory`). Steam, PlayStation Store, Epic and GOG have both; Humble Bundle and Amazon Games have neither. Which storefronts the enrichment worker resolves follows from the definitions (`StoreLinkStorefronts`); the worker takes that list and the factory from `serve.go`, as it takes the adapter factory. The PlayStation Store resolver loads the user's token through `Load`. The resolvers themselves stay in `internal/services/storelink`, and the URL formats are unchanged.
+
+The ownership is now a test (`internal/storefront/guard_test.go`):
+
+- No non-test Go file outside the module has a string literal naming `storefront_credentials`. Struct tags are skipped. The one exception is `flagCredentialsError` in `internal/worker/tasks`, the health write above; #1410 replaces it with a call and removes the exception, and the test fails if the exception stops being needed.
+- The module links neither `internal/api`, `internal/worker/tasks` nor `internal/joblifecycle`.
+- Not covered: reads of the model field `StorefrontCredentials` (the config handlers use it for `is_configured`, the sync dispatch passes the row to the adapter factory), test fixtures, migrations, and deletes of whole `user_sync_configs` rows (admin reset, user removal).

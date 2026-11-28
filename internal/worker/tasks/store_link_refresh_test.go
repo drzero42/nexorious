@@ -14,6 +14,7 @@ import (
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/storelink"
+	"github.com/drzero42/nexorious/internal/storefront"
 	"github.com/drzero42/nexorious/internal/usergame"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -60,7 +61,7 @@ func TestStoreLinkRefreshDispatch_IncrementalSelectsOnlyNullRows(t *testing.T) {
 	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "10", Title: "T-10"})
 	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "20", Title: "T-20", StoreLink: &filled})
 
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB}
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, Storefronts: storefront.StoreLinkStorefronts()}
 	groups, total, err := w.SelectGroups(ctx, tasks.StoreLinkRefreshDispatchArgs{Force: false})
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +80,7 @@ func TestStoreLinkRefreshDispatch_ForceSelectsAllRows(t *testing.T) {
 	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "10", Title: "T-10"})
 	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "20", Title: "T-20", StoreLink: &filled})
 
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB}
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, Storefronts: storefront.StoreLinkStorefronts()}
 	groups, total, err := w.SelectGroups(ctx, tasks.StoreLinkRefreshDispatchArgs{Force: true})
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +98,7 @@ func TestStoreLinkRefreshDispatch_ScopeFiltersStorefront(t *testing.T) {
 	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "10", Title: "T-10"})
 	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "gog", ExternalID: "99", Title: "T-99"})
 
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB}
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, Storefronts: storefront.StoreLinkStorefronts()}
 	groups, _, err := w.SelectGroups(ctx, tasks.StoreLinkRefreshDispatchArgs{UserID: userID, Storefront: "gog"})
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +237,7 @@ func TestStoreLinkRefreshDispatch_AfterSync(t *testing.T) {
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
 	lc := newTestLC(t)
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc}
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc, Storefronts: storefront.StoreLinkStorefronts()}
 	args := tasks.StoreLinkRefreshDispatchArgs{UserID: userID, Storefront: "steam"}
 
 	if err := w.Work(ctx, riverJob(1, 1, args)); err != nil {
@@ -323,7 +324,7 @@ func TestStoreLinkRefreshDispatch_MaintFailedOnLastAttemptOnly(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: newTestLC(t)}
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: newTestLC(t), Storefronts: storefront.StoreLinkStorefronts()}
 	args := tasks.StoreLinkRefreshDispatchArgs{UserID: userID, Storefront: "steam"}
 
 	// Make the dispatch's query fail.

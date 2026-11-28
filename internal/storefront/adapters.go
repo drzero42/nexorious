@@ -42,15 +42,18 @@ type definition struct {
 	// account decodes the account's display name from a decrypted stored
 	// sign-in; nil for a storefront that stores none.
 	account func(plain []byte) (string, error)
+	// storeLinks builds product-page URLs from store links and resolves
+	// them; nil for a storefront without store links (store_links.go).
+	storeLinks *storeLinks
 }
 
 // definitions is the registry: one definition per storefront, in the order
 // the sync API lists them (GET /sync/config).
 var definitions = []definition{
-	{slug: "steam", adapter: steamAdapter, account: steamAccount},
-	{slug: "playstation-store", adapter: playStationStoreAdapter, account: playStationStoreAccount},
-	{slug: "epic-games-store", adapter: epicGamesStoreAdapter, account: epicGamesStoreAccount},
-	{slug: "gog", adapter: gogAdapter, account: gogAccount},
+	{slug: "steam", adapter: steamAdapter, account: steamAccount, storeLinks: &storeLinks{url: steamStoreURL, resolver: steamResolver}},
+	{slug: "playstation-store", adapter: playStationStoreAdapter, account: playStationStoreAccount, storeLinks: &storeLinks{url: playStationStoreURL, resolver: playStationStoreResolver}},
+	{slug: "epic-games-store", adapter: epicGamesStoreAdapter, account: epicGamesStoreAccount, storeLinks: &storeLinks{url: epicGamesStoreURL, resolver: epicGamesStoreResolver}},
+	{slug: "gog", adapter: gogAdapter, account: gogAccount, storeLinks: &storeLinks{url: gogStoreURL, resolver: gogResolver}},
 	{slug: "humble-bundle", adapter: humbleBundleAdapter},
 	{slug: "amazon-games", adapter: amazonGamesAdapter, account: amazonGamesAccount},
 }

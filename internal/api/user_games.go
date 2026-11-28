@@ -23,6 +23,7 @@ import (
 	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/filter"
 	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/storefront"
 	"github.com/drzero42/nexorious/internal/usergame"
 )
 
@@ -95,7 +96,7 @@ func toUserGamePlatformResponse(ugp models.UserGamePlatform) userGamePlatformRes
 		resp.StorefrontDetails = &sr
 	}
 	if ugp.ExternalGame != nil && ugp.ExternalGame.StoreLink != nil {
-		if url, ok := buildStoreURL(ugp.ExternalGame.Storefront, *ugp.ExternalGame.StoreLink); ok {
+		if url, ok := storefront.StoreURL(ugp.ExternalGame.Storefront, *ugp.ExternalGame.StoreLink); ok {
 			resp.StoreURL = &url
 		}
 	}
