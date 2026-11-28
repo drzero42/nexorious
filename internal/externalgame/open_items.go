@@ -41,12 +41,12 @@ func openItemJobs(ctx context.Context, db bun.IDB, userID, id, cond string) ([]s
 		JOIN external_games eg ON eg.id = ji.external_game_id
 		JOIN external_games g ON g.id = ? AND g.user_id = ?
 		WHERE `+cond+`
-		  AND ji.status IN (?, ?)
+		  AND ji.status IN (?)
 		  AND j.status IN (?)
 		GROUP BY ji.job_id
 		ORDER BY bool_or(eg.id = g.id) DESC, max(j.created_at) DESC`,
 		id, userID,
-		models.JobItemStatusPending, models.JobItemStatusPendingReview,
+		bun.List(models.OpenJobItemStatuses()),
 		bun.List(models.ActiveJobStatuses()),
 	).Scan(ctx, &jobIDs)
 	if err != nil {
@@ -68,9 +68,9 @@ func EditionsOpenItems(ctx context.Context, db bun.IDB, jobID string, editions [
 	var items []OpenItem
 	if err := db.NewRaw(`
 		SELECT id, external_game_id, status FROM job_items
-		WHERE job_id = ? AND external_game_id IN (?) AND status IN (?, ?)
+		WHERE job_id = ? AND external_game_id IN (?) AND status IN (?)
 		ORDER BY id`,
-		jobID, bun.List(editions), models.JobItemStatusPending, models.JobItemStatusPendingReview,
+		jobID, bun.List(editions), bun.List(models.OpenJobItemStatuses()),
 	).Scan(ctx, &items); err != nil {
 		return nil, fmt.Errorf("load the editions' open items: %w", err)
 	}

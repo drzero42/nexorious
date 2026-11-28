@@ -70,7 +70,7 @@ function makeJob(source: JobSource) {
     source,
     status: JobStatus.PROCESSING,
     priority: 'high',
-    progress: { pending: 5, processing: 0, completed: 10, pendingReview: 3, skipped: 0, failed: 0 },
+    progress: { pending: 5, completed: 10, pendingReview: 3, skipped: 0, failed: 0 },
     totalItems: 18,
     errorMessage: null,
     filePath: null,
@@ -92,7 +92,6 @@ function makeTerminalJob(opts: { jobType?: JobType; status: JobStatus; failed?: 
     priority: 'high',
     progress: {
       pending: 0,
-      processing: 0,
       completed: 10,
       pendingReview: 0,
       skipped: 0,

@@ -9,7 +9,6 @@ import (
 // JobProgress holds the per-status item counts for a job.
 type JobProgress struct {
 	Pending       int `json:"pending"`
-	Processing    int `json:"processing"`
 	Completed     int `json:"completed"`
 	PendingReview int `json:"pending_review"`
 	Skipped       int `json:"skipped"`

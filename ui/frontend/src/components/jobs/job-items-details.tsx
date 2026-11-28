@@ -30,7 +30,6 @@ interface JobItemsDetailsProps {
   jobId: string;
   progress: {
     pending: number;
-    processing: number;
     completed: number;
     pendingReview: number;
     skipped: number;
@@ -135,7 +134,6 @@ function StatusSection({
 
   const iconMap: Record<JobItemStatus, React.ReactNode> = {
     [JobItemStatus.PENDING]: <Clock className="h-4 w-4 text-muted-foreground" />,
-    [JobItemStatus.PROCESSING]: <Loader2 className="h-4 w-4 animate-spin text-blue-500" />,
     [JobItemStatus.COMPLETED]: (
       <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
     ),
@@ -308,7 +306,6 @@ export function JobItemsDetails({ jobId, progress, jobStatus }: JobItemsDetailsP
       defaultOpen: progress.pendingReview > 0,
     },
     { status: JobItemStatus.FAILED, count: progress.failed, defaultOpen: progress.failed > 0 },
-    { status: JobItemStatus.PROCESSING, count: progress.processing, defaultOpen: false },
     { status: JobItemStatus.PENDING, count: progress.pending, defaultOpen: false },
     { status: JobItemStatus.COMPLETED, count: progress.completed, defaultOpen: false },
     { status: JobItemStatus.SKIPPED, count: progress.skipped, defaultOpen: false },

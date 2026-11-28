@@ -33,7 +33,6 @@ vi.mock('@/hooks', () => ({
       isTerminal: true,
       progress: {
         pending: 0,
-        processing: 0,
         completed: 1,
         pendingReview: 0,
         skipped: 0,

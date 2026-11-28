@@ -57,7 +57,7 @@ const syncRetryable = `(` + syncFailed + ` AND NOT ` + syncNeedsReview + `
 // syncInFlight: the newest item is pending in an active Job, so a sync worker
 // still acts on it. No item is open in an ended Job (the lifecycle
 // module cancels them with it).
-const syncInFlight = `COALESCE(ni.status IN ('` + string(models.JobItemStatusPending) + `', '` + string(models.JobItemStatusProcessing) + `')
+const syncInFlight = `COALESCE(ni.status = '` + string(models.JobItemStatusPending) + `'
 	AND nj.status IN (` + activeJobStatusList + `), false)`
 
 // syncRepresentativeOrder orders the editions of a set (External games aliased

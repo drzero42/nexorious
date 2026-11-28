@@ -510,9 +510,9 @@ func (m *Module) endJob(ctx context.Context, tx bun.Tx, st *txState, k *Kind, jo
 	now := time.Now().UTC()
 	if _, err := tx.NewRaw(
 		`UPDATE job_items SET status = ?, processed_at = ?, river_job_id = NULL
-		 WHERE job_id = ? AND status IN (?, ?, ?)`,
+		 WHERE job_id = ? AND status IN (?)`,
 		models.JobItemStatusCancelled, now, job.ID,
-		models.JobItemStatusPending, models.JobItemStatusPendingReview, models.JobItemStatusProcessing,
+		bun.List(models.OpenJobItemStatuses()),
 	).Exec(ctx); err != nil {
 		return false, fmt.Errorf("cancel items: %w", err)
 	}

@@ -202,7 +202,6 @@ func newJobShowCmd() *cobra.Command {
 			fmt.Fprintln(out, "\nPROGRESS:")
 			pr := job.Progress
 			fmt.Fprintf(out, "  pending:        %d\n", pr.Pending)
-			fmt.Fprintf(out, "  processing:     %d\n", pr.Processing)
 			fmt.Fprintf(out, "  completed:      %d\n", pr.Completed)
 			fmt.Fprintf(out, "  pending_review: %d\n", pr.PendingReview)
 			fmt.Fprintf(out, "  skipped:        %d\n", pr.Skipped)

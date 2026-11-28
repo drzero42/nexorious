@@ -41,7 +41,6 @@ export enum JobStatus {
 
 export enum JobItemStatus {
   PENDING = 'pending',
-  PROCESSING = 'processing',
   COMPLETED = 'completed',
   PENDING_REVIEW = 'pending_review',
   SKIPPED = 'skipped',
@@ -60,7 +59,6 @@ export type JobPriority = 'low' | 'normal' | 'high';
  */
 export interface JobProgress {
   pending: number;
-  processing: number;
   completed: number;
   pendingReview: number;
   skipped: number;
@@ -351,7 +349,6 @@ export function canDeleteJob(_job: Job): boolean {
 export function getJobItemStatusLabel(status: JobItemStatus): string {
   const labels: Record<JobItemStatus, string> = {
     [JobItemStatus.PENDING]: 'Pending',
-    [JobItemStatus.PROCESSING]: 'Processing',
     [JobItemStatus.COMPLETED]: 'Completed',
     [JobItemStatus.PENDING_REVIEW]: 'Pending Review',
     [JobItemStatus.SKIPPED]: 'Skipped',

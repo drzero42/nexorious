@@ -29,11 +29,11 @@ func (m *Module) evaluate(ctx context.Context, tx bun.Tx, st *txState, k *Kind, 
 	}
 	if err := tx.NewRaw(
 		`SELECT count(*) FILTER (WHERE status = ? AND river_job_id IS NOT NULL) AS owned,
-		        count(*) FILTER (WHERE status IN (?, ?)) AS pending,
+		        count(*) FILTER (WHERE status = ?) AS pending,
 		        count(*) FILTER (WHERE status = ?) AS review
 		 FROM job_items WHERE job_id = ?`,
 		models.JobItemStatusPending,
-		models.JobItemStatusPending, models.JobItemStatusProcessing,
+		models.JobItemStatusPending,
 		models.JobItemStatusPendingReview,
 		job.ID,
 	).Scan(ctx, &c); err != nil {

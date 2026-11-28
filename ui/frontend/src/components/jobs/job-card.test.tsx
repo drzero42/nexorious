@@ -35,7 +35,6 @@ const mockJob: Job = {
   priority: 'high',
   progress: {
     pending: 20,
-    processing: 5,
     completed: 50,
     pendingReview: 3,
     skipped: 2,
@@ -64,7 +63,6 @@ const mockCompletedJob: Job = {
   progress: {
     ...mockJob.progress,
     pending: 0,
-    processing: 0,
     completed: 100,
     done: 100,
     percent: 100,

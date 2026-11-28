@@ -26,10 +26,10 @@ func FailAllAfterRestore(ctx context.Context, tx bun.Tx, msg string) error {
 	now := time.Now().UTC()
 	if _, err := tx.NewRaw(`
 		UPDATE job_items SET status = ?, processed_at = ?, river_job_id = NULL
-		WHERE status IN (?, ?, ?)
+		WHERE status IN (?)
 		  AND job_id IN (SELECT id FROM jobs WHERE status IN (?))`,
 		models.JobItemStatusCancelled, now,
-		models.JobItemStatusPending, models.JobItemStatusProcessing, models.JobItemStatusPendingReview,
+		bun.List(models.OpenJobItemStatuses()),
 		bun.List(models.ActiveJobStatuses()),
 	).Exec(ctx); err != nil {
 		return fmt.Errorf("cancel open items: %w", err)

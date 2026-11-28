@@ -118,7 +118,6 @@ type JobItemStatus string
 // JobItem status constants.
 const (
 	JobItemStatusPending       JobItemStatus = "pending"
-	JobItemStatusProcessing    JobItemStatus = "processing"
 	JobItemStatusCompleted     JobItemStatus = "completed"
 	JobItemStatusPendingReview JobItemStatus = "pending_review"
 	JobItemStatusSkipped       JobItemStatus = "skipped"
@@ -129,9 +128,15 @@ const (
 // JobItemStatuses returns every Job item status.
 func JobItemStatuses() []JobItemStatus {
 	return []JobItemStatus{
-		JobItemStatusPending, JobItemStatusProcessing, JobItemStatusCompleted, JobItemStatusPendingReview,
+		JobItemStatusPending, JobItemStatusCompleted, JobItemStatusPendingReview,
 		JobItemStatusSkipped, JobItemStatusFailed, JobItemStatusCancelled,
 	}
+}
+
+// OpenJobItemStatuses returns the statuses of a Job item that has not ended:
+// a worker (pending) or the user (pending_review) acts next.
+func OpenJobItemStatuses() []JobItemStatus {
+	return []JobItemStatus{JobItemStatusPending, JobItemStatusPendingReview}
 }
 
 type JobItem struct {

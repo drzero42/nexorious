@@ -43,7 +43,7 @@ The IGDB game the user chose for an item in Pending review. Resolving lets the i
 The user's decision not to add a game to the library. It ends the game's Open item; in a sync it also stands for later syncs, until the user removes it. In a sync it applies to the game's whole Set of editions, or to one Edition alone when the user asks.
 
 **Ended**:
-A Job or Job item whose work is over: completed, failed, skipped (items only), or cancelled. Nothing acts on it again unless the user asks for a Retry. A Job item that has not ended is **Open**.
+A Job or Job item whose work is over: completed, failed, skipped (items only), or cancelled. Nothing acts on it again unless the user asks for a Retry. A Job item that has not ended is **Open**: `pending` or `pending_review`.
 _Avoid_: finished (a game's play status), terminal, done, unfinished
 
 **Completion**:

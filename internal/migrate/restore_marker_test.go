@@ -182,7 +182,7 @@ func seedInFlight(t *testing.T, db *bun.DB) {
 			('i-p-pending', 'j-pending', 'u1', 'a', 'A', 'pending'),
 			('i-p-review', 'j-pending', 'u1', 'b', 'B', 'pending_review'),
 			('i-p-done', 'j-pending', 'u1', 'c', 'C', 'completed'),
-			('i-r-processing', 'j-processing', 'u1', 'd', 'D', 'processing'),
+			('i-r-pending', 'j-processing', 'u1', 'd', 'D', 'pending'),
 			('i-r-failed', 'j-processing', 'u1', 'e', 'E', 'failed'),
 			('i-d-pending', 'j-done', 'u1', 'f', 'F', 'pending')`,
 		`INSERT INTO river_job (args, kind, max_attempts, queue, state)
@@ -235,12 +235,12 @@ func assertCleared(t *testing.T, db *bun.DB) {
 		t.Errorf("finished job j-done = %s, want completed (untouched)", status)
 	}
 	want := map[string]string{
-		"i-p-pending":    "cancelled",
-		"i-p-review":     "cancelled",
-		"i-p-done":       "completed",
-		"i-r-processing": "cancelled",
-		"i-r-failed":     "failed",
-		"i-d-pending":    "pending", // belongs to a finished Job
+		"i-p-pending": "cancelled",
+		"i-p-review":  "cancelled",
+		"i-p-done":    "completed",
+		"i-r-pending": "cancelled",
+		"i-r-failed":  "failed",
+		"i-d-pending": "pending", // belongs to a finished Job
 	}
 	for id, w := range want {
 		if got := itemStatus(t, db, id); got != w {

@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	bunmigrate "github.com/uptrace/bun/migrate"
-
-	"github.com/drzero42/nexorious/internal/db/migrations"
 )
 
 const stage2Migration = "20261123000003"
@@ -67,7 +65,8 @@ func TestJobLifecycleStage2Migration(t *testing.T) {
 	job("sync", "sync", "steam", "pending")
 	item("sync-item", "sync", "k", "processing", nil)
 
-	if _, err := bunmigrate.NewMigrator(db, migrations.Migrations).Migrate(ctx); err != nil {
+	// Stop before stage 3, so that only stage 2 acts on these rows: a later migration (#1516) moves the sync item's processing status.
+	if _, err := bunmigrate.NewMigrator(db, migrationsBefore(stage3Migration)).Migrate(ctx); err != nil {
 		t.Fatalf("migrate stage 2: %v", err)
 	}
 

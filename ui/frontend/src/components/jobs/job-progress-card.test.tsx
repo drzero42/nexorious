@@ -17,7 +17,6 @@ const processingJob: Job = {
   priority: 'high',
   progress: {
     pending: 20,
-    processing: 5,
     completed: 50,
     pendingReview: 3,
     skipped: 2,
