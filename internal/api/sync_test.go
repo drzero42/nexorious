@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +23,8 @@ import (
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/externalgame/egtest"
+	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
+	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
 	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
@@ -66,7 +71,7 @@ func newSyncTestAppWithClients(t *testing.T, db *bun.DB, clients storefront.Clie
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, clients)})
+	synch := api.NewSyncHandler(api.SyncDeps{DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, clients)})
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -996,7 +1001,7 @@ func TestStatus_CorruptedCredentials(t *testing.T) {
 			newApp: func(t *testing.T) interface {
 				ServeHTTP(http.ResponseWriter, *http.Request)
 			} {
-				return newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubEpicGamesStoreClient{configured: true})
+				return newSyncTestAppWithEpicGamesStore(t, epicgamesstoresvc.NewClient(t.TempDir()))
 			},
 		},
 		{
@@ -1822,47 +1827,49 @@ func TestListExternalGames_NoPlatforms_ReturnsEmptyArray(t *testing.T) {
 
 // ─── Epic connection-handler tests ────────────────────────────────────────────
 
-type stubEpicGamesStoreClient struct {
-	info       *api.EpicGamesStoreAccountInfo
-	snapshot   map[string]string
-	authErr    error
-	cleanupErr error
-	configured bool
-
-	authCalled    bool
-	cleanupCalled bool
-	cleanupUserID string
+// fakeLegendary puts a stand-in legendary on PATH: `auth --code good` signs
+// in as EpicTester, any other code fails. It returns the argument lists
+// legendary was run with.
+func fakeLegendary(t *testing.T) func() []string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake legendary is a shell script")
+	}
+	bin := t.TempDir()
+	calls := filepath.Join(bin, "calls")
+	script := `#!/bin/sh
+echo "$@" >> "` + calls + `"
+if [ "$1" = auth ] && [ "$3" = good ]; then
+  mkdir -p "$XDG_CONFIG_HOME/legendary"
+  echo '{"displayName":"EpicTester","account_id":"acct-123"}' > "$XDG_CONFIG_HOME/legendary/user.json"
+  exit 0
+fi
+echo "auth failed" >&2
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(bin, "legendary"), []byte(script), 0o700); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return func() []string {
+		data, err := os.ReadFile(calls) //nolint:gosec // test-owned temp path
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Split(strings.TrimSpace(string(data)), "\n")
+	}
 }
 
-func (s *stubEpicGamesStoreClient) Authenticate(_ context.Context, _, _ string) (*api.EpicGamesStoreAccountInfo, map[string]string, error) {
-	s.authCalled = true
-	return s.info, s.snapshot, s.authErr
-}
-
-func (s *stubEpicGamesStoreClient) Cleanup(_ context.Context, userID string) error {
-	s.cleanupCalled = true
-	s.cleanupUserID = userID
-	return s.cleanupErr
-}
-
-func (s *stubEpicGamesStoreClient) Configured() bool {
-	return s.configured
-}
-
-// newSyncTestAppWithEpicGamesStore builds the sync app with a custom EpicGamesStoreClient. Used by
-// the Epic connection tests.
-func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam storefront.SteamClient, psn storefront.PlayStationStoreClient, epic api.EpicGamesStoreClient) interface {
+// newSyncTestAppWithEpicGamesStore builds the sync app with an Epic client.
+// Used by the Epic connection tests.
+func newSyncTestAppWithEpicGamesStore(t *testing.T, epic *epicgamesstoresvc.Client) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
-	cfg := testCfg()
-	e := echo.New()
-	ah := api.NewAuthHandler(testDB, cfg)
-	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: db, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(db, testEncrypter, storefront.Clients{Steam: steam, PlayStationStore: psn}), EpicGamesStore: epic})
-	g := e.Group("/api/sync", auth.AuthMiddleware(db))
-	synch.RegisterRoutes(g)
-	return e
+	return newSyncTestAppWithClients(t, testDB, storefront.Clients{Epic: epic})
 }
 
 // newFakeGOG serves GOG's token endpoint: it answers with status, or with
@@ -1935,69 +1942,56 @@ func newSyncTestAppWithGOG(t *testing.T, gog *gogsvc.Client) interface {
 
 func TestHandleEpicGamesStoreConnect_503WhenNotConfigured(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicGamesStoreClient{configured: false}
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	calls := fakeLegendary(t)
+	e := newSyncTestAppWithEpicGamesStore(t, epicgamesstoresvc.NewClient(""))
 	_, token := setupTagUser(t, testDB, e, "epic-conn-503")
 
 	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "abc"}, token)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if stub.authCalled {
-		t.Error("Authenticate must not be called when not configured")
+	if got := calls(); got != nil {
+		t.Errorf("legendary must not run when not configured, ran %q", got)
 	}
 }
 
 func TestHandleEpicGamesStoreConnect_400OnMissingAuthCode(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicGamesStoreClient{configured: true}
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	calls := fakeLegendary(t)
+	e := newSyncTestAppWithEpicGamesStore(t, epicgamesstoresvc.NewClient(t.TempDir()))
 	_, token := setupTagUser(t, testDB, e, "epic-conn-400")
 
 	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{}, token)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
-	if stub.authCalled {
-		t.Error("Authenticate must not be called when auth_code missing")
+	if got := calls(); got != nil {
+		t.Errorf("legendary must not run when auth_code missing, ran %q", got)
 	}
 }
 
 func TestHandleEpicGamesStoreConnect_400OnAuthError(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicGamesStoreClient{configured: true, authErr: fmt.Errorf("legendary: invalid code")}
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	fakeLegendary(t)
+	e := newSyncTestAppWithEpicGamesStore(t, epicgamesstoresvc.NewClient(t.TempDir()))
 	_, token := setupTagUser(t, testDB, e, "epic-conn-auth-fail")
 
 	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "bad"}, token)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
-}
-
-func TestHandleEpicGamesStoreConnect_500OnNilInfo(t *testing.T) {
-	truncateAllTables(t)
-	stub := &stubEpicGamesStoreClient{configured: true, info: nil, snapshot: map[string]string{"user.json": "{}"}}
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
-	_, token := setupTagUser(t, testDB, e, "epic-conn-nil")
-
-	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "ok"}, token)
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", rec.Code)
+	if want := `"epic auth failed: epic: legendary auth --code bad: auth failed"`; !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("body %s, want message %s", rec.Body.String(), want)
 	}
 }
 
 func TestHandleEpicGamesStoreConnect_HappyPathPersistsConfig(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicGamesStoreClient{
-		configured: true,
-		info:       &api.EpicGamesStoreAccountInfo{DisplayName: "EpicTester", AccountID: "acct-123"},
-		snapshot:   map[string]string{"user.json": `{"displayName":"EpicTester","account_id":"acct-123"}`},
-	}
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	fakeLegendary(t)
+	e := newSyncTestAppWithEpicGamesStore(t, epicgamesstoresvc.NewClient(t.TempDir()))
 	userID, token := setupTagUser(t, testDB, e, "epic-conn-ok")
 
-	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "ok"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "good"}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2034,8 +2028,8 @@ func TestHandleEpicGamesStoreConnect_HappyPathPersistsConfig(t *testing.T) {
 
 func TestHandleEpicGamesStoreDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicGamesStoreClient{configured: true}
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	workDir := t.TempDir()
+	e := newSyncTestAppWithEpicGamesStore(t, epicgamesstoresvc.NewClient(workDir))
 	userID, token := setupTagUser(t, testDB, e, "epic-disc")
 
 	// Pre-populate a connected Epic row: storefront_credentials holds the encrypted snapshot.
@@ -2052,13 +2046,18 @@ func TestHandleEpicGamesStoreDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *te
 	if err != nil {
 		t.Fatalf("seed user_sync_configs: %v", err)
 	}
+	// The per-user directory versions before per-operation sessions left.
+	legacyDir := filepath.Join(workDir, userID)
+	if err := os.MkdirAll(filepath.Join(legacyDir, "legendary"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 
 	rec := deleteAuth(t, e, "/api/sync/epic-games-store/connection", token)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !stub.cleanupCalled || stub.cleanupUserID != userID {
-		t.Errorf("expected Cleanup(%q) to be called, got called=%v user=%q", userID, stub.cleanupCalled, stub.cleanupUserID)
+	if _, err := os.Stat(legacyDir); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("legacy legendary dir %s still there after disconnect (stat err %v)", legacyDir, err)
 	}
 
 	var credsAfter *string
@@ -2076,8 +2075,7 @@ func TestHandleEpicGamesStoreDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *te
 
 func TestHandleGetEpicGamesStoreConnection_DisabledWhenNotConfigured(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicGamesStoreClient{configured: false}
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	e := newSyncTestAppWithEpicGamesStore(t, epicgamesstoresvc.NewClient(""))
 	_, token := setupTagUser(t, testDB, e, "epic-status-disabled")
 
 	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
@@ -2093,8 +2091,7 @@ func TestHandleGetEpicGamesStoreConnection_DisabledWhenNotConfigured(t *testing.
 
 func TestHandleGetEpicGamesStoreConnection_NotConnectedWhenNoRow(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicGamesStoreClient{configured: true}
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	e := newSyncTestAppWithEpicGamesStore(t, epicgamesstoresvc.NewClient(t.TempDir()))
 	_, token := setupTagUser(t, testDB, e, "epic-status-noconn")
 
 	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
@@ -2113,8 +2110,7 @@ func TestHandleGetEpicGamesStoreConnection_NotConnectedWhenNoRow(t *testing.T) {
 
 func TestHandleGetEpicGamesStoreConnection_ConnectedReturnsDisplayName(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicGamesStoreClient{configured: true}
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
+	e := newSyncTestAppWithEpicGamesStore(t, epicgamesstoresvc.NewClient(t.TempDir()))
 	userID, token := setupTagUser(t, testDB, e, "epic-status-conn")
 
 	// Seed the realistic legendary snapshot shape the connect flow actually
@@ -2155,7 +2151,7 @@ type stubAmazonGamesClient struct {
 	logins      int
 	registerErr error
 	gotCode     string
-	gotLogin    api.AmazonGamesLogin
+	gotLogin    amazongamessvc.Login
 	userData    json.RawMessage
 	during      func() // runs inside Register, as if nile were still working
 
@@ -2199,13 +2195,17 @@ func (s *stubAmazonGamesClient) loggedOut() []string {
 
 func (s *stubAmazonGamesClient) Configured() bool { return s.configured }
 
-func (s *stubAmazonGamesClient) LoginURL(_ context.Context) (*api.AmazonGamesLogin, error) {
+func (s *stubAmazonGamesClient) Library(context.Context, json.RawMessage) ([]amazongamessvc.Entitlement, json.RawMessage, error) {
+	return nil, nil, errors.New("not used by the connection routes")
+}
+
+func (s *stubAmazonGamesClient) LoginURL(_ context.Context) (*amazongamessvc.Login, error) {
 	if s.loginErr != nil {
 		return nil, s.loginErr
 	}
 	s.logins++
 	n := fmt.Sprint(s.logins)
-	return &api.AmazonGamesLogin{
+	return &amazongamessvc.Login{
 		URL:          "https://amazon.com/ap/signin?attempt=" + n,
 		ClientID:     "client-" + n,
 		CodeVerifier: "verifier-" + n,
@@ -2213,7 +2213,7 @@ func (s *stubAmazonGamesClient) LoginURL(_ context.Context) (*api.AmazonGamesLog
 	}, nil
 }
 
-func (s *stubAmazonGamesClient) Register(_ context.Context, code string, login api.AmazonGamesLogin) (*api.AmazonGamesAccount, json.RawMessage, error) {
+func (s *stubAmazonGamesClient) Register(_ context.Context, code string, login amazongamessvc.Login) (*amazongamessvc.Account, json.RawMessage, error) {
 	s.gotCode = code
 	s.gotLogin = login
 	if s.during != nil {
@@ -2222,22 +2222,23 @@ func (s *stubAmazonGamesClient) Register(_ context.Context, code string, login a
 	if s.registerErr != nil {
 		return nil, nil, s.registerErr
 	}
-	return &api.AmazonGamesAccount{UserID: "amzn1.account.X", Name: "Ama"}, s.userData, nil
+	return &amazongamessvc.Account{UserID: "amzn1.account.X", Name: "Ama"}, s.userData, nil
 }
 
 const amazonTestUserData = `{"tokens":{"bearer":{"refresh_token":"Atnr|R"}},"extensions":{"customer_info":{"user_id":"amzn1.account.X","given_name":"Ama"}}}`
 
 func newSyncTestAppWithAmazonGames(t *testing.T, amazon *stubAmazonGamesClient) (interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
-}, *api.SyncHandler) {
+}, *storefront.Connections) {
 	t.Helper()
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, testCfg())
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(api.SyncDeps{Encrypter: testEncrypter, DB: testDB, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: storefront.NewConnections(testDB, testEncrypter, storefront.Clients{}), AmazonGames: amazon})
+	conns := storefront.NewConnections(testDB, testEncrypter, storefront.Clients{Amazon: amazon})
+	synch := api.NewSyncHandler(api.SyncDeps{DB: testDB, River: newTestRiverClient(t), Lifecycle: newTestLifecycle(t), Connections: conns})
 	g := e.Group("/api/sync", auth.AuthMiddleware(testDB))
 	synch.RegisterRoutes(g)
-	return e, synch
+	return e, conns
 }
 
 // startAmazonLogin starts a sign-in and returns its attempt id.
@@ -3167,7 +3168,7 @@ func TestGetConnection_DBCredentialsErrorFlag(t *testing.T) {
 			newApp: func(t *testing.T) interface {
 				ServeHTTP(http.ResponseWriter, *http.Request)
 			} {
-				return newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubEpicGamesStoreClient{configured: true})
+				return newSyncTestAppWithEpicGamesStore(t, epicgamesstoresvc.NewClient(t.TempDir()))
 			},
 		},
 	}

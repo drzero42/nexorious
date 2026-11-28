@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,10 @@ type Connections struct {
 	db        *bun.DB
 	encrypter *crypto.Encrypter
 	clients   Clients
+
+	amazonLoginClock     func() time.Time // nil: time.Now
+	amazonSignOutTimeout time.Duration    // 0: amazonSignOutLimit
+	amazonSignOuts       sync.WaitGroup   // device sign-outs still running after a disconnect
 }
 
 // NewConnections returns the Connections backed by db, encrypting stored
@@ -82,10 +87,10 @@ func (c *Connections) Disconnect(ctx context.Context, userID, storefront string)
 	return nil
 }
 
-// Take clears the user's stored sign-in for the storefront and returns the
+// take clears the user's stored sign-in for the storefront and returns the
 // ciphertext it cleared, in one statement, so nothing stored after it can be
 // returned. It returns nil when nothing was stored.
-func (c *Connections) Take(ctx context.Context, userID, storefront string) (*string, error) {
+func (c *Connections) take(ctx context.Context, userID, storefront string) (*string, error) {
 	var removed *string
 	err := c.db.NewRaw(
 		`UPDATE user_sync_configs u SET storefront_credentials = NULL, updated_at = now()

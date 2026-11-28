@@ -5,11 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,63 +18,15 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/auth"
-	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/externalgame"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
-	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/storefront"
 	"github.com/drzero42/nexorious/internal/usergame"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
-
-// EpicGamesStoreClient abstracts legendary CLI calls used during Epic account connection.
-type EpicGamesStoreClient interface {
-	// Authenticate runs legendary auth, returns account info and the resulting
-	// state snapshot. The caller stores the snapshot in the DB.
-	Authenticate(ctx context.Context, userID, authCode string) (*EpicGamesStoreAccountInfo, map[string]string, error)
-	// Cleanup removes the user's legendary files that older versions left
-	// on disk. Sign-ins and syncs remove their own files when they end.
-	Cleanup(ctx context.Context, userID string) error
-	Configured() bool
-}
-
-// EpicGamesStoreAccountInfo holds the Epic account details.
-type EpicGamesStoreAccountInfo struct {
-	DisplayName string
-	AccountID   string
-}
-
-// AmazonGamesClient abstracts the nile CLI calls used during Amazon Games
-// account connection.
-type AmazonGamesClient interface {
-	Configured() bool
-	// LoginURL starts a sign-in and returns its URL and the values nile needs
-	// to finish it, which must stay server-side.
-	LoginURL(ctx context.Context) (*AmazonGamesLogin, error)
-	// Register finishes the sign-in with the authorization code and returns
-	// the account and nile's user data, which the caller stores encrypted.
-	Register(ctx context.Context, code string, login AmazonGamesLogin) (*AmazonGamesAccount, json.RawMessage, error)
-	// Logout deregisters the device a stored sign-in (nile's user data)
-	// belongs to.
-	Logout(ctx context.Context, userData json.RawMessage) error
-}
-
-// AmazonGamesLogin is one sign-in attempt's state.
-type AmazonGamesLogin struct {
-	URL          string
-	ClientID     string
-	CodeVerifier string
-	Serial       string
-}
-
-// AmazonGamesAccount identifies a connected Amazon account.
-type AmazonGamesAccount struct {
-	UserID string
-	Name   string
-}
 
 type syncConfigItem struct {
 	ID           string     `json:"id"`
@@ -187,34 +137,25 @@ type steamConnectionResponse struct {
 
 // SyncHandler handles sync configuration, trigger, and status endpoints.
 type SyncHandler struct {
-	db                   *bun.DB
-	encrypter            *crypto.Encrypter
-	riverClient          *river.Client[pgx.Tx]
-	lc                   *joblifecycle.Module
-	epicGamesStoreClient EpicGamesStoreClient
-	amazonGamesClient    AmazonGamesClient
-	connections          *storefront.Connections
-	igdbClient           *igdb.Client
-	amazonLoginClock     func() time.Time // nil: time.Now
-	amazonSignOutTimeout time.Duration    // 0: amazonSignOutLimit
-	amazonSignOuts       sync.WaitGroup   // device sign-outs still running after a disconnect
+	db          *bun.DB
+	riverClient *river.Client[pgx.Tx]
+	lc          *joblifecycle.Module
+	connections *storefront.Connections
+	igdbClient  *igdb.Client
 }
 
-// SyncDeps holds the dependencies of a SyncHandler. A storefront client may be
-// left nil as long as no route that reaches that storefront is called.
+// SyncDeps holds the dependencies of a SyncHandler.
 type SyncDeps struct {
-	Encrypter *crypto.Encrypter
-	DB        *bun.DB
+	DB *bun.DB
 	// River inserts the immediate metadata fetch after a rematch or an
 	// unskip, which is not Job work.
 	River *river.Client[pgx.Tx]
 	// Lifecycle owns the sync Jobs.
 	Lifecycle *joblifecycle.Module
 	// Connections owns the storefront Connections, and reaches the
-	// storefronts through the clients it was built with.
-	Connections    *storefront.Connections
-	EpicGamesStore EpicGamesStoreClient
-	AmazonGames    AmazonGamesClient
+	// storefronts through the clients it was built with. A client may be
+	// left nil as long as no route that reaches that storefront is called.
+	Connections *storefront.Connections
 	// IGDB, nil or unconfigured: a Rematch stubs with the storefront title.
 	IGDB *igdb.Client
 }
@@ -222,14 +163,11 @@ type SyncDeps struct {
 // NewSyncHandler constructs a SyncHandler.
 func NewSyncHandler(d SyncDeps) *SyncHandler {
 	return &SyncHandler{
-		encrypter:            d.Encrypter,
-		db:                   d.DB,
-		riverClient:          d.River,
-		lc:                   d.Lifecycle,
-		epicGamesStoreClient: d.EpicGamesStore,
-		amazonGamesClient:    d.AmazonGames,
-		connections:          d.Connections,
-		igdbClient:           d.IGDB,
+		db:          d.DB,
+		riverClient: d.River,
+		lc:          d.Lifecycle,
+		connections: d.Connections,
+		igdbClient:  d.IGDB,
 	}
 }
 
@@ -278,8 +216,8 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 
 // disconnectStorefront is the shared handler body for the simple
 // DELETE /sync/<sf>/connection endpoints: authenticate, disconnect, and
-// respond 204. Storefronts that need extra teardown (e.g. Epic's legendary
-// cleanup) call Connections.Disconnect directly instead.
+// respond 204. Storefronts that need extra teardown (Epic's legendary
+// cleanup, Amazon's device sign-out) have their own disconnect instead.
 func (h *SyncHandler) disconnectStorefront(c *echo.Context, sf string) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -688,7 +626,7 @@ func (h *SyncHandler) HandleHumbleConnect(c *echo.Context) error {
 	case errors.Is(err, storefront.ErrInvalidHumbleBundleCookie):
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid_session_cookie")
 	case errors.Is(err, storefront.ErrHumbleBundleUnavailable):
-		slog.ErrorContext(c.Request().Context(), "humble: verify failed", logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryExternalAPI))
+		slog.WarnContext(c.Request().Context(), "humble: verify failed", logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusBadGateway, "could not reach Humble Bundle")
 	case err != nil:
 		slog.ErrorContext(c.Request().Context(), "humble: persist storefront credentials failed", logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryDB))
@@ -713,6 +651,10 @@ func (h *SyncHandler) HandleHumbleDisconnect(c *echo.Context) error {
 	return h.disconnectStorefront(c, "humble-bundle")
 }
 
+// epicGamesStoreNotConfigured answers an Epic sign-in on a server without
+// LEGENDARY_WORK_DIR.
+const epicGamesStoreNotConfigured = "Epic sync not configured (LEGENDARY_WORK_DIR unset)"
+
 // HandleEpicGamesStoreConnect exchanges an Epic auth code via legendary and stores the
 // resulting legendary state snapshot in the DB.
 func (h *SyncHandler) HandleEpicGamesStoreConnect(c *echo.Context) error {
@@ -720,54 +662,52 @@ func (h *SyncHandler) HandleEpicGamesStoreConnect(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	if h.epicGamesStoreClient == nil || !h.epicGamesStoreClient.Configured() {
-		return echo.NewHTTPError(http.StatusServiceUnavailable, "Epic sync not configured (LEGENDARY_WORK_DIR unset)")
+	// Checked before the body, so an unconfigured server answers 503 to any
+	// request.
+	if !h.connections.EpicGamesStoreConfigured() {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, epicGamesStoreNotConfigured)
 	}
 
 	var body struct {
 		AuthCode string `json:"auth_code"`
 	}
-	if err := c.Bind(&body); err != nil || body.AuthCode == "" {
+	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "auth_code is required")
 	}
 
-	info, snapshot, err := h.epicGamesStoreClient.Authenticate(c.Request().Context(), userID, body.AuthCode)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("epic auth failed: %v", err))
-	}
-	if info == nil {
+	account, err := h.connections.ConnectEpicGamesStore(c.Request().Context(), userID, body.AuthCode)
+	switch {
+	case errors.Is(err, storefront.ErrEpicGamesStoreNotConfigured):
+		return echo.NewHTTPError(http.StatusServiceUnavailable, epicGamesStoreNotConfigured)
+	case errors.Is(err, storefront.ErrEpicGamesStoreAuthCodeMissing):
+		return echo.NewHTTPError(http.StatusBadRequest, "auth_code is required")
+	case errors.Is(err, storefront.ErrEpicGamesStoreSignInFailed):
+		return echo.NewHTTPError(http.StatusBadRequest, "epic auth failed: "+err.Error())
+	case errors.Is(err, storefront.ErrEpicGamesStoreNoAccount):
+		slog.ErrorContext(c.Request().Context(), "epic: no account after sign-in", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusInternalServerError, "epic: user.json missing after auth")
-	}
-
-	if err := h.connections.Store(context.Background(), userID, "epic-games-store", snapshot); err != nil {
-		slog.ErrorContext(c.Request().Context(), "epic: persist storefront credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	case err != nil:
+		slog.ErrorContext(c.Request().Context(), "epic: persist storefront credentials failed", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Epic connection")
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{
-		"display_name": info.DisplayName,
-		"account_id":   info.AccountID,
+		"display_name": account.DisplayName,
+		"account_id":   account.AccountID,
 	})
 }
 
 // HandleEpicGamesStoreDisconnect clears the user's Epic credentials and snapshot, and
 // removes any legendary files older versions left on disk. A failure to remove
-// those is logged but still answers 204: the stored credentials are already
-// gone, so the disconnect itself succeeded.
+// those is logged but still answers 204.
 func (h *SyncHandler) HandleEpicGamesStoreDisconnect(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	ctx := context.Background()
-	if err := h.connections.Disconnect(ctx, userID, "epic-games-store"); err != nil {
-		slog.ErrorContext(c.Request().Context(), "sync: epic disconnect failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	if err := h.connections.DisconnectEpicGamesStore(c.Request().Context(), userID); err != nil {
+		slog.ErrorContext(c.Request().Context(), "sync: epic disconnect failed", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect Epic")
-	}
-	if h.epicGamesStoreClient != nil {
-		if err := h.epicGamesStoreClient.Cleanup(ctx, userID); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: epic cleanup failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-		}
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -780,7 +720,7 @@ func (h *SyncHandler) HandleGetEpicGamesStoreConnection(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 
-	if h.epicGamesStoreClient == nil || !h.epicGamesStoreClient.Configured() {
+	if !h.connections.EpicGamesStoreConfigured() {
 		return c.JSON(http.StatusOK, map[string]any{
 			"connected": false,
 			"disabled":  true,
@@ -801,104 +741,8 @@ func (h *SyncHandler) HandleGetEpicGamesStoreConnection(c *echo.Context) error {
 		})
 }
 
-// amazonLoginTTL bounds how long a started Amazon sign-in can be finished.
-const amazonLoginTTL = 15 * time.Minute
-
-// amazonLoginKind marks an attempt_id as an Amazon sign-in attempt, so no
-// other ciphertext made with the same key (a stored credential) is ever read
-// as one.
-const amazonLoginKind = "amazon-games-login"
-
-// maxAmazonAttemptIDLen bounds the attempt_id the finish will decrypt. A real
-// one is about 450 characters; the cap keeps a pasted multi-kilobyte value
-// from being decoded at all.
-const maxAmazonAttemptIDLen = 2048
-
-// amazonLoginAttempt is everything finishing an Amazon sign-in needs: the
-// client id, code verifier and serial nile generated, who started it and until
-// when it can be finished. The browser holds it encrypted with the server's
-// key as the attempt_id, so a start and a finish may reach different servers,
-// or one server either side of a restart. Starting again does not cancel an
-// earlier attempt; whichever finishes last is the stored sign-in.
-type amazonLoginAttempt struct {
-	Kind         string    `json:"kind"`
-	ClientID     string    `json:"client_id"`
-	CodeVerifier string    `json:"code_verifier"`
-	Serial       string    `json:"serial"`
-	UserID       string    `json:"user_id"`
-	ExpiresAt    time.Time `json:"expires_at"`
-}
-
-// sealAmazonLogin returns the attempt_id for a sign-in userID just started.
-func (h *SyncHandler) sealAmazonLogin(userID string, login AmazonGamesLogin) (string, error) {
-	raw, err := json.Marshal(amazonLoginAttempt{
-		Kind:         amazonLoginKind,
-		ClientID:     login.ClientID,
-		CodeVerifier: login.CodeVerifier,
-		Serial:       login.Serial,
-		UserID:       userID,
-		ExpiresAt:    h.amazonLoginNow().Add(amazonLoginTTL),
-	})
-	if err != nil {
-		return "", err
-	}
-	return h.encrypter.Encrypt(raw)
-}
-
-// openAmazonLogin returns the sign-in an attempt_id carries, when it decrypts
-// with this server's key, is an Amazon sign-in attempt, was started by userID,
-// is complete and has not expired.
-func (h *SyncHandler) openAmazonLogin(userID, attemptID string) (AmazonGamesLogin, bool) {
-	if len(attemptID) > maxAmazonAttemptIDLen {
-		return AmazonGamesLogin{}, false
-	}
-	raw, err := h.encrypter.Decrypt(attemptID)
-	if err != nil {
-		return AmazonGamesLogin{}, false
-	}
-	var a amazonLoginAttempt
-	if err := json.Unmarshal(raw, &a); err != nil {
-		return AmazonGamesLogin{}, false
-	}
-	if a.Kind != amazonLoginKind || a.UserID != userID ||
-		a.ClientID == "" || a.CodeVerifier == "" || a.Serial == "" ||
-		a.ExpiresAt.IsZero() || !h.amazonLoginNow().Before(a.ExpiresAt) {
-		return AmazonGamesLogin{}, false
-	}
-	return AmazonGamesLogin{ClientID: a.ClientID, CodeVerifier: a.CodeVerifier, Serial: a.Serial}, true
-}
-
-func (h *SyncHandler) amazonLoginNow() time.Time {
-	if h.amazonLoginClock != nil {
-		return h.amazonLoginClock()
-	}
-	return time.Now()
-}
-
-// amazonSignOutLimit bounds the best-effort device sign-out a disconnect
-// starts.
-const amazonSignOutLimit = 20 * time.Second
-
-// SetAmazonSignOutTimeoutForTest replaces amazonSignOutLimit.
-func (h *SyncHandler) SetAmazonSignOutTimeoutForTest(d time.Duration) {
-	h.amazonSignOutTimeout = d
-}
-
-// WaitForAmazonSignOutsForTest waits for every device sign-out a disconnect
-// started.
-func (h *SyncHandler) WaitForAmazonSignOutsForTest() {
-	h.amazonSignOuts.Wait()
-}
-
-// SetAmazonLoginClockForTest replaces the clock Amazon sign-in attempts are
-// stamped and expire by.
-func (h *SyncHandler) SetAmazonLoginClockForTest(now func() time.Time) {
-	h.amazonLoginClock = now
-}
-
-func (h *SyncHandler) amazonGamesConfigured() bool {
-	return h.amazonGamesClient != nil && h.amazonGamesClient.Configured()
-}
+// amazonGamesNotInstalled answers an Amazon sign-in on a server without nile.
+const amazonGamesNotInstalled = "Amazon Games sync not available (nile not installed)"
 
 // HandleAmazonGamesLoginStart is POST /sync/amazon-games/connection/login: it
 // starts an Amazon sign-in and returns the URL to open and the attempt id to
@@ -908,22 +752,20 @@ func (h *SyncHandler) HandleAmazonGamesLoginStart(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	if !h.amazonGamesConfigured() {
-		return echo.NewHTTPError(http.StatusServiceUnavailable, "Amazon Games sync not available (nile not installed)")
-	}
-	login, err := h.amazonGamesClient.LoginURL(c.Request().Context())
-	if err != nil {
+	signIn, err := h.connections.StartAmazonGamesSignIn(c.Request().Context(), userID)
+	switch {
+	case errors.Is(err, storefront.ErrAmazonGamesNotInstalled):
+		return echo.NewHTTPError(http.StatusServiceUnavailable, amazonGamesNotInstalled)
+	case errors.Is(err, storefront.ErrAmazonGamesStartFailed):
 		slog.ErrorContext(c.Request().Context(), "amazon: start sign-in failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusBadGateway, "could not start an Amazon sign-in")
-	}
-	attemptID, err := h.sealAmazonLogin(userID, *login)
-	if err != nil {
+	case err != nil:
 		slog.ErrorContext(c.Request().Context(), "amazon: seal sign-in attempt failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
 		return echo.NewHTTPError(http.StatusInternalServerError, "could not start an Amazon sign-in")
 	}
 	return c.JSON(http.StatusOK, map[string]string{
-		"attempt_id": attemptID,
-		"login_url":  login.URL,
+		"attempt_id": signIn.AttemptID,
+		"login_url":  signIn.LoginURL,
 	})
 }
 
@@ -935,34 +777,39 @@ func (h *SyncHandler) HandleAmazonGamesConnect(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	if !h.amazonGamesConfigured() {
-		return echo.NewHTTPError(http.StatusServiceUnavailable, "Amazon Games sync not available (nile not installed)")
+	// Checked before the body, so a server without nile answers 503 to any
+	// request.
+	if !h.connections.AmazonGamesConfigured() {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, amazonGamesNotInstalled)
 	}
 	var body struct {
 		AttemptID   string `json:"attempt_id"`
 		RedirectURL string `json:"redirect_url"`
 	}
-	if err := c.Bind(&body); err != nil || body.AttemptID == "" {
+	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "attempt_id is required")
 	}
-	code, err := amazongamessvc.ParseAuthCode(body.RedirectURL)
-	if err != nil {
+	username, err := h.connections.ConnectAmazonGames(c.Request().Context(), userID, body.AttemptID, body.RedirectURL)
+	switch {
+	case errors.Is(err, storefront.ErrAmazonGamesNotInstalled):
+		return echo.NewHTTPError(http.StatusServiceUnavailable, amazonGamesNotInstalled)
+	case errors.Is(err, storefront.ErrAmazonGamesAttemptIDMissing):
+		return echo.NewHTTPError(http.StatusBadRequest, "attempt_id is required")
+	case errors.Is(err, storefront.ErrInvalidAmazonGamesRedirect):
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-	}
-	login, ok := h.openAmazonLogin(userID, body.AttemptID)
-	if !ok {
+	case errors.Is(err, storefront.ErrAmazonGamesAttemptUnusable):
 		return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in has expired or cannot be finished here; start again")
-	}
-	account, userData, err := h.amazonGamesClient.Register(c.Request().Context(), code, login)
-	if err != nil {
+	case errors.Is(err, storefront.ErrAmazonGamesSignInRejected):
 		slog.WarnContext(c.Request().Context(), "amazon: device registration failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusBadRequest, "Amazon did not accept that sign-in; start again and paste the address you land on")
-	}
-	if err := h.connections.Store(context.Background(), userID, "amazon-games", userData); err != nil {
+	case errors.Is(err, storefront.ErrAmazonGamesNoAccount):
+		slog.ErrorContext(c.Request().Context(), "amazon: no account after registration", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Amazon Games connection")
+	case err != nil:
 		slog.ErrorContext(c.Request().Context(), "amazon: persist storefront credentials failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Amazon Games connection")
 	}
-	return c.JSON(http.StatusOK, map[string]string{"username": account.Name})
+	return c.JSON(http.StatusOK, map[string]string{"username": username})
 }
 
 // HandleGetAmazonGamesConnection is GET /sync/amazon-games/connection.
@@ -970,7 +817,7 @@ func (h *SyncHandler) HandleGetAmazonGamesConnection(c *echo.Context) error {
 	if auth.UserIDFromContext(c) == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	if !h.amazonGamesConfigured() {
+	if !h.connections.AmazonGamesConfigured() {
 		// Nothing can sign in or sync without nile, but a sign-in stored earlier
 		// is still reported so the page can offer to remove it.
 		st, err := h.connections.Load(context.Background(), auth.UserIDFromContext(c), "amazon-games")
@@ -998,49 +845,18 @@ func (h *SyncHandler) HandleGetAmazonGamesConnection(c *echo.Context) error {
 }
 
 // HandleAmazonGamesDisconnect is DELETE /sync/amazon-games/connection. It
-// removes the stored sign-in and answers as the other stores do, then signs
-// that device out of Amazon in the background, best effort, so reconnecting
-// does not leave another registered device on the account. The sign-out uses
-// only the sign-in this disconnect removed: a reconnect stored meanwhile is
-// never touched, and a removal that failed signs nothing out.
+// removes the stored sign-in and answers as the other stores do; the module
+// signs that device out of Amazon in the background.
 func (h *SyncHandler) HandleAmazonGamesDisconnect(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	removed, err := h.connections.Take(context.Background(), userID, "amazon-games")
-	if err != nil {
+	if err := h.connections.DisconnectAmazonGames(c.Request().Context(), userID); err != nil {
 		slog.ErrorContext(c.Request().Context(), "sync: disconnect failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect amazon-games")
 	}
-	if removed != nil && h.amazonGamesConfigured() {
-		// Detached from the request so the answer does not wait for Amazon,
-		// keeping the request's logging values.
-		ctx := context.WithoutCancel(c.Request().Context())
-		h.amazonSignOuts.Go(func() { h.signOutAmazonDevice(ctx, *removed) })
-	}
 	return c.NoContent(http.StatusNoContent)
-}
-
-// signOutAmazonDevice runs nile's logout with a removed Amazon sign-in, under
-// a time limit; any failure is logged and otherwise ignored.
-func (h *SyncHandler) signOutAmazonDevice(ctx context.Context, ciphertext string) {
-	limit := amazonSignOutLimit
-	if h.amazonSignOutTimeout > 0 {
-		limit = h.amazonSignOutTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, limit)
-	defer cancel()
-	userData, err := h.encrypter.Decrypt(ciphertext)
-	if err != nil {
-		slog.WarnContext(ctx, "amazon: device sign-out skipped: the removed sign-in does not decrypt", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
-		return
-	}
-	if err := h.amazonGamesClient.Logout(ctx, userData); err != nil {
-		slog.WarnContext(ctx, "amazon: device sign-out after disconnect failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
-		return
-	}
-	slog.InfoContext(ctx, "amazon: device signed out after disconnect", logging.KeySource, "amazon-games")
 }
 
 func (h *SyncHandler) HandleListIgnored(c *echo.Context) error {

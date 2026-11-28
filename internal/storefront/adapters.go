@@ -26,7 +26,7 @@ type Clients struct {
 	Epic             *epicgamesstoresvc.Client
 	GOG              *gogsvc.Client
 	HumbleBundle     HumbleBundleClient
-	Amazon           amazongamessvc.LibraryClient
+	Amazon           AmazonGamesClient
 }
 
 // AdapterFactory is the sync worker's adapter factory: it builds the
