@@ -11,18 +11,27 @@ import (
 
 // A store link is the storefront's own id for a game's product page,
 // external_games.store_link. A storefront has store links when its definition
-// says how to build the page's URL from one (storeURL) and how to resolve one
-// (resolver); Humble Bundle and Amazon Games have neither.
+// has storeLinks: how to build the page's URL from one and how to resolve
+// one. Humble Bundle and Amazon Games have none.
+
+// storeLinks is the store-link half of a definition.
+type storeLinks struct {
+	// url builds the product-page URL from a non-empty store link.
+	url func(link string) string
+	// resolver builds the resolver for a user's store links.
+	resolver func(ctx context.Context, c *Connections, userID string) (storelink.Resolver, error)
+}
 
 // The ways StoreLinkResolverFactory fails for the PlayStation Store, whose
-// resolver signs in with the user's stored token.
+// resolver signs in with the user's stored token. Either fails that item of
+// the enrichment Job.
 var (
-	// ErrStoreLinkNotConnected: the user has no stored PlayStation Store
+	// ErrPlayStationStoreNotConnected: the user has no stored PlayStation Store
 	// sign-in.
-	ErrStoreLinkNotConnected = errors.New("playstation store: not connected")
-	// ErrStoreLinkSignInUnreadable: the stored sign-in does not decrypt or
-	// does not decode.
-	ErrStoreLinkSignInUnreadable = errors.New("playstation store: stored sign-in is unreadable")
+	ErrPlayStationStoreNotConnected = errors.New("playstation store: not connected")
+	// ErrPlayStationStoreSignInUnreadable: the stored sign-in does not decrypt
+	// or does not decode. A decode failure wraps the cause.
+	ErrPlayStationStoreSignInUnreadable = errors.New("playstation store: stored sign-in is unreadable")
 )
 
 // StoreURL turns a store link into the storefront's product-page URL. It
@@ -31,10 +40,10 @@ var (
 // scheme is a code fix, not a re-sync.
 func StoreURL(storefront, storeLink string) (string, bool) {
 	def, ok := lookup(storefront)
-	if !ok || def.storeURL == nil || storeLink == "" {
+	if !ok || def.storeLinks == nil || storeLink == "" {
 		return "", false
 	}
-	return def.storeURL(storeLink), true
+	return def.storeLinks.url(storeLink), true
 }
 
 // StoreLinkStorefronts returns the slugs of the storefronts whose store links
@@ -42,7 +51,7 @@ func StoreURL(storefront, storeLink string) (string, bool) {
 func StoreLinkStorefronts() []string {
 	var slugs []string
 	for _, d := range definitions {
-		if d.resolver != nil {
+		if d.storeLinks != nil {
 			slugs = append(slugs, d.slug)
 		}
 	}
@@ -55,10 +64,10 @@ func StoreLinkStorefronts() []string {
 func (c *Connections) StoreLinkResolverFactory() func(ctx context.Context, storefront, userID string) (storelink.Resolver, error) {
 	return func(ctx context.Context, storefront, userID string) (storelink.Resolver, error) {
 		def, ok := lookup(storefront)
-		if !ok || def.resolver == nil {
+		if !ok || def.storeLinks == nil {
 			return nil, fmt.Errorf("no store links for storefront: %s", storefront)
 		}
-		return def.resolver(ctx, c, userID)
+		return def.storeLinks.resolver(ctx, c, userID)
 	}
 }
 
@@ -101,14 +110,14 @@ func playStationStoreResolver(ctx context.Context, c *Connections, userID string
 		return nil, err
 	}
 	if !loaded.Connected {
-		return nil, ErrStoreLinkNotConnected
+		return nil, ErrPlayStationStoreNotConnected
 	}
 	if loaded.Plaintext == nil {
-		return nil, ErrStoreLinkSignInUnreadable
+		return nil, ErrPlayStationStoreSignInUnreadable
 	}
 	creds, err := decode[PlayStationStoreCredentials](loaded.Plaintext)
 	if err != nil {
-		return nil, ErrStoreLinkSignInUnreadable
+		return nil, fmt.Errorf("%w: %w", ErrPlayStationStoreSignInUnreadable, err)
 	}
 	return storelink.NewPSNResolver(newPSNConceptClient(), creds.NPSSOToken), nil
 }

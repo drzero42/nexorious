@@ -36,13 +36,8 @@ func TestStoreURL(t *testing.T) {
 	}
 }
 
-// A storefront has store links when it can both link to and resolve them.
-func TestStoreLinkCapabilityIsWhole(t *testing.T) {
-	for _, d := range definitions {
-		if (d.storeURL == nil) != (d.resolver == nil) {
-			t.Errorf("%s: storeURL set %v, resolver set %v; want both or neither", d.slug, d.storeURL != nil, d.resolver != nil)
-		}
-	}
+// The storefronts with store links, which the enrichment worker selects on.
+func TestStoreLinkStorefronts(t *testing.T) {
 	want := []string{"steam", "playstation-store", "epic-games-store", "gog"}
 	if got := StoreLinkStorefronts(); !slices.Equal(got, want) {
 		t.Errorf("StoreLinkStorefronts() = %v, want %v", got, want)
@@ -61,6 +56,7 @@ func (f *fakePSNConceptClient) ResolveConceptID(_ context.Context, _, titleID st
 }
 
 func TestStoreLinkResolverFactory(t *testing.T) {
+	truncateAllTables(t)
 	ctx := context.Background()
 
 	t.Run("credential-free storefronts resolve without a connection", func(t *testing.T) {
@@ -94,19 +90,19 @@ func TestStoreLinkResolverFactory(t *testing.T) {
 			arrange func(t *testing.T, conns *Connections, userID string)
 			want    error
 		}{
-			{"no connection", func(*testing.T, *Connections, string) {}, ErrStoreLinkNotConnected},
+			{"no connection", func(*testing.T, *Connections, string) {}, ErrPlayStationStoreNotConnected},
 			{"disconnected", func(t *testing.T, _ *Connections, userID string) {
 				if _, err := testDB.ExecContext(ctx,
 					`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (gen_random_uuid(), ?, 'playstation-store', 'daily')`, userID); err != nil {
 					t.Fatal(err)
 				}
-			}, ErrStoreLinkNotConnected},
+			}, ErrPlayStationStoreNotConnected},
 			{"does not decrypt", func(t *testing.T, _ *Connections, userID string) {
 				seedStoredSignIn(t, userID, "playstation-store", "not-ciphertext")
-			}, ErrStoreLinkSignInUnreadable},
+			}, ErrPlayStationStoreSignInUnreadable},
 			{"does not decode", func(t *testing.T, _ *Connections, userID string) {
 				seedStoredSignIn(t, userID, "playstation-store", notJSON)
-			}, ErrStoreLinkSignInUnreadable},
+			}, ErrPlayStationStoreSignInUnreadable},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				truncateAllTables(t)
