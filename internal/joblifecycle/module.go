@@ -116,9 +116,9 @@ type Effect struct {
 type Observer interface {
 	// ItemEnded is called once per item that ends (completed, failed
 	// or skipped; cancelled items are not counted).
-	ItemEnded(ctx context.Context, job models.Job, status string)
+	ItemEnded(ctx context.Context, job models.Job, status models.JobItemStatus)
 	// JobEnded is called on a Job's first ending only.
-	JobEnded(ctx context.Context, job models.Job, outcome string, failedItems int)
+	JobEnded(ctx context.Context, job models.Job, outcome models.JobStatus, failedItems int)
 }
 
 // Kind is what a Job kind tells the module about itself.
@@ -306,7 +306,7 @@ func activeDuplicate(ctx context.Context, tx bun.Tx, jobType string, key DupKey,
 	q := tx.NewSelect().Table("jobs").Column("id").
 		Where("job_type = ?", jobType).
 		Where("source = ?", key.Source).
-		Where("status IN (?)", bun.List([]string{models.JobStatusPending, models.JobStatusProcessing})).
+		Where("status IN (?)", bun.List(models.ActiveJobStatuses())).
 		Limit(1)
 	if key.UserID != "" {
 		q = q.Where("user_id = ?", key.UserID)

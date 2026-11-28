@@ -298,8 +298,9 @@ func BuildPeriodicJobs(cfg *config.Config) []*river.PeriodicJob {
 func CleanupOldJobs(ctx context.Context, db *bun.DB) {
 	result, err := db.NewRaw(
 		`DELETE FROM jobs
-		 WHERE status IN ('completed', 'failed', 'cancelled')
+		 WHERE status IN (?)
 		   AND completed_at < now() - interval '30 days'`,
+		bun.List(models.EndedJobStatuses()),
 	).Exec(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "cleanup: failed to delete old jobs", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
@@ -334,8 +335,9 @@ func cleanupExpiredExports(ctx context.Context, db *bun.DB) {
 	}
 	err := db.NewRaw(`
 		SELECT id, file_path FROM jobs
-		WHERE job_type = 'export' AND status = 'completed'
+		WHERE job_type = ? AND status = ?
 		  AND file_path IS NOT NULL AND completed_at < now() - interval '24 hours'`,
+		models.JobTypeExport, models.JobStatusCompleted,
 	).Scan(ctx, &jobs)
 	if err != nil {
 		slog.ErrorContext(ctx, "cleanup: failed to query expired exports", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
@@ -375,7 +377,9 @@ func sweepExportsDir(ctx context.Context, db *bun.DB, dir string) {
 		return
 	}
 	var referenced []string
-	if err := db.NewRaw(`SELECT file_path FROM jobs WHERE job_type = 'export' AND file_path IS NOT NULL`).Scan(ctx, &referenced); err != nil {
+	if err := db.NewRaw(
+		`SELECT file_path FROM jobs WHERE job_type = ? AND file_path IS NOT NULL`, models.JobTypeExport,
+	).Scan(ctx, &referenced); err != nil {
 		slog.ErrorContext(ctx, "cleanup: query export file paths", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		return
 	}
@@ -479,10 +483,10 @@ func syncBackoff(ctx context.Context, db *bun.DB, cfg models.UserSyncConfig, int
 	}
 	if err := db.NewRaw(
 		`SELECT COUNT(*) AS failures, MAX(completed_at) AS last_failed FROM jobs
-		 WHERE user_id = ? AND source = ? AND job_type = 'sync' AND status = 'failed'
+		 WHERE user_id = ? AND source = ? AND job_type = ? AND status = ?
 		   AND completed_at IS NOT NULL
 		   AND (?::timestamptz IS NULL OR completed_at > ?::timestamptz)`,
-		cfg.UserID, cfg.Storefront, cfg.LastFetchedAt, cfg.LastFetchedAt,
+		cfg.UserID, cfg.Storefront, models.JobTypeSync, models.JobStatusFailed, cfg.LastFetchedAt, cfg.LastFetchedAt,
 	).Scan(ctx, &row); err != nil {
 		slog.WarnContext(ctx, "CheckPendingSyncs: count failed syncs", logging.Cat(logging.CategoryDB), logging.KeyErr, err, logging.KeyUserID, cfg.UserID, logging.KeySource, cfg.Storefront)
 		return 0, false

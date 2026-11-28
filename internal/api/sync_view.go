@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 
+	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/externalgame"
 )
@@ -27,32 +28,37 @@ const syncNewestItemJoin = `
 	) ni ON true
 	LEFT JOIN jobs nj ON nj.id = ni.job_id`
 
+// activeJobStatusList is models.ActiveJobStatuses as an SQL list, for the
+// constant fragments below, which cannot bind it (TestActiveJobStatusList).
+const activeJobStatusList = `'` + string(models.JobStatusPending) + `', '` + string(models.JobStatusProcessing) + `'`
+
 // syncNeedsReview: the newest item is in Pending review and no write happened
 // since it was created, or any item of the game is in Pending review in an
 // active Job (an older Job that "retry failed" reopened: it blocks new syncs
 // until the game is reviewed).
 const syncNeedsReview = `(
-	COALESCE(ni.status = 'pending_review'
+	COALESCE(ni.status = '` + string(models.JobItemStatusPendingReview) + `'
 	         AND (eg.library_written_at IS NULL OR eg.library_written_at < ni.created_at), false)
 	OR EXISTS (
 		SELECT 1 FROM job_items r JOIN jobs rj ON rj.id = r.job_id
-		WHERE r.external_game_id = eg.id AND r.status = 'pending_review'
-		  AND rj.status IN ('pending', 'processing')))`
+		WHERE r.external_game_id = eg.id AND r.status = '` + string(models.JobItemStatusPendingReview) + `'
+		  AND rj.status IN (` + activeJobStatusList + `)))`
 
 // syncFailed: the newest item failed and no write happened since.
-const syncFailed = `COALESCE(ni.status = 'failed'
+const syncFailed = `COALESCE(ni.status = '` + string(models.JobItemStatusFailed) + `'
 	AND (eg.library_written_at IS NULL OR eg.library_written_at < COALESCE(ni.processed_at, ni.created_at)), false)`
 
 // syncRetryable: the game shows as failed and Retry could work: the newest
 // item's Job is active or completed. Retry never reopens a failed or
 // cancelled Job, so the view offers no retry there.
 const syncRetryable = `(` + syncFailed + ` AND NOT ` + syncNeedsReview + `
-	AND COALESCE(nj.status IN ('pending', 'processing', 'completed'), false))`
+	AND COALESCE(nj.status IN (` + activeJobStatusList + `, '` + string(models.JobStatusCompleted) + `'), false))`
 
 // syncInFlight: the newest item is pending in an active Job, so a sync worker
 // still acts on it. No item is open in an ended Job (the lifecycle
 // module cancels them with it).
-const syncInFlight = `COALESCE(ni.status IN ('pending', 'processing') AND nj.status IN ('pending', 'processing'), false)`
+const syncInFlight = `COALESCE(ni.status IN ('` + string(models.JobItemStatusPending) + `', '` + string(models.JobItemStatusProcessing) + `')
+	AND nj.status IN (` + activeJobStatusList + `), false)`
 
 // syncRepresentativeOrder orders the editions of a set (External games aliased
 // a) so that the first is the set's representative: the oldest edition still

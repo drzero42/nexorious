@@ -38,7 +38,7 @@ func (a *hookAdapter) GetLibrary(_ context.Context, _ int, onBatch func([]tasks.
 
 // seedGOGSyncJob inserts a user, a gog sync Job in the given status and a gog
 // sync config, and returns the user and Job ids.
-func seedGOGSyncJob(t *testing.T, status string) (userID, jobID string) {
+func seedGOGSyncJob(t *testing.T, status models.JobStatus) (userID, jobID string) {
 	t.Helper()
 	ctx := context.Background()
 	userID, jobID = uuid.NewString(), uuid.NewString()
@@ -75,7 +75,7 @@ func runInterrupted(t *testing.T, ctx context.Context, w *tasks.DispatchSyncWork
 	}
 }
 
-func loadJobState(t *testing.T, jobID string) (status string, dispatchComplete bool) {
+func loadJobState(t *testing.T, jobID string) (status models.JobStatus, dispatchComplete bool) {
 	t.Helper()
 	if err := testDB.NewRaw(
 		`SELECT status, dispatch_complete FROM jobs WHERE id = ?`, jobID,

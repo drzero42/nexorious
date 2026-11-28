@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/db/models"
 )
 
 // FailAllAfterRestore fails every active Job, of every kind, in a database a
@@ -23,17 +25,19 @@ import (
 func FailAllAfterRestore(ctx context.Context, tx bun.Tx, msg string) error {
 	now := time.Now().UTC()
 	if _, err := tx.NewRaw(`
-		UPDATE job_items SET status = 'cancelled', processed_at = ?, river_job_id = NULL
-		WHERE status IN ('pending', 'processing', 'pending_review')
-		  AND job_id IN (SELECT id FROM jobs WHERE status IN ('pending', 'processing'))`,
-		now,
+		UPDATE job_items SET status = ?, processed_at = ?, river_job_id = NULL
+		WHERE status IN (?, ?, ?)
+		  AND job_id IN (SELECT id FROM jobs WHERE status IN (?))`,
+		models.JobItemStatusCancelled, now,
+		models.JobItemStatusPending, models.JobItemStatusProcessing, models.JobItemStatusPendingReview,
+		bun.List(models.ActiveJobStatuses()),
 	).Exec(ctx); err != nil {
 		return fmt.Errorf("cancel open items: %w", err)
 	}
 	if _, err := tx.NewRaw(`
-		UPDATE jobs SET status = 'failed', error_message = ?, completed_at = ?, river_job_id = NULL
-		WHERE status IN ('pending', 'processing')`,
-		scrub(msg), now,
+		UPDATE jobs SET status = ?, error_message = ?, completed_at = ?, river_job_id = NULL
+		WHERE status IN (?)`,
+		models.JobStatusFailed, scrub(msg), now, bun.List(models.ActiveJobStatuses()),
 	).Exec(ctx); err != nil {
 		return fmt.Errorf("fail active jobs: %w", err)
 	}

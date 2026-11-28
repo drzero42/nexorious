@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -33,14 +34,27 @@ const (
 	JobSourceSystem           = "system"
 )
 
+// JobStatus is a value of jobs.status.
+type JobStatus string
+
 // Job status constants.
 const (
-	JobStatusPending    = "pending"
-	JobStatusProcessing = "processing"
-	JobStatusCompleted  = "completed"
-	JobStatusFailed     = "failed"
-	JobStatusCancelled  = "cancelled"
+	JobStatusPending    JobStatus = "pending"
+	JobStatusProcessing JobStatus = "processing"
+	JobStatusCompleted  JobStatus = "completed"
+	JobStatusFailed     JobStatus = "failed"
+	JobStatusCancelled  JobStatus = "cancelled"
 )
+
+// ActiveJobStatuses returns the statuses of a Job that has not ended.
+func ActiveJobStatuses() []JobStatus {
+	return []JobStatus{JobStatusPending, JobStatusProcessing}
+}
+
+// EndedJobStatuses returns the statuses of a Job that has ended.
+func EndedJobStatuses() []JobStatus {
+	return []JobStatus{JobStatusCompleted, JobStatusFailed, JobStatusCancelled}
+}
 
 // Job priority constants.
 const (
@@ -52,16 +66,16 @@ const (
 type Job struct {
 	bun.BaseModel `bun:"table:jobs"`
 
-	ID               string  `bun:"id,pk"                    json:"id"`
-	UserID           string  `bun:"user_id,notnull"          json:"user_id"`
-	JobType          string  `bun:"job_type,notnull"         json:"job_type"`
-	Source           string  `bun:"source,notnull"           json:"source"`
-	Status           string  `bun:"status,notnull"           json:"status"`
-	Priority         string  `bun:"priority,notnull"         json:"priority"`
-	FilePath         *string `bun:"file_path"                json:"file_path"`
-	TotalItems       int     `bun:"total_items,notnull"      json:"total_items"`
-	ErrorMessage     *string `bun:"error_message"            json:"error_message"`
-	DispatchComplete bool    `bun:"dispatch_complete,notnull" json:"-"`
+	ID               string    `bun:"id,pk"                    json:"id"`
+	UserID           string    `bun:"user_id,notnull"          json:"user_id"`
+	JobType          string    `bun:"job_type,notnull"         json:"job_type"`
+	Source           string    `bun:"source,notnull"           json:"source"`
+	Status           JobStatus `bun:"status,notnull"           json:"status"`
+	Priority         string    `bun:"priority,notnull"         json:"priority"`
+	FilePath         *string   `bun:"file_path"                json:"file_path"`
+	TotalItems       int       `bun:"total_items,notnull"      json:"total_items"`
+	ErrorMessage     *string   `bun:"error_message"            json:"error_message"`
+	DispatchComplete bool      `bun:"dispatch_complete,notnull" json:"-"`
 	// RiverJobID is the River job that owns the Job's dispatch while it is not
 	// done (internal/joblifecycle); NULL otherwise.
 	RiverJobID  *int64     `bun:"river_job_id" json:"-"`
@@ -70,16 +84,14 @@ type Job struct {
 	CompletedAt *time.Time `bun:"completed_at"             json:"completed_at"`
 }
 
-// IsActive returns true if the job is pending or processing.
+// IsActive reports whether the job has not ended (ActiveJobStatuses).
 func (j *Job) IsActive() bool {
-	return j.Status == JobStatusPending || j.Status == JobStatusProcessing
+	return slices.Contains(ActiveJobStatuses(), j.Status)
 }
 
-// IsTerminal returns true if the job has reached a terminal state.
+// IsTerminal reports whether the job has ended (EndedJobStatuses).
 func (j *Job) IsTerminal() bool {
-	return j.Status == JobStatusCompleted ||
-		j.Status == JobStatusFailed ||
-		j.Status == JobStatusCancelled
+	return slices.Contains(EndedJobStatuses(), j.Status)
 }
 
 // DurationSeconds returns elapsed seconds from StartedAt to CompletedAt
@@ -98,16 +110,27 @@ func (j *Job) DurationSeconds() *float64 {
 
 // ─── JobItem ─────────────────────────────────────────────────────────────────
 
+// JobItemStatus is a value of job_items.status.
+type JobItemStatus string
+
 // JobItem status constants.
 const (
-	JobItemStatusPending       = "pending"
-	JobItemStatusProcessing    = "processing"
-	JobItemStatusCompleted     = "completed"
-	JobItemStatusPendingReview = "pending_review"
-	JobItemStatusSkipped       = "skipped"
-	JobItemStatusFailed        = "failed"
-	JobItemStatusCancelled     = "cancelled"
+	JobItemStatusPending       JobItemStatus = "pending"
+	JobItemStatusProcessing    JobItemStatus = "processing"
+	JobItemStatusCompleted     JobItemStatus = "completed"
+	JobItemStatusPendingReview JobItemStatus = "pending_review"
+	JobItemStatusSkipped       JobItemStatus = "skipped"
+	JobItemStatusFailed        JobItemStatus = "failed"
+	JobItemStatusCancelled     JobItemStatus = "cancelled"
 )
+
+// JobItemStatuses returns every Job item status.
+func JobItemStatuses() []JobItemStatus {
+	return []JobItemStatus{
+		JobItemStatusPending, JobItemStatusProcessing, JobItemStatusCompleted, JobItemStatusPendingReview,
+		JobItemStatusSkipped, JobItemStatusFailed, JobItemStatusCancelled,
+	}
+}
 
 type JobItem struct {
 	bun.BaseModel `bun:"table:job_items"`
@@ -119,7 +142,7 @@ type JobItem struct {
 	ItemKey         string          `bun:"item_key,notnull"         json:"item_key"`
 	SourceTitle     string          `bun:"source_title,notnull"     json:"source_title"`
 	SourceMetadata  json.RawMessage `bun:"source_metadata,notnull"  json:"source_metadata"`
-	Status          string          `bun:"status,notnull"           json:"status"`
+	Status          JobItemStatus   `bun:"status,notnull"           json:"status"`
 	Result          json.RawMessage `bun:"result,notnull"           json:"result"`
 	ErrorMessage    *string         `bun:"error_message"            json:"error_message"`
 	IGDBCandidates  json.RawMessage `bun:"igdb_candidates,notnull"  json:"igdb_candidates"`

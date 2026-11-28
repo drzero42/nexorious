@@ -44,7 +44,7 @@ func TestFailAllAfterRestore(t *testing.T) {
 			t.Errorf("job %s = %+v, want failed with the restore message and no owner", id, j)
 		}
 	}
-	want := []string{models.JobItemStatusCancelled, models.JobItemStatusCancelled, models.JobItemStatusCompleted}
+	want := []models.JobItemStatus{models.JobItemStatusCancelled, models.JobItemStatusCancelled, models.JobItemStatusCompleted}
 	for i, it := range loadItems(t, activeID) {
 		if it.Status != want[i] || it.ProcessedAt == nil || it.RiverJobID != nil {
 			t.Errorf("item %d = %s (processed_at %v, owner %v), want %s, ended, no owner", i, it.Status, it.ProcessedAt, it.RiverJobID, want[i])

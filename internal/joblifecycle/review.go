@@ -48,7 +48,7 @@ func (m *Module) NextStage(ctx context.Context, itemID string, riverJobID int64,
 		}
 		q := tx.NewUpdate().Table("job_items").
 			Set("river_job_id = ?", rid).
-			Where("id = ? AND status = 'pending'", item.ID)
+			Where("id = ? AND status = ?", item.ID, models.JobItemStatusPending)
 		if s.ResolvedIGDBID != nil {
 			q = q.Set("resolved_igdb_id = ?", *s.ResolvedIGDBID)
 		}
@@ -93,7 +93,8 @@ func (m *Module) AwaitReview(ctx context.Context, itemID string, riverJobID int6
 					return err
 				}
 				if _, err := tx.NewRaw(
-					`UPDATE job_items SET river_job_id = ? WHERE id = ? AND status = 'pending'`, rid, item.ID,
+					`UPDATE job_items SET river_job_id = ? WHERE id = ? AND status = ?`,
+					rid, item.ID, models.JobItemStatusPending,
 				).Exec(ctx); err != nil {
 					return fmt.Errorf("next stage: %w", err)
 				}
@@ -101,10 +102,10 @@ func (m *Module) AwaitReview(ctx context.Context, itemID string, riverJobID int6
 			}
 		}
 		q := tx.NewUpdate().Table("job_items").
-			Set("status = 'pending_review'").
+			Set("status = ?", models.JobItemStatusPendingReview).
 			Set("river_job_id = NULL").
 			Set("match_confidence = ?", r.MatchConfidence).
-			Where("id = ? AND status = 'pending'", item.ID)
+			Where("id = ? AND status = ?", item.ID, models.JobItemStatusPending)
 		if r.Candidates != nil {
 			q = q.Set("igdb_candidates = ?", r.Candidates)
 		}
@@ -162,8 +163,9 @@ func (m *Module) Resolve(ctx context.Context, itemID string, igdbID int) error {
 		}
 		now := time.Now().UTC()
 		if _, err := tx.NewRaw(
-			`UPDATE job_items SET status = 'pending', resolved_igdb_id = ?, resolved_at = ?
-			 WHERE id = ? AND status = 'pending_review'`, igdbID, now, item.ID,
+			`UPDATE job_items SET status = ?, resolved_igdb_id = ?, resolved_at = ?
+			 WHERE id = ? AND status = ?`,
+			models.JobItemStatusPending, igdbID, now, item.ID, models.JobItemStatusPendingReview,
 		).Exec(ctx); err != nil {
 			return fmt.Errorf("resolve: %w", err)
 		}
@@ -180,8 +182,9 @@ func (m *Module) Skip(ctx context.Context, itemID string) error {
 			return err
 		}
 		if _, err := tx.NewRaw(
-			`UPDATE job_items SET status = 'skipped', processed_at = ?
-			 WHERE id = ? AND status = 'pending_review'`, time.Now().UTC(), item.ID,
+			`UPDATE job_items SET status = ?, processed_at = ?
+			 WHERE id = ? AND status = ?`,
+			models.JobItemStatusSkipped, time.Now().UTC(), item.ID, models.JobItemStatusPendingReview,
 		).Exec(ctx); err != nil {
 			return fmt.Errorf("skip: %w", err)
 		}
