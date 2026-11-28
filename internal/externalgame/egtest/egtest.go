@@ -13,6 +13,7 @@ package egtest
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -38,6 +39,8 @@ type Game struct {
 	OwnershipStatus string
 	// StoreLink is NULL when nil.
 	StoreLink *string
+	// SourceMetadata is NULL when empty.
+	SourceMetadata map[string]string
 	// CreatedAt is now() when zero. updated_at is always now().
 	CreatedAt time.Time
 
@@ -64,22 +67,29 @@ func Insert(t testing.TB, db bun.IDB, g Game) string {
 	if g.Title == "" {
 		g.Title = "Game"
 	}
-	var resolved, ownership, created any
+	var resolved, ownership, metadata, created any
 	if g.ResolvedIGDBID != 0 {
 		resolved = g.ResolvedIGDBID
 	}
 	if g.OwnershipStatus != "" {
 		ownership = g.OwnershipStatus
 	}
+	if len(g.SourceMetadata) > 0 {
+		b, err := json.Marshal(g.SourceMetadata)
+		if err != nil {
+			t.Fatalf("egtest.Insert %q: source metadata: %v", g.Title, err)
+		}
+		metadata = json.RawMessage(b)
+	}
 	if !g.CreatedAt.IsZero() {
 		created = g.CreatedAt
 	}
 	if _, err := db.NewRaw(`
 		INSERT INTO external_games (id, user_id, storefront, external_id, title,
-			is_skipped, is_available, resolved_igdb_id, ownership_status, store_link, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?::timestamptz, now()), now())`,
+			is_skipped, is_available, resolved_igdb_id, ownership_status, store_link, source_metadata, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?::timestamptz, now()), now())`,
 		g.ID, g.UserID, g.Storefront, g.ExternalID, g.Title,
-		g.Skipped, !g.Unavailable, resolved, ownership, g.StoreLink, created,
+		g.Skipped, !g.Unavailable, resolved, ownership, g.StoreLink, metadata, created,
 	).Exec(context.Background()); err != nil {
 		t.Fatalf("egtest.Insert %q: %v", g.Title, err)
 	}

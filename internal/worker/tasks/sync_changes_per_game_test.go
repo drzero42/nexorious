@@ -152,11 +152,8 @@ func TestSyncDiff_MergesEditionPlatforms(t *testing.T) {
 	}
 	ps4 := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "1", Title: "HADES (PS4)", Platforms: []string{"playstation-4"}})
 	ps5 := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "2", Title: "HADES (PS5)", Platforms: []string{"playstation-5"}})
-	oldPS4 := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "3", Title: "Old Game", Platforms: []string{"playstation-4"}})
-	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "4", Title: "Old Game", Platforms: []string{"playstation-5"}})
-	if _, err := testDB.ExecContext(ctx, `UPDATE external_games SET is_available = false WHERE title = 'Old Game'`); err != nil {
-		t.Fatalf("mark unavailable: %v", err)
-	}
+	oldPS4 := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "3", Title: "Old Game", Unavailable: true, Platforms: []string{"playstation-4"}})
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "psn", ExternalID: "4", Title: "Old Game", Unavailable: true, Platforms: []string{"playstation-5"}})
 
 	insertChange := func(egID string, ug any, changeType, title string, offset int) {
 		t.Helper()

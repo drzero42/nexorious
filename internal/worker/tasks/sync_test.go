@@ -1098,9 +1098,7 @@ func TestDispatchSync_EmptyFetchNoKnownGames_Completes(t *testing.T) {
 		uuid.NewString(), userID,
 	).Exec(ctx)
 	// Already-unavailable rows are not "known available" and must not trip the guard.
-	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "gog", ExternalID: "1", Title: "Gone Game", Platforms: []string{"pc-windows"}})
-	_, _ = testDB.ExecContext(ctx,
-		`UPDATE external_games SET is_available = false WHERE user_id = ? AND storefront = 'gog'`, userID)
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "gog", ExternalID: "1", Title: "Gone Game", Unavailable: true, Platforms: []string{"pc-windows"}})
 
 	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), LC: newTestLC(t)}
 	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"})); err != nil {
