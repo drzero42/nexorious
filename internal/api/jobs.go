@@ -122,11 +122,28 @@ func toJobResponse(job *models.Job, progress map[string]any) map[string]any {
 	}
 }
 
+// invalidStatusFilter is the 400 for a status query parameter that is not one
+// of valid, naming the values the endpoint accepts so a misspelt filter is not
+// mistaken for an empty result.
+func invalidStatusFilter[S ~string](status S, valid []S) error {
+	names := make([]string, len(valid))
+	for i, v := range valid {
+		names[i] = string(v)
+	}
+	return echo.NewHTTPError(http.StatusBadRequest,
+		fmt.Sprintf("invalid status %q: must be one of %s", string(status), strings.Join(names, ", ")))
+}
+
 // HandleListJobs handles GET /api/jobs.
 func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	status := models.JobStatus(c.QueryParam("status"))
+	if status != "" && !status.Valid() {
+		return invalidStatusFilter(status, models.JobStatuses())
 	}
 
 	page := pageNumber(c.QueryParam("page"))
@@ -166,8 +183,8 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 	if src := c.QueryParam("source"); src != "" {
 		q = q.Where("source = ?", src)
 	}
-	if st := c.QueryParam("status"); st != "" {
-		q = q.Where("status = ?", st)
+	if status != "" {
+		q = q.Where("status = ?", status)
 	}
 
 	// Count total.
@@ -178,8 +195,8 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 	if src := c.QueryParam("source"); src != "" {
 		countQ = countQ.Where("source = ?", src)
 	}
-	if st := c.QueryParam("status"); st != "" {
-		countQ = countQ.Where("status = ?", st)
+	if status != "" {
+		countQ = countQ.Where("status = ?", status)
 	}
 	total, err := countQ.Count(context.Background())
 	if err != nil {
@@ -627,6 +644,11 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 
+	statusParam := models.JobItemStatus(c.QueryParam("status"))
+	if statusParam != "" && !statusParam.Valid() {
+		return invalidStatusFilter(statusParam, models.JobItemStatuses())
+	}
+
 	jobID := c.Param("id")
 
 	// Verify job ownership.
@@ -651,8 +673,6 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 	if perPage > 100 {
 		perPage = 100
 	}
-
-	statusParam := models.JobItemStatus(c.QueryParam("status"))
 
 	q := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID).Where("item_key <> ?", tasks.PoolsItemKey)
 	countQ := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID).Where("item_key <> ?", tasks.PoolsItemKey)
