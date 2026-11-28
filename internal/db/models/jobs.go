@@ -19,6 +19,14 @@ const (
 	JobTypeStoreLinkRefresh = "store_link_refresh"
 )
 
+// JobTypes returns every Job type.
+func JobTypes() []string {
+	return []string{
+		JobTypeSync, JobTypeImport, JobTypeExport,
+		JobTypeMetadataRefresh, JobTypeStoreLinkRefresh,
+	}
+}
+
 // Job source constants.
 const (
 	JobSourceSteam            = "steam"
