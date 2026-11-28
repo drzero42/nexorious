@@ -96,9 +96,10 @@ func TestTake(t *testing.T) {
 	if err := conns.Store(ctx, userID, "amazon-games", json.RawMessage(amazonOldUserData)); err != nil {
 		t.Fatal(err)
 	}
+	stored := storedSignIn(t, userID, "amazon-games")
 	removed, err := conns.Take(ctx, userID, "amazon-games")
-	if err != nil || string(removed) != amazonOldUserData {
-		t.Fatalf("take = %s, %v; want the stored sign-in, decrypted", removed, err)
+	if err != nil || removed == nil || *removed != stored {
+		t.Fatalf("take = %v, %v; want the stored sign-in", removed, err)
 	}
 	if loaded, err := conns.Load(ctx, userID, "amazon-games"); err != nil || loaded.Connected {
 		t.Errorf("after take loaded = %+v, err = %v; want not connected", loaded, err)
@@ -154,21 +155,5 @@ func TestGOGRefreshKeepsStoredFields(t *testing.T) {
 	}
 	if want := (GOGCredentials{RefreshToken: "new", Username: "ana"}); got != want {
 		t.Errorf("stored %+v after the refresh, want %+v", got, want)
-	}
-}
-
-// A removed sign-in that does not decrypt is still removed, and Take returns
-// nothing to act on.
-func TestTake_UndecryptableSignIn(t *testing.T) {
-	truncateAllTables(t)
-	userID := seedUser(t)
-	seedStoredSignIn(t, userID, "amazon-games", "enc:v1:not-a-ciphertext")
-	conns := NewConnections(testDB, testEncrypter(t))
-	removed, err := conns.Take(context.Background(), userID, "amazon-games")
-	if err != nil || removed != nil {
-		t.Fatalf("take = %s, %v; want nil, nil", removed, err)
-	}
-	if loaded, err := conns.Load(context.Background(), userID, "amazon-games"); err != nil || loaded.Connected {
-		t.Errorf("after take loaded = %+v, err = %v; want not connected", loaded, err)
 	}
 }

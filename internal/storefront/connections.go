@@ -77,10 +77,9 @@ func (c *Connections) Clear(ctx context.Context, userID, storefront string) erro
 }
 
 // Take clears the user's stored sign-in for the storefront and returns the
-// sign-in it cleared, decrypted. The clear and the read are one statement, so
-// nothing stored after it can be returned. It returns nil when nothing was
-// stored, and when the cleared sign-in does not decrypt (logged).
-func (c *Connections) Take(ctx context.Context, userID, storefront string) ([]byte, error) {
+// ciphertext it cleared, in one statement, so nothing stored after it can be
+// returned. It returns nil when nothing was stored.
+func (c *Connections) Take(ctx context.Context, userID, storefront string) (*string, error) {
 	var removed *string
 	err := c.db.NewRaw(
 		`UPDATE user_sync_configs u SET storefront_credentials = NULL, updated_at = now()
@@ -95,15 +94,7 @@ func (c *Connections) Take(ctx context.Context, userID, storefront string) ([]by
 	if err != nil {
 		return nil, fmt.Errorf("take %s connection: %w", storefront, err)
 	}
-	if removed == nil {
-		return nil, nil
-	}
-	plain, err := c.encrypter.Decrypt(*removed)
-	if err != nil {
-		slog.WarnContext(logging.WithUserID(ctx, userID), "storefront: removed sign-in does not decrypt", logging.KeySource, storefront, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
-		return nil, nil
-	}
-	return plain, nil
+	return removed, nil
 }
 
 // Loaded is the state of a user's stored Connection.
@@ -125,7 +116,7 @@ func (c *Connections) Load(ctx context.Context, userID, storefront string) (Load
 		return Loaded{}, nil
 	}
 	if err != nil {
-		return Loaded{}, err
+		return Loaded{}, fmt.Errorf("load %s connection: %w", storefront, err)
 	}
 	if row.StorefrontCredentials == nil {
 		return Loaded{}, nil

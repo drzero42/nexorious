@@ -3,9 +3,10 @@
 //
 // The stored value is the interface between "connect" and "sync". This
 // package defines it once per storefront and is the one place it is
-// encrypted and decrypted, with one exception left: the store-link resolver
+// encrypted and decrypted, with two exceptions left: the store-link resolver
 // in cmd/nexorious reads the PlayStation Store sign-in itself, through
-// PlayStationStoreCredentials, until it moves here (#1487).
+// PlayStationStoreCredentials (#1487), and the Amazon disconnect handler
+// decrypts the sign-in Take returns, to sign the device out (#1485).
 //
 // The stored shapes:
 //
@@ -20,7 +21,7 @@
 //
 // Connections stores, clears, takes and loads a Connection. Store also clears
 // credentials_error, so a reconnect heals a sign-in a sync found expired.
-// Take and Load hand back the sign-in decrypted; callers decode it into the
+// Load hands back the sign-in decrypted, and callers decode it into the
 // storefront's credentials type.
 //
 // Connections.AdapterFactory builds a storefront's library adapter from a
