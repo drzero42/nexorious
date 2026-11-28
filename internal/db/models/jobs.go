@@ -19,6 +19,14 @@ const (
 	JobTypeStoreLinkRefresh = "store_link_refresh"
 )
 
+// JobTypes returns every Job type.
+func JobTypes() []string {
+	return []string{
+		JobTypeSync, JobTypeImport, JobTypeExport,
+		JobTypeMetadataRefresh, JobTypeStoreLinkRefresh,
+	}
+}
+
 // Job source constants.
 const (
 	JobSourceSteam            = "steam"
@@ -46,6 +54,19 @@ const (
 	JobStatusFailed     JobStatus = "failed"
 	JobStatusCancelled  JobStatus = "cancelled"
 )
+
+// JobStatuses returns every Job status.
+func JobStatuses() []JobStatus {
+	return []JobStatus{
+		JobStatusPending, JobStatusProcessing, JobStatusCompleted,
+		JobStatusFailed, JobStatusCancelled,
+	}
+}
+
+// Valid reports whether s is a Job status.
+func (s JobStatus) Valid() bool {
+	return slices.Contains(JobStatuses(), s)
+}
 
 // ActiveJobStatuses returns the statuses of a Job that has not ended.
 func ActiveJobStatuses() []JobStatus {
@@ -131,6 +152,11 @@ func JobItemStatuses() []JobItemStatus {
 		JobItemStatusPending, JobItemStatusCompleted, JobItemStatusPendingReview,
 		JobItemStatusSkipped, JobItemStatusFailed, JobItemStatusCancelled,
 	}
+}
+
+// Valid reports whether s is a Job item status.
+func (s JobItemStatus) Valid() bool {
+	return slices.Contains(JobItemStatuses(), s)
 }
 
 // OpenJobItemStatuses returns the statuses of a Job item that has not ended:

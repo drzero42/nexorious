@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -122,12 +123,36 @@ func toJobResponse(job *models.Job, progress map[string]any) map[string]any {
 	}
 }
 
+// invalidValue is the 400 for a query or path parameter whose value is not one
+// of valid, naming the values the endpoint accepts so a misspelt value is not
+// mistaken for an empty result.
+func invalidValue[S ~string](param string, value S, valid []S) error {
+	names := make([]string, len(valid))
+	for i, v := range valid {
+		names[i] = string(v)
+	}
+	return echo.NewHTTPError(http.StatusBadRequest,
+		fmt.Sprintf("invalid %s %q: must be one of %s", param, string(value), strings.Join(names, ", ")))
+}
+
 // HandleListJobs handles GET /api/jobs.
 func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
+
+	status := models.JobStatus(c.QueryParam("status"))
+	if status != "" && !status.Valid() {
+		return invalidValue("status", status, models.JobStatuses())
+	}
+	jobType := c.QueryParam("job_type")
+	if jobType != "" && !slices.Contains(models.JobTypes(), jobType) {
+		return invalidValue("job_type", jobType, models.JobTypes())
+	}
+	// source is not checked: Jobs from retired sources (darkadia, before
+	// #1032) stay in the table and must stay filterable.
+	source := c.QueryParam("source")
 
 	page := pageNumber(c.QueryParam("page"))
 	perPage, _ := strconv.Atoi(c.QueryParam("per_page")) //nolint:errcheck // invalid/empty query param clamped to default below
@@ -158,29 +183,21 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 		sortOrder = "desc"
 	}
 
-	q := h.db.NewSelect().TableExpr("jobs").Where("user_id = ?", userID)
-
-	if jt := c.QueryParam("job_type"); jt != "" {
-		q = q.Where("job_type = ?", jt)
+	// The page query and the count query share one set of filters.
+	filtered := func() *bun.SelectQuery {
+		q := h.db.NewSelect().TableExpr("jobs").Where("user_id = ?", userID)
+		if jobType != "" {
+			q = q.Where("job_type = ?", jobType)
+		}
+		if source != "" {
+			q = q.Where("source = ?", source)
+		}
+		if status != "" {
+			q = q.Where("status = ?", status)
+		}
+		return q
 	}
-	if src := c.QueryParam("source"); src != "" {
-		q = q.Where("source = ?", src)
-	}
-	if st := c.QueryParam("status"); st != "" {
-		q = q.Where("status = ?", st)
-	}
-
-	// Count total.
-	countQ := h.db.NewSelect().TableExpr("jobs").Where("user_id = ?", userID)
-	if jt := c.QueryParam("job_type"); jt != "" {
-		countQ = countQ.Where("job_type = ?", jt)
-	}
-	if src := c.QueryParam("source"); src != "" {
-		countQ = countQ.Where("source = ?", src)
-	}
-	if st := c.QueryParam("status"); st != "" {
-		countQ = countQ.Where("status = ?", st)
-	}
+	q, countQ := filtered(), filtered()
 	total, err := countQ.Count(context.Background())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count jobs")
@@ -311,6 +328,9 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	jobType := c.Param("job_type")
+	if !slices.Contains(models.JobTypes(), jobType) {
+		return invalidValue("job_type", jobType, models.JobTypes())
+	}
 	ctx := context.Background()
 
 	var activeJobID *string
@@ -502,6 +522,9 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	for _, raw := range c.QueryParams()["job_type"] {
 		for t := range strings.SplitSeq(raw, ",") {
 			if t = strings.TrimSpace(t); t != "" {
+				if !slices.Contains(models.JobTypes(), t) {
+					return invalidValue("job_type", t, models.JobTypes())
+				}
 				jobTypes = append(jobTypes, t)
 			}
 		}
@@ -627,6 +650,11 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 
+	status := models.JobItemStatus(c.QueryParam("status"))
+	if status != "" && !status.Valid() {
+		return invalidValue("status", status, models.JobItemStatuses())
+	}
+
 	jobID := c.Param("id")
 
 	// Verify job ownership.
@@ -652,18 +680,16 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 		perPage = 100
 	}
 
-	statusParam := models.JobItemStatus(c.QueryParam("status"))
-
 	q := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID).Where("item_key <> ?", tasks.PoolsItemKey)
 	countQ := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID).Where("item_key <> ?", tasks.PoolsItemKey)
 
-	if statusParam != "" && statusParam != models.JobItemStatusPendingReview {
-		q = q.Where("status = ?", statusParam)
-		countQ = countQ.Where("status = ?", statusParam)
+	if status != "" && status != models.JobItemStatusPendingReview {
+		q = q.Where("status = ?", status)
+		countQ = countQ.Where("status = ?", status)
 	}
 
 	var total int64
-	if statusParam == models.JobItemStatusPendingReview {
+	if status == models.JobItemStatusPendingReview {
 		if err := h.db.NewRaw(
 			`SELECT COUNT(DISTINCT source_title) FROM job_items WHERE job_id = ? AND status = ?`,
 			jobID, models.JobItemStatusPendingReview,
@@ -680,7 +706,7 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 
 	var items []models.JobItem
 	if offset, hasRows := pageOffset(page, perPage, total); hasRows {
-		if statusParam == models.JobItemStatusPendingReview {
+		if status == models.JobItemStatusPendingReview {
 			if err := h.db.NewRaw(
 				`SELECT DISTINCT ON (source_title) * FROM job_items WHERE job_id = ? AND status = ? ORDER BY source_title ASC, created_at ASC, id ASC LIMIT ? OFFSET ?`,
 				jobID, models.JobItemStatusPendingReview, perPage, offset,

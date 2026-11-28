@@ -760,6 +760,47 @@ func TestHandleGetJobItems_NotFound(t *testing.T) {
 	}
 }
 
+// An unknown status or job_type is a 400 naming the valid values, not an empty
+// 200 a client can't tell from "no rows match" (#1514). Each endpoint
+// checks its own status set: processing is a Job status but not a Job item
+// status, pending_review the other way round.
+func TestListJobsAndItems_RejectUnknownFilter(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-unknown-status")
+	insertJob(t, testDB, "job-unknown-status", userID, "import", "steam", "processing")
+
+	cases := []struct {
+		name, path, valid string
+	}{
+		{"jobs misspelt", "/api/jobs?status=pendng",
+			"pending, processing, completed, failed, cancelled"},
+		{"jobs item status", "/api/jobs?status=pending_review",
+			"pending, processing, completed, failed, cancelled"},
+		{"items misspelt", "/api/jobs/job-unknown-status/items?status=pendng",
+			"pending, completed, pending_review, skipped, failed, cancelled"},
+		{"items job status", "/api/jobs/job-unknown-status/items?status=processing",
+			"pending, completed, pending_review, skipped, failed, cancelled"},
+		{"jobs misspelt job_type", "/api/jobs?job_type=snyc",
+			"sync, import, export, metadata_refresh, store_link_refresh"},
+		{"recent misspelt job_type in a list", "/api/jobs/recent?job_type=import,snyc",
+			"sync, import, export, metadata_refresh, store_link_refresh"},
+		{"job type status misspelt", "/api/jobs/status/snyc",
+			"sync, import, export, metadata_refresh, store_link_refresh"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := getAuth(t, e, tc.path, token)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tc.valid) {
+				t.Fatalf("expected the valid statuses %q in the body, got %s", tc.valid, rec.Body.String())
+			}
+		})
+	}
+}
+
 // ─── TestHandleRetryFailed ────────────────────────────────────────────────────
 
 func TestHandleRetryFailed_NoFailedItems(t *testing.T) {
