@@ -892,6 +892,46 @@ func (h *UserGamesHandler) verifyUserGameOwnership(ctx context.Context, userGame
 	return nil
 }
 
+// ownershipError maps a verifyUserGameOwnership error to a response: 404 when
+// the user game is missing or not the user's, 500 when the lookup failed.
+func (h *UserGamesHandler) ownershipError(c *echo.Context, err error) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "user game not found")
+	}
+	slog.ErrorContext(c.Request().Context(), "user_games: verify ownership failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+}
+
+// validatePlatformRefs checks that a non-empty platform and storefront in req
+// name existing rows: 404 when one does not, 500 when the lookup failed.
+func (h *UserGamesHandler) validatePlatformRefs(ctx context.Context, req platformRequest) error {
+	if req.Platform != nil && *req.Platform != "" {
+		exists, err := h.db.NewSelect().Model((*models.Platform)(nil)).
+			Where("name = ?", *req.Platform).
+			Exists(ctx)
+		if err != nil {
+			slog.ErrorContext(ctx, "user_games: platform lookup failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		}
+		if !exists {
+			return echo.NewHTTPError(http.StatusNotFound, "platform not found: "+*req.Platform)
+		}
+	}
+	if req.Storefront != nil && *req.Storefront != "" {
+		exists, err := h.db.NewSelect().Model((*models.Storefront)(nil)).
+			Where("name = ?", *req.Storefront).
+			Exists(ctx)
+		if err != nil {
+			slog.ErrorContext(ctx, "user_games: storefront lookup failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		}
+		if !exists {
+			return echo.NewHTTPError(http.StatusNotFound, "storefront not found: "+*req.Storefront)
+		}
+	}
+	return nil
+}
+
 // platformRequest is the bind target for platform create/update.
 type platformRequest struct {
 	Platform        *string               `json:"platform"`
@@ -921,7 +961,7 @@ func (h *UserGamesHandler) HandleListPlatforms(c *echo.Context) error {
 	ctx := c.Request().Context()
 
 	if err := h.verifyUserGameOwnership(ctx, userGameID, userID); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "user game not found"})
+		return h.ownershipError(c, err)
 	}
 
 	var platforms []models.UserGamePlatform
@@ -931,7 +971,8 @@ func (h *UserGamesHandler) HandleListPlatforms(c *echo.Context) error {
 		Relation("StorefrontRecord").
 		Scan(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
+		slog.ErrorContext(ctx, "user_games: list platforms failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 	dtos := make([]userGamePlatformResponse, len(platforms))
 	for i, p := range platforms {
@@ -948,38 +989,22 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 
 	var req platformRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
 	if err := validateOwnershipStatus(req.OwnershipStatus); err != nil {
 		return err
 	}
 
-	// Validate platform exists
-	if req.Platform != nil && *req.Platform != "" {
-		exists, err := h.db.NewSelect().Model((*models.Platform)(nil)).
-			Where("name = ?", *req.Platform).
-			Exists(ctx)
-		if err != nil || !exists {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found: " + *req.Platform})
-		}
-	}
-
-	// Validate storefront exists
-	if req.Storefront != nil && *req.Storefront != "" {
-		exists, err := h.db.NewSelect().Model((*models.Storefront)(nil)).
-			Where("name = ?", *req.Storefront).
-			Exists(ctx)
-		if err != nil || !exists {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "storefront not found: " + *req.Storefront})
-		}
+	if err := h.validatePlatformRefs(ctx, req); err != nil {
+		return err
 	}
 
 	var acquiredDate *time.Time
 	if req.AcquiredDate != nil && *req.AcquiredDate != "" {
 		acquired, err := parseAcquiredDate(*req.AcquiredDate)
 		if err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 		acquiredDate = acquired
 	}
@@ -1022,7 +1047,7 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 	ctx := c.Request().Context()
 
 	if err := h.verifyUserGameOwnership(ctx, userGameID, userID); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "user game not found"})
+		return h.ownershipError(c, err)
 	}
 
 	var plat models.UserGamePlatform
@@ -1030,38 +1055,27 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 		Where("id = ?", platformID).
 		Where("user_game_id = ?", userGameID).
 		Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "platform not found")
+	}
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found"})
+		slog.ErrorContext(ctx, "user_games: load platform failed", logging.KeyErr, err, "platform_id", platformID, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
 	var req platformRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
 	if err := validateOwnershipStatus(req.OwnershipStatus); err != nil {
 		return err
 	}
 
-	// Validate platform if provided. An empty platform or ownership_status is
-	// "not provided"; usergame.UpdatePlatform leaves those columns unchanged.
-	if req.Platform != nil && *req.Platform != "" {
-		exists, checkErr := h.db.NewSelect().Model((*models.Platform)(nil)).
-			Where("name = ?", *req.Platform).
-			Exists(ctx)
-		if checkErr != nil || !exists {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found: " + *req.Platform})
-		}
-	}
-
-	// Validate storefront if provided
-	if req.Storefront != nil && *req.Storefront != "" {
-		exists, checkErr := h.db.NewSelect().Model((*models.Storefront)(nil)).
-			Where("name = ?", *req.Storefront).
-			Exists(ctx)
-		if checkErr != nil || !exists {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "storefront not found: " + *req.Storefront})
-		}
+	// An empty platform or ownership_status is "not provided";
+	// usergame.UpdatePlatform leaves those columns unchanged.
+	if err := h.validatePlatformRefs(ctx, req); err != nil {
+		return err
 	}
 
 	// AcquiredDate is three-way: omitted (nil) leaves it unchanged, an empty
@@ -1073,7 +1087,7 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 		if *req.AcquiredDate != "" {
 			acquired, err := parseAcquiredDate(*req.AcquiredDate)
 			if err != nil {
-				return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 			}
 			acquiredDate = acquired
 		}
