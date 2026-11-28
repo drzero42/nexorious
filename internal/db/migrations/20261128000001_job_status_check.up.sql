@@ -8,17 +8,19 @@
 -- TestJobStatusCheckMatchesModels fails until it is.
 
 -- A Job the migration fails gets completed_at, an error message, and its open
--- items cancelled (docs/job-lifecycle.md, "Rows from older versions").
+-- items cancelled; a row it ends no longer names a River job
+-- (docs/job-lifecycle.md, "Rows from older versions").
 WITH failed_jobs AS (
     UPDATE jobs
        SET status = 'failed',
            completed_at = COALESCE(completed_at, now()),
-           error_message = COALESCE(error_message, 'unknown status ''' || status || ''', failed by an upgrade')
+           error_message = 'unknown status ''' || status || ''', failed by an upgrade',
+           river_job_id = NULL
      WHERE status NOT IN ('pending', 'processing', 'completed', 'failed', 'cancelled')
     RETURNING id
 )
 UPDATE job_items
-   SET status = 'cancelled', processed_at = COALESCE(processed_at, now())
+   SET status = 'cancelled', processed_at = COALESCE(processed_at, now()), river_job_id = NULL
  WHERE job_id IN (SELECT id FROM failed_jobs)
    AND status IN ('pending', 'processing', 'pending_review');
 
@@ -26,7 +28,8 @@ UPDATE job_items
 UPDATE job_items
    SET status = 'failed',
        processed_at = COALESCE(processed_at, now()),
-       error_message = COALESCE(error_message, 'unknown status ''' || status || ''', failed by an upgrade; retry it')
+       error_message = 'unknown status ''' || status || ''', failed by an upgrade; retry it',
+       river_job_id = NULL
  WHERE status NOT IN ('pending', 'processing', 'completed', 'pending_review', 'skipped', 'failed', 'cancelled');
 
 ALTER TABLE jobs ADD CONSTRAINT jobs_status_check

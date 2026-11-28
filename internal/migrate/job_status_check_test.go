@@ -38,12 +38,13 @@ func TestJobStatusCheckMigration(t *testing.T) {
 	}
 	exec(`INSERT INTO users (id, username, password_hash) VALUES ('u1', 'u1', 'x')`)
 	job := func(id, status string) {
-		exec(`INSERT INTO jobs (id, user_id, job_type, source, status, priority)
-		      VALUES (?, 'u1', 'sync', 'steam', ?, 'high')`, id, status)
+		exec(`INSERT INTO jobs (id, user_id, job_type, source, status, priority, river_job_id)
+		      VALUES (?, 'u1', 'sync', 'steam', ?, 'high', 1)`, id, status)
 	}
+	// Every item names a River job, so the test sees which ones the migration clears.
 	item := func(id, jobID, status string, errMsg any) {
-		exec(`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, status, error_message)
-		      VALUES (?, ?, 'u1', ?, 't', ?, ?)`, id, jobID, id, status, errMsg)
+		exec(`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, status, error_message, river_job_id)
+		      VALUES (?, ?, 'u1', ?, 't', ?, ?, 2)`, id, jobID, id, status, errMsg)
 	}
 
 	// A completed Job holding the removed 'igdb_failed' status and an unknown one.
@@ -71,9 +72,10 @@ func TestJobStatusCheckMigration(t *testing.T) {
 		Status       string         `bun:"status"`
 		ErrorMessage sql.NullString `bun:"error_message"`
 		CompletedAt  sql.NullTime   `bun:"completed_at"`
+		RiverJobID   sql.NullInt64  `bun:"river_job_id"`
 	}
 	var jobs []jobRow
-	if err := db.NewRaw(`SELECT id, status, error_message, completed_at FROM jobs`).Scan(ctx, &jobs); err != nil {
+	if err := db.NewRaw(`SELECT id, status, error_message, completed_at, river_job_id FROM jobs`).Scan(ctx, &jobs); err != nil {
 		t.Fatal(err)
 	}
 	wantJobs := map[string]string{"done": "completed", "weird": "failed", "active": "processing"}
@@ -82,9 +84,11 @@ func TestJobStatusCheckMigration(t *testing.T) {
 			t.Errorf("job %s status = %q, want %q", j.ID, j.Status, wantJobs[j.ID])
 		}
 		if j.ID == "weird" {
-			if !strings.Contains(j.ErrorMessage.String, "'running'") || !j.CompletedAt.Valid {
-				t.Errorf("job weird = %+v, want completed_at and an error naming 'running'", j)
+			if !strings.Contains(j.ErrorMessage.String, "'running'") || !j.CompletedAt.Valid || j.RiverJobID.Valid {
+				t.Errorf("job weird = %+v, want completed_at, no river_job_id and an error naming 'running'", j)
 			}
+		} else if !j.RiverJobID.Valid {
+			t.Errorf("job %s lost its river_job_id", j.ID)
 		}
 	}
 
@@ -93,9 +97,10 @@ func TestJobStatusCheckMigration(t *testing.T) {
 		Status       string         `bun:"status"`
 		ErrorMessage sql.NullString `bun:"error_message"`
 		ProcessedAt  sql.NullTime   `bun:"processed_at"`
+		RiverJobID   sql.NullInt64  `bun:"river_job_id"`
 	}
 	var items []itemRow
-	if err := db.NewRaw(`SELECT id, status, error_message, processed_at FROM job_items`).Scan(ctx, &items); err != nil {
+	if err := db.NewRaw(`SELECT id, status, error_message, processed_at, river_job_id FROM job_items`).Scan(ctx, &items); err != nil {
 		t.Fatal(err)
 	}
 	wantItems := map[string]string{
@@ -109,17 +114,18 @@ func TestJobStatusCheckMigration(t *testing.T) {
 			t.Errorf("item %s status = %q, want %q", it.ID, it.Status, wantItems[it.ID])
 		}
 		switch it.ID {
-		case "igdb", "bogus":
-			if !strings.Contains(it.ErrorMessage.String, "unknown status") || !it.ProcessedAt.Valid {
-				t.Errorf("item %s = %+v, want processed_at and an unknown-status error", it.ID, it)
-			}
-		case "igdb-msg":
-			if it.ErrorMessage.String != "IGDB timed out" {
-				t.Errorf("item igdb-msg error = %q, want its own message kept", it.ErrorMessage.String)
+		case "igdb", "igdb-msg", "bogus":
+			// The message says why the status changed, replacing any earlier one.
+			if !strings.Contains(it.ErrorMessage.String, "unknown status") || !it.ProcessedAt.Valid || it.RiverJobID.Valid {
+				t.Errorf("item %s = %+v, want processed_at, no river_job_id and an unknown-status error", it.ID, it)
 			}
 		case "weird-pending", "weird-review":
-			if !it.ProcessedAt.Valid {
-				t.Errorf("item %s has no processed_at", it.ID)
+			if !it.ProcessedAt.Valid || it.RiverJobID.Valid {
+				t.Errorf("item %s = %+v, want processed_at and no river_job_id", it.ID, it)
+			}
+		default:
+			if !it.RiverJobID.Valid {
+				t.Errorf("item %s lost its river_job_id", it.ID)
 			}
 		}
 	}
