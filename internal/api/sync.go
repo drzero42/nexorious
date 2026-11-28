@@ -1007,7 +1007,7 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 			games[i].Platforms = []string{}
 		}
 		if games[i].StoreLink != nil {
-			if url, ok := buildStoreURL(games[i].Storefront, *games[i].StoreLink); ok {
+			if url, ok := storefront.StoreURL(games[i].Storefront, *games[i].StoreLink); ok {
 				games[i].StoreURL = &url
 			}
 		}
@@ -1018,7 +1018,7 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 		for j := range games[i].Editions {
 			e := &games[i].Editions[j]
 			if e.StoreLink != nil {
-				if url, ok := buildStoreURL(games[i].Storefront, *e.StoreLink); ok {
+				if url, ok := storefront.StoreURL(games[i].Storefront, *e.StoreLink); ok {
 					e.StoreURL = &url
 				}
 				e.StoreLink = nil

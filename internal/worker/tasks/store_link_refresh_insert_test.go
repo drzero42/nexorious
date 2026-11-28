@@ -14,6 +14,7 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
+	"github.com/drzero42/nexorious/internal/storefront"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -50,7 +51,7 @@ func TestStoreLinkRefreshDispatch_InsertRequiresRegisteredWorker(t *testing.T) {
 	// Registered (as serve.go does) → Insert succeeds, exactly like the live
 	// admin endpoint on current code.
 	registered := riverClientWith(t, func(w *river.Workers) {
-		river.AddWorker(w, &tasks.StoreLinkRefreshDispatchWorker{DB: testDB})
+		river.AddWorker(w, &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, Storefronts: storefront.StoreLinkStorefronts()})
 	})
 	if _, err := registered.Insert(ctx, tasks.StoreLinkRefreshDispatchArgs{Force: true}, nil); err != nil {
 		t.Fatalf("insert with worker registered should succeed, got: %v", err)
@@ -91,7 +92,7 @@ func TestStoreLinkRefreshDispatch_HandlerOwned_PopulatesExistingRow(t *testing.T
 	}
 	jobID := c.JobID
 
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc}
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc, Storefronts: storefront.StoreLinkStorefronts()}
 	if err := w.Work(ctx, riverJob(dispatchOwner(t, jobID), 1, tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
@@ -131,7 +132,7 @@ func TestStoreLinkRefreshDispatch_HandlerOwned_EmptyFinalizesCompleted(t *testin
 		t.Fatal(err)
 	}
 	jobID := c.JobID
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc}
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc, Storefronts: storefront.StoreLinkStorefronts()}
 	if err := w.Work(ctx, riverJob(dispatchOwner(t, jobID), 1, tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
@@ -166,7 +167,7 @@ func TestStoreLinkRefreshDispatch_HandlerOwned_UsersShareStorefront(t *testing.T
 		t.Fatal(err)
 	}
 	jobID := c.JobID
-	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc}
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc, Storefronts: storefront.StoreLinkStorefronts()}
 	if err := w.Work(ctx, riverJob(dispatchOwner(t, jobID), 1, tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID})); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}

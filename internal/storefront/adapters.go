@@ -15,6 +15,7 @@ import (
 	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
+	"github.com/drzero42/nexorious/internal/services/storelink"
 )
 
 // Clients are the storefront service clients Connections reaches the
@@ -42,15 +43,21 @@ type definition struct {
 	// account decodes the account's display name from a decrypted stored
 	// sign-in; nil for a storefront that stores none.
 	account func(plain []byte) (string, error)
+	// storeURL builds the product-page URL from a non-empty store link; nil
+	// for a storefront without store links (store_links.go).
+	storeURL func(link string) string
+	// resolver builds the resolver for a user's store links; nil for a
+	// storefront without store links.
+	resolver func(ctx context.Context, c *Connections, userID string) (storelink.Resolver, error)
 }
 
 // definitions is the registry: one definition per storefront, in the order
 // the sync API lists them (GET /sync/config).
 var definitions = []definition{
-	{slug: "steam", adapter: steamAdapter, account: steamAccount},
-	{slug: "playstation-store", adapter: playStationStoreAdapter, account: playStationStoreAccount},
-	{slug: "epic-games-store", adapter: epicGamesStoreAdapter, account: epicGamesStoreAccount},
-	{slug: "gog", adapter: gogAdapter, account: gogAccount},
+	{slug: "steam", adapter: steamAdapter, account: steamAccount, storeURL: steamStoreURL, resolver: steamResolver},
+	{slug: "playstation-store", adapter: playStationStoreAdapter, account: playStationStoreAccount, storeURL: playStationStoreURL, resolver: playStationStoreResolver},
+	{slug: "epic-games-store", adapter: epicGamesStoreAdapter, account: epicGamesStoreAccount, storeURL: epicGamesStoreURL, resolver: epicGamesStoreResolver},
+	{slug: "gog", adapter: gogAdapter, account: gogAccount, storeURL: gogStoreURL, resolver: gogResolver},
 	{slug: "humble-bundle", adapter: humbleBundleAdapter},
 	{slug: "amazon-games", adapter: amazonGamesAdapter, account: amazonGamesAccount},
 }

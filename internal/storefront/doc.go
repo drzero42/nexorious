@@ -3,9 +3,9 @@
 //
 // The stored value is the interface between "connect" and "sync". This
 // package defines it once per storefront and is the one place it is
-// encrypted and decrypted, with one exception left: the store-link resolver
-// in cmd/nexorious reads the PlayStation Store sign-in itself, through
-// PlayStationStoreCredentials (#1487).
+// encrypted and decrypted. guard_test.go fails on a string literal naming the
+// column in non-test code outside this package; the one exception is the
+// sync worker's flagCredentialsError, a storefront health write (#1410).
 //
 // The stored shapes:
 //
@@ -54,7 +54,15 @@
 // failure from the adapter is returned as a
 // storefrontadapter.CredentialsErrorFor bound to that same ciphertext.
 //
+// A definition may also give the storefront store links: how to build a
+// product-page URL from one (StoreURL) and how to build the resolver the
+// store-link enrichment worker uses (Connections.StoreLinkResolverFactory).
+// Steam, PlayStation Store, Epic and GOG have them; StoreLinkStorefronts
+// lists them. The PlayStation Store resolver signs in with the user's stored
+// token; the others need no sign-in. The resolvers themselves live in
+// internal/services/storelink.
+//
 // The package imports the storefront service packages, storefrontadapter,
-// crypto and models; it imports neither internal/api, internal/worker/tasks
-// nor internal/joblifecycle.
+// storelink, crypto and models; it imports neither internal/api,
+// internal/worker/tasks nor internal/joblifecycle (guard_test.go).
 package storefront
