@@ -706,7 +706,7 @@ func (h *SyncHandler) HandleEpicGamesStoreDisconnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	if err := h.connections.DisconnectEpicGamesStore(c.Request().Context(), userID); err != nil {
-		slog.ErrorContext(c.Request().Context(), "sync: epic disconnect failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(c.Request().Context(), "sync: epic disconnect failed", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect Epic")
 	}
 	return c.NoContent(http.StatusNoContent)

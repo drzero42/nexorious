@@ -76,7 +76,7 @@ func (c *Connections) DisconnectEpicGamesStore(ctx context.Context, userID strin
 		return nil
 	}
 	if err := c.clients.Epic.Cleanup(ctx, userID); err != nil {
-		slog.WarnContext(ctx, "epic: cleanup failed", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryExternalAPI))
+		slog.WarnContext(ctx, "epic: cleanup failed", logging.KeyErr, err, logging.KeySource, "epic-games-store")
 	}
 	return nil
 }
