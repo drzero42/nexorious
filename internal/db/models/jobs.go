@@ -34,7 +34,8 @@ const (
 	JobSourceSystem           = "system"
 )
 
-// JobStatus is a value of jobs.status.
+// JobStatus is a value of jobs.status. The jobs_status_check constraint lists
+// every value: a new one needs a migration that widens it.
 type JobStatus string
 
 // Job status constants.
@@ -110,7 +111,8 @@ func (j *Job) DurationSeconds() *float64 {
 
 // ─── JobItem ─────────────────────────────────────────────────────────────────
 
-// JobItemStatus is a value of job_items.status.
+// JobItemStatus is a value of job_items.status. The job_items_status_check
+// constraint lists every value: a new one needs a migration that widens it.
 type JobItemStatus string
 
 // JobItem status constants.
