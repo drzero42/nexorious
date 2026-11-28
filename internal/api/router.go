@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -546,22 +545,21 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 		// Sync routes (all auth-protected)
 		steamSvc := steamsvc.NewClient()
-		psnSvc := playstationstoresvc.NewClient()
 		epicSvc := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
-		gogSvc := gogsvc.NewClient()
-		humbleSvc := humblesvc.NewClient()
 		synch := NewSyncHandler(SyncDeps{
-			Encrypter:        encrypter,
-			DB:               db,
-			River:            riverClient,
-			Lifecycle:        lifecycle,
-			Connections:      storefront.NewConnections(db, encrypter, storefront.Clients{Steam: steamSvc}),
-			PlaystationStore: &playstationStoreClientAdapter{c: psnSvc},
-			EpicGamesStore:   &epicGamesStoreClientAdapter{c: epicSvc},
-			GOG:              &gogClientAdapter{c: gogSvc},
-			Humble:           &humbleClientAdapter{c: humbleSvc},
-			AmazonGames:      &amazonGamesClientAdapter{c: amazongamessvc.NewClient()},
-			IGDB:             igdbClient,
+			Encrypter: encrypter,
+			DB:        db,
+			River:     riverClient,
+			Lifecycle: lifecycle,
+			Connections: storefront.NewConnections(db, encrypter, storefront.Clients{
+				Steam:            steamSvc,
+				PlayStationStore: playstationstoresvc.NewClient(),
+				GOG:              gogsvc.NewClient(),
+				HumbleBundle:     humblesvc.NewClient(),
+			}),
+			EpicGamesStore: &epicGamesStoreClientAdapter{c: epicSvc},
+			AmazonGames:    &amazonGamesClientAdapter{c: amazongamessvc.NewClient()},
+			IGDB:           igdbClient,
 		})
 		syncGroup := e.Group("/api/sync", auth.AuthMiddleware(db))
 		synch.RegisterRoutes(syncGroup)
@@ -582,24 +580,6 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 	e.GET("/*", spaHandler())
 }
 
-// playstationStoreClientAdapter bridges playstationstoresvc.Client to the PlaystationStoreClient interface
-// without creating an import cycle between internal/api and internal/services/playstationstore.
-type playstationStoreClientAdapter struct{ c *playstationstoresvc.Client }
-
-func (a *playstationStoreClientAdapter) GetAccountInfo(ctx context.Context, npssoToken string) (*PlaystationStoreAccountInfo, error) {
-	info, err := a.c.GetAccountInfo(ctx, npssoToken)
-	if err != nil {
-		if errors.Is(err, playstationstoresvc.ErrInvalidNPSSOToken) {
-			return nil, ErrInvalidNPSSOToken
-		}
-		return nil, err
-	}
-	return &PlaystationStoreAccountInfo{
-		OnlineID:  info.OnlineID,
-		AccountID: info.AccountID,
-	}, nil
-}
-
 // epicGamesStoreClientAdapter bridges epicgamesstoresvc.Client to the EpicGamesStoreClient interface
 // without creating an import cycle between internal/api and internal/services/epicgamesstore.
 type epicGamesStoreClientAdapter struct{ c *epicgamesstoresvc.Client }
@@ -618,37 +598,6 @@ func (a *epicGamesStoreClientAdapter) Cleanup(ctx context.Context, userID string
 
 func (a *epicGamesStoreClientAdapter) Configured() bool {
 	return a.c.Configured()
-}
-
-// gogClientAdapter bridges gogsvc.Client to the GOGClient interface
-// without creating an import cycle between internal/api and internal/services/gog.
-type gogClientAdapter struct{ c *gogsvc.Client }
-
-func (a *gogClientAdapter) BuildAuthURL() string {
-	return a.c.BuildAuthURL()
-}
-
-func (a *gogClientAdapter) ExchangeCode(ctx context.Context, code string) (*GOGTokenResponse, error) {
-	tok, err := a.c.ExchangeCode(ctx, code)
-	if err != nil {
-		return nil, err
-	}
-	return &GOGTokenResponse{
-		RefreshToken: tok.RefreshToken,
-		Username:     tok.Username,
-	}, nil
-}
-
-// humbleClientAdapter bridges humblesvc.Client to the HumbleClient interface
-// without creating an import cycle between internal/api and internal/services/humble.
-type humbleClientAdapter struct{ c *humblesvc.Client }
-
-func (a *humbleClientAdapter) Verify(ctx context.Context, sessionCookie string) error {
-	err := a.c.Verify(ctx, sessionCookie)
-	if errors.Is(err, humblesvc.ErrCredentials) {
-		return ErrInvalidHumbleCookie
-	}
-	return err
 }
 
 // amazonGamesClientAdapter bridges amazongamessvc.Client to the AmazonGamesClient interface

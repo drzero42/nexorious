@@ -26,23 +26,11 @@ import (
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
-	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/storefront"
 	"github.com/drzero42/nexorious/internal/usergame"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
-
-// PlaystationStoreClient abstracts the PSN NPSSO exchange and account info retrieval.
-type PlaystationStoreClient interface {
-	GetAccountInfo(ctx context.Context, npssoToken string) (*PlaystationStoreAccountInfo, error)
-}
-
-// PlaystationStoreAccountInfo holds the account details retrieved from PSN.
-type PlaystationStoreAccountInfo struct {
-	OnlineID  string
-	AccountID string
-}
 
 // EpicGamesStoreClient abstracts legendary CLI calls used during Epic account connection.
 type EpicGamesStoreClient interface {
@@ -59,23 +47,6 @@ type EpicGamesStoreClient interface {
 type EpicGamesStoreAccountInfo struct {
 	DisplayName string
 	AccountID   string
-}
-
-// GOGClient abstracts the GOG OAuth calls used during account connection.
-type GOGClient interface {
-	BuildAuthURL() string
-	ExchangeCode(ctx context.Context, code string) (*GOGTokenResponse, error)
-}
-
-// GOGTokenResponse holds the tokens and identity returned by GOG auth.
-type GOGTokenResponse struct {
-	RefreshToken string
-	Username     string
-}
-
-// HumbleClient abstracts the Humble Bundle credential-verification call.
-type HumbleClient interface {
-	Verify(ctx context.Context, sessionCookie string) error
 }
 
 // AmazonGamesClient abstracts the nile CLI calls used during Amazon Games
@@ -106,11 +77,6 @@ type AmazonGamesAccount struct {
 	UserID string
 	Name   string
 }
-
-var (
-	ErrInvalidNPSSOToken   = errors.New("invalid npsso token")
-	ErrInvalidHumbleCookie = errors.New("invalid humble session cookie")
-)
 
 type syncConfigItem struct {
 	ID           string     `json:"id"`
@@ -221,20 +187,17 @@ type steamConnectionResponse struct {
 
 // SyncHandler handles sync configuration, trigger, and status endpoints.
 type SyncHandler struct {
-	db                     *bun.DB
-	encrypter              *crypto.Encrypter
-	riverClient            *river.Client[pgx.Tx]
-	lc                     *joblifecycle.Module
-	playstationStoreClient PlaystationStoreClient
-	epicGamesStoreClient   EpicGamesStoreClient
-	gogClient              GOGClient
-	humbleClient           HumbleClient
-	amazonGamesClient      AmazonGamesClient
-	connections            *storefront.Connections
-	igdbClient             *igdb.Client
-	amazonLoginClock       func() time.Time // nil: time.Now
-	amazonSignOutTimeout   time.Duration    // 0: amazonSignOutLimit
-	amazonSignOuts         sync.WaitGroup   // device sign-outs still running after a disconnect
+	db                   *bun.DB
+	encrypter            *crypto.Encrypter
+	riverClient          *river.Client[pgx.Tx]
+	lc                   *joblifecycle.Module
+	epicGamesStoreClient EpicGamesStoreClient
+	amazonGamesClient    AmazonGamesClient
+	connections          *storefront.Connections
+	igdbClient           *igdb.Client
+	amazonLoginClock     func() time.Time // nil: time.Now
+	amazonSignOutTimeout time.Duration    // 0: amazonSignOutLimit
+	amazonSignOuts       sync.WaitGroup   // device sign-outs still running after a disconnect
 }
 
 // SyncDeps holds the dependencies of a SyncHandler. A storefront client may be
@@ -249,12 +212,9 @@ type SyncDeps struct {
 	Lifecycle *joblifecycle.Module
 	// Connections owns the storefront Connections, and reaches the
 	// storefronts through the clients it was built with.
-	Connections      *storefront.Connections
-	PlaystationStore PlaystationStoreClient
-	EpicGamesStore   EpicGamesStoreClient
-	GOG              GOGClient
-	Humble           HumbleClient
-	AmazonGames      AmazonGamesClient
+	Connections    *storefront.Connections
+	EpicGamesStore EpicGamesStoreClient
+	AmazonGames    AmazonGamesClient
 	// IGDB, nil or unconfigured: a Rematch stubs with the storefront title.
 	IGDB *igdb.Client
 }
@@ -262,17 +222,14 @@ type SyncDeps struct {
 // NewSyncHandler constructs a SyncHandler.
 func NewSyncHandler(d SyncDeps) *SyncHandler {
 	return &SyncHandler{
-		encrypter:              d.Encrypter,
-		db:                     d.DB,
-		riverClient:            d.River,
-		lc:                     d.Lifecycle,
-		playstationStoreClient: d.PlaystationStore,
-		epicGamesStoreClient:   d.EpicGamesStore,
-		gogClient:              d.GOG,
-		humbleClient:           d.Humble,
-		amazonGamesClient:      d.AmazonGames,
-		connections:            d.Connections,
-		igdbClient:             d.IGDB,
+		encrypter:            d.Encrypter,
+		db:                   d.DB,
+		riverClient:          d.River,
+		lc:                   d.Lifecycle,
+		epicGamesStoreClient: d.EpicGamesStore,
+		amazonGamesClient:    d.AmazonGames,
+		connections:          d.Connections,
+		igdbClient:           d.IGDB,
 	}
 }
 
@@ -333,6 +290,16 @@ func (h *SyncHandler) disconnectStorefront(c *echo.Context, sf string) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect "+sf)
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// storefrontParam is the :storefront path parameter, or a 400 when it names
+// no storefront.
+func storefrontParam(c *echo.Context) (string, error) {
+	sf := c.Param("storefront")
+	if !storefront.Known(sf) {
+		return "", echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	}
+	return sf, nil
 }
 
 // serveConnectionStatus is the shared handler body for the GET
@@ -416,14 +383,14 @@ func (h *SyncHandler) HandleGetConfig(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	sf := c.Param("storefront")
-	if !storefront.Known(sf) {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	sf, err := storefrontParam(c)
+	if err != nil {
+		return err
 	}
 	ctx := context.Background()
 
 	var row models.UserSyncConfig
-	err := h.db.NewSelect().Model(&row).Where("user_id = ? AND storefront = ?", userID, sf).Scan(ctx)
+	err = h.db.NewSelect().Model(&row).Where("user_id = ? AND storefront = ?", userID, sf).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		now := time.Now().UTC()
 		return c.JSON(http.StatusOK, syncConfigResponse{
@@ -449,9 +416,9 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	sf := c.Param("storefront")
-	if !storefront.Known(sf) {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	sf, err := storefrontParam(c)
+	if err != nil {
+		return err
 	}
 
 	var body struct {
@@ -465,7 +432,7 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 	now := time.Now().UTC()
 
 	var row models.UserSyncConfig
-	err := h.db.NewSelect().Model(&row).Where("user_id = ? AND storefront = ?", userID, sf).Scan(ctx)
+	err = h.db.NewSelect().Model(&row).Where("user_id = ? AND storefront = ?", userID, sf).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		row = models.UserSyncConfig{
 			ID:         uuid.NewString(),
@@ -505,9 +472,9 @@ func (h *SyncHandler) HandleTriggerSync(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	sf := c.Param("storefront")
-	if !storefront.Known(sf) {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	sf, err := storefrontParam(c)
+	if err != nil {
+		return err
 	}
 	// The module's duplicate check runs under the (sync, storefront, user)
 	// lock the scheduled sync shares, so two triggers never both create one.
@@ -536,9 +503,9 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	sf := c.Param("storefront")
-	if !storefront.Known(sf) {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	sf, err := storefrontParam(c)
+	if err != nil {
+		return err
 	}
 	ctx := context.Background()
 
@@ -551,7 +518,7 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 
 	var activeJobID *string
 	var jobID string
-	err := h.db.NewRaw(
+	err = h.db.NewRaw(
 		`SELECT id FROM jobs WHERE user_id = ? AND job_type = ? AND source = ? AND status IN (?) LIMIT 1`,
 		userID, models.JobTypeSync, sf, bun.List(models.ActiveJobStatuses()),
 	).Scan(ctx, &jobID)
@@ -666,28 +633,22 @@ func (h *SyncHandler) HandlePlaystationStoreConnect(c *echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid body")
 	}
-	if len(req.NpssoToken) != 64 {
+
+	account, err := h.connections.ConnectPlayStationStore(c.Request().Context(), userID, req.NpssoToken)
+	switch {
+	case errors.Is(err, storefront.ErrNPSSOTokenLength):
 		return echo.NewHTTPError(http.StatusBadRequest, "npsso_token must be exactly 64 characters")
-	}
-
-	info, err := h.playstationStoreClient.GetAccountInfo(c.Request().Context(), req.NpssoToken)
-	if err != nil {
+	case errors.Is(err, storefront.ErrInvalidNPSSOToken):
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid_npsso_token")
-	}
-
-	creds := storefront.PlayStationStoreCredentials{
-		NPSSOToken: req.NpssoToken,
-		OnlineID:   info.OnlineID,
-	}
-	if err := h.connections.Store(context.Background(), userID, "playstation-store", creds); err != nil {
-		slog.ErrorContext(c.Request().Context(), "psn: persist storefront credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	case err != nil:
+		slog.ErrorContext(c.Request().Context(), "psn: persist storefront credentials failed", logging.KeyErr, err, logging.KeySource, "playstation-store", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist PSN connection")
 	}
 
 	return c.JSON(http.StatusOK, psnConnectResponse{
 		Success:   true,
-		OnlineID:  info.OnlineID,
-		AccountID: info.AccountID,
+		OnlineID:  account.OnlineID,
+		AccountID: account.AccountID,
 		Message:   "PSN connected successfully",
 	})
 }
@@ -719,22 +680,18 @@ func (h *SyncHandler) HandleHumbleConnect(c *echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid body")
 	}
-	req.SessionCookie = strings.TrimSpace(req.SessionCookie)
-	if req.SessionCookie == "" {
+
+	err := h.connections.ConnectHumbleBundle(c.Request().Context(), userID, req.SessionCookie)
+	switch {
+	case errors.Is(err, storefront.ErrHumbleCookieMissing):
 		return echo.NewHTTPError(http.StatusBadRequest, "session_cookie is required")
-	}
-
-	if err := h.humbleClient.Verify(c.Request().Context(), req.SessionCookie); err != nil {
-		if errors.Is(err, ErrInvalidHumbleCookie) {
-			return echo.NewHTTPError(http.StatusBadRequest, "invalid_session_cookie")
-		}
-		slog.ErrorContext(c.Request().Context(), "humble: verify failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+	case errors.Is(err, storefront.ErrInvalidHumbleCookie):
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid_session_cookie")
+	case errors.Is(err, storefront.ErrHumbleUnavailable):
+		slog.ErrorContext(c.Request().Context(), "humble: verify failed", logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusBadGateway, "could not reach Humble Bundle")
-	}
-
-	creds := storefront.HumbleBundleCredentials{SessionCookie: req.SessionCookie}
-	if err := h.connections.Store(context.Background(), userID, "humble-bundle", creds); err != nil {
-		slog.ErrorContext(c.Request().Context(), "humble: persist storefront credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	case err != nil:
+		slog.ErrorContext(c.Request().Context(), "humble: persist storefront credentials failed", logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Humble Bundle connection")
 	}
 
@@ -1210,15 +1167,15 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	sf := c.Param("storefront")
-	if !storefront.Known(sf) {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	sf, err := storefrontParam(c)
+	if err != nil {
+		return err
 	}
 	ctx := context.Background()
 
 	// One entry per set of editions (#1449), from externalGameListQuery.
 	var games []externalGameResponse
-	err := h.db.NewRaw(externalGameListQuery,
+	err = h.db.NewRaw(externalGameListQuery,
 		userID, sf,
 	).Scan(ctx, &games)
 	if err != nil {
@@ -1333,9 +1290,9 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	sf := c.Param("storefront")
-	if !storefront.Known(sf) {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	sf, err := storefrontParam(c)
+	if err != nil {
+		return err
 	}
 	ctx := context.Background()
 
@@ -1390,9 +1347,9 @@ func (h *SyncHandler) HandleRetryFailedExternalGames(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	sf := c.Param("storefront")
-	if !storefront.Known(sf) {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	sf, err := storefrontParam(c)
+	if err != nil {
+		return err
 	}
 	ctx := context.Background()
 	reqCtx := c.Request().Context()
@@ -1443,31 +1400,24 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 	var body struct {
 		AuthCode string `json:"auth_code"`
 	}
-	if err := c.Bind(&body); err != nil || body.AuthCode == "" {
+	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "auth_code is required")
 	}
 
-	code, err := gogsvc.ParseAuthCode(body.AuthCode)
-	if err != nil {
+	username, err := h.connections.ConnectGOG(c.Request().Context(), userID, body.AuthCode)
+	switch {
+	case errors.Is(err, storefront.ErrGOGAuthCodeMissing),
+		errors.Is(err, storefront.ErrInvalidGOGAuthCode),
+		errors.Is(err, storefront.ErrGOGSignInFailed):
+		// The rejection's message is the reason shown to the user.
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-	}
-
-	tok, err := h.gogClient.ExchangeCode(c.Request().Context(), code)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("gog auth failed: %v", err))
-	}
-
-	creds := storefront.GOGCredentials{
-		RefreshToken: tok.RefreshToken,
-		Username:     tok.Username,
-	}
-	if err := h.connections.Store(context.Background(), userID, "gog", creds); err != nil {
-		slog.ErrorContext(c.Request().Context(), "gog: persist credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	case err != nil:
+		slog.ErrorContext(c.Request().Context(), "gog: persist credentials failed", logging.KeyErr, err, logging.KeySource, "gog", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist GOG connection")
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{
-		"username": tok.Username,
+		"username": username,
 	})
 }
 
@@ -1476,10 +1426,7 @@ func (h *SyncHandler) HandleGOGDisconnect(c *echo.Context) error {
 }
 
 func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
-	authURL := ""
-	if h.gogClient != nil {
-		authURL = h.gogClient.BuildAuthURL()
-	}
+	authURL := h.connections.GOGSignInURL()
 
 	return h.serveConnectionStatus(c, "gog",
 		map[string]any{"connected": false, "auth_url": authURL},
