@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 )
 
 func TestHandleAdminReset(t *testing.T) {
@@ -52,14 +54,9 @@ func TestHandleAdminReset(t *testing.T) {
 
 	// Seed external games + a platform row (cascades from external_games).
 	// Admin's rows must be cleared even though the admin account is preserved.
-	insertExternalGame(t, testDB, "eg-r-admin", adminID, "steam", "730", "CS2")
-	insertExternalGame(t, testDB, "eg-r-u1", user1ID, "steam", "440", "TF2")
-	if _, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
-		 VALUES ('egp-r-admin', 'eg-r-admin', 'pc-windows', now())`,
-	); err != nil {
-		t.Fatalf("seed external_game_platforms: %v", err)
-	}
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-r-admin", UserID: adminID, Storefront: "steam", ExternalID: "730", Title: "CS2"})
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-r-u1", UserID: user1ID, Storefront: "steam", ExternalID: "440", Title: "TF2"})
+	egtest.InsertPlatform(t, testDB, "eg-r-admin", "pc-windows", 0)
 
 	// Seed a change row (cascades from jobs).
 	if _, err := testDB.ExecContext(context.Background(),

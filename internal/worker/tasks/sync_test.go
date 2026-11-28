@@ -22,6 +22,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/ratelimit"
@@ -388,23 +389,10 @@ func TestExternalGamePlatformsFK(t *testing.T) {
 	userID := uuid.NewString()
 	insertTestUser(t, testDB, userID)
 
-	egID := uuid.NewString()
-	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, ownership_status, created_at, updated_at)
-		 VALUES (?, ?, 'steam', '1', 'Test Game', true, 'owned', now(), now())`,
-		egID, userID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("failed to insert external_game: %v", err)
-	}
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "1", Title: "Test Game", OwnershipStatus: "owned"})
 
 	// A canonical slug is accepted.
-	if _, err := testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
-		 VALUES (?, ?, 'mac', 0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("expected canonical platform 'mac' to be accepted, got: %v", err)
-	}
+	egtest.InsertPlatform(t, testDB, egID, "mac", 0)
 
 	// An unknown raw string (the kind the old allowlist silently dropped) is rejected by the FK.
 	if _, err := testDB.NewRaw(
@@ -435,7 +423,7 @@ func TestDispatchSync_Steam_PlatformUpdate_AddsNewPlatform(t *testing.T) {
 	).Exec(ctx)
 
 	// Pre-seed with Windows only.
-	insertTestExternalGame(t, userID, "steam", "999", "Cached Game", "pc-windows")
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "999", Title: "Cached Game", Platforms: []string{"pc-windows"}})
 
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
 		{{ExternalID: "999", Title: "Cached Game", PlaytimeHours: 5, Platforms: []string{"pc-windows", "pc-linux"}, OwnershipStatus: "owned"}},
@@ -569,12 +557,7 @@ func TestDispatchSync_Steam_SkippedGameExcluded(t *testing.T) {
 	).Exec(ctx)
 
 	// Pre-insert CS2 as skipped.
-	egID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
-		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', true, true)`,
-		egID, userID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "730", Title: "Counter-Strike 2", Skipped: true})
 
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
 		{
@@ -846,30 +829,6 @@ func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 	}
 }
 
-// insertTestExternalGame inserts a minimal external_games row and one
-// external_game_platforms row. Returns the external_game id.
-func insertTestExternalGame(t *testing.T, userID, storefront, externalID, title, platform string) string {
-	t.Helper()
-	egID := uuid.NewString()
-	_, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
-		 VALUES (?, ?, ?, ?, ?, false, true)`,
-		egID, userID, storefront, externalID, title,
-	).Exec(context.Background())
-	if err != nil {
-		t.Fatalf("insertTestExternalGame: %v", err)
-	}
-	_, err = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
-		 VALUES (?, ?, ?, 0, now())`,
-		uuid.NewString(), egID, platform,
-	).Exec(context.Background())
-	if err != nil {
-		t.Fatalf("insertTestExternalGamePlatform: %v", err)
-	}
-	return egID
-}
-
 // ─── GOG dispatch tests ───────────────────────────────────────────────────────
 
 // TestDispatchSync_DualPlatformCreatesTwoRows consolidates the dual-platform
@@ -972,11 +931,7 @@ func TestFailSyncJob_CancelsPendingItems(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 2)`,
 		jobID, userID,
 	)
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available) VALUES (?, ?, 'steam', '1', 'Game', false, true)`,
-		egID, userID,
-	)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "1", Title: "Game"})
 	// Two pending items, one completed item.
 	item1 := uuid.NewString()
 	item2 := uuid.NewString()
@@ -1033,7 +988,7 @@ func TestDispatchSync_RemovedGames_WritesSyncChange(t *testing.T) {
 	).Exec(ctx)
 
 	// Pre-seed a game that is NOT returned by the sync (should be marked removed).
-	insertTestExternalGame(t, userID, "steam", "999", "Old Game", "pc-windows")
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "999", Title: "Old Game", Platforms: []string{"pc-windows"}})
 
 	// Sync returns a library without game 999 — it is gone. (The fetch must be
 	// non-empty: an empty fetch with known games fails the job, see
@@ -1078,10 +1033,10 @@ func TestDispatchSync_EmptyFetchWithKnownGames_FailsWithoutSweep(t *testing.T) {
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'gog', 'daily')`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
-	insertTestExternalGame(t, userID, "gog", "1", "Game One", "pc-windows")
-	insertTestExternalGame(t, userID, "gog", "2", "Game Two", "pc-windows")
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "gog", ExternalID: "1", Title: "Game One", Platforms: []string{"pc-windows"}})
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "gog", ExternalID: "2", Title: "Game Two", Platforms: []string{"pc-windows"}})
 	// A game on another storefront must not count as "known" for this one.
-	insertTestExternalGame(t, userID, "steam", "3", "Steam Game", "pc-windows")
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "3", Title: "Steam Game", Platforms: []string{"pc-windows"}})
 
 	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), LC: newTestLC(t)}
 	if err := w.Work(ctx, syncDispatchJob(t, tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"})); err != nil {
@@ -1143,7 +1098,7 @@ func TestDispatchSync_EmptyFetchNoKnownGames_Completes(t *testing.T) {
 		uuid.NewString(), userID,
 	).Exec(ctx)
 	// Already-unavailable rows are not "known available" and must not trip the guard.
-	insertTestExternalGame(t, userID, "gog", "1", "Gone Game", "pc-windows")
+	egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "gog", ExternalID: "1", Title: "Gone Game", Platforms: []string{"pc-windows"}})
 	_, _ = testDB.ExecContext(ctx,
 		`UPDATE external_games SET is_available = false WHERE user_id = ? AND storefront = 'gog'`, userID)
 
@@ -1174,16 +1129,7 @@ func TestIGDBMatchWorker_NoIGDBClient_PendingReview(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
 		jobID, userID,
 	)
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
-		 VALUES (?, ?, 'steam', '111', 'Unknown Game', false, true)`,
-		egID, userID,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "111", Title: "Unknown Game", Platforms: []string{"pc-windows"}})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -1228,16 +1174,7 @@ func TestIGDBMatchWorker_AutoResolve(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
 		jobID, userID,
 	)
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
-		 VALUES (?, ?, 'steam', '730', 'Counter-Strike™ 2', false, true)`,
-		egID, userID,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "730", Title: "Counter-Strike™ 2", Platforms: []string{"pc-windows"}})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -1348,17 +1285,8 @@ func TestUserGameWorker_CreatesUserGameAndSyncChange(t *testing.T) {
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Counter-Strike 2', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
 	)
-	egID := uuid.NewString()
-	igdbIDVal := igdbID
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', false, true, ?)`,
-		egID, userID, igdbIDVal,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 42.5, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "730", Title: "Counter-Strike 2", ResolvedIGDBID: igdbID})
+	egtest.InsertPlatform(t, testDB, egID, "pc-windows", 42.5)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -1439,17 +1367,8 @@ func TestUserGameWorker_OwnershipRankGuard(t *testing.T) {
 		 VALUES (?, ?, 'playstation-4', 'playstation-store', true, ?, ?, true, now(), now())`,
 		uuid.NewString(), ugID, existingHours, ownership,
 	)
-	egID := uuid.NewString()
-	subOwnership := "subscription"
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, ownership_status, resolved_igdb_id)
-		 VALUES (?, ?, 'playstation-store', 'CUSA800', 'PSN Game', false, true, ?, ?)`,
-		egID, userID, subOwnership, igdbID,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'playstation-4', 20.0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "playstation-store", ExternalID: "CUSA800", Title: "PSN Game", OwnershipStatus: "subscription", ResolvedIGDBID: igdbID})
+	egtest.InsertPlatform(t, testDB, egID, "playstation-4", 20.0)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -1519,16 +1438,8 @@ func TestUserGameWorker_StatusChangedSyncChange(t *testing.T) {
 		 VALUES (?, ?, 'pc-windows', 'steam', true, 0, 'subscription', true, now(), now())`,
 		uuid.NewString(), ugID,
 	)
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, ownership_status, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', '900', 'Status Change Game', false, true, 'owned', ?)`,
-		egID, userID, igdbID,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 5.0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "900", Title: "Status Change Game", OwnershipStatus: "owned", ResolvedIGDBID: igdbID})
+	egtest.InsertPlatform(t, testDB, egID, "pc-windows", 5.0)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -1652,7 +1563,7 @@ func TestDispatchSync_AmazonGames_FailureChangesNoGames(t *testing.T) {
 				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'amazon-games', 'daily')`,
 				uuid.NewString(), userID,
 			).Exec(ctx)
-			insertTestExternalGame(t, userID, "amazon-games", "amzn1.adg.product.1", "Owned Game", "pc-windows")
+			egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "amazon-games", ExternalID: "amzn1.adg.product.1", Title: "Owned Game", Platforms: []string{"pc-windows"}})
 
 			adapter := amazongames.NewAdapter(amazonLibraryStub{err: tc.err}, json.RawMessage(`{}`), nil)
 			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), LC: newTestLC(t)}
@@ -1895,16 +1806,8 @@ func TestUserGameWorker_BackfillsExternalGameID(t *testing.T) {
 	)
 
 	// Incoming sync: same ownership rank ('owned'), lower hours (30 < 50) — the no-op sub-case.
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, ownership_status, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', '1145360', 'Hades', false, true, 'owned', ?)`,
-		egID, userID, igdbID,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 30.0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "1145360", Title: "Hades", OwnershipStatus: "owned", ResolvedIGDBID: igdbID})
+	egtest.InsertPlatform(t, testDB, egID, "pc-windows", 30.0)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -1991,21 +1894,8 @@ func TestSync_IGDBMatch_PassesPlatformIDsFromExternalGame(t *testing.T) {
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO platforms (name, display_name, igdb_platform_id) VALUES ('pc-linux', 'PC (Linux)', 3) ON CONFLICT DO NOTHING`)
 
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
-		 VALUES (?, ?, 'steam', '999', 'Test Game', false, true)`,
-		egID, userID,
-	)
 	// Attach two platforms whose igdb_platform_id values were seeded above.
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-linux', 0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "999", Title: "Test Game", Platforms: []string{"pc-windows", "pc-linux"}})
 
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
@@ -2076,17 +1966,8 @@ func TestUserGameWorker_AlreadyInLibrary_WritesSyncChange(t *testing.T) {
 		 VALUES (?, ?, 'pc-windows', 'steam', true, 10.0, 'owned', true, now(), now())`,
 		uuid.NewString(), ugID,
 	)
-	egID := uuid.NewString()
-	igdbIDVal := igdbID
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, ownership_status, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', '1001', 'Existing Game', false, true, 'owned', ?)`,
-		egID, userID, igdbIDVal,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 10.0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "1001", Title: "Existing Game", OwnershipStatus: "owned", ResolvedIGDBID: igdbID})
+	egtest.InsertPlatform(t, testDB, egID, "pc-windows", 10.0)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -2131,16 +2012,7 @@ func TestUserGameWorker_WorkerAutoSkip_WritesSyncChange(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
 		jobID, userID,
 	)
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
-		 VALUES (?, ?, 'steam', '999', 'Skipped Game', true, true)`,
-		egID, userID,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "999", Title: "Skipped Game", Skipped: true, Platforms: []string{"pc-windows"}})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -2193,16 +2065,8 @@ func userGameStage3Fixture(t *testing.T) (itemID string, igdbID int32) {
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Counter-Strike 2', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
 	)
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', false, true, ?)`,
-		egID, userID, igdbID,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 42.5, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "730", Title: "Counter-Strike 2", ResolvedIGDBID: igdbID})
+	egtest.InsertPlatform(t, testDB, egID, "pc-windows", 42.5)
 	itemID = uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -2403,17 +2267,8 @@ func TestUserGameWorker_PlayStatus_NewGame_WithHours_SetsInProgress(t *testing.T
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Test Game', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
 	)
-	egID := uuid.NewString()
-	igdbIDVal := igdbID
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', 'ext-1001', 'Test Game', false, true, ?)`,
-		egID, userID, igdbIDVal,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 10.0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "ext-1001", Title: "Test Game", ResolvedIGDBID: igdbID})
+	egtest.InsertPlatform(t, testDB, egID, "pc-windows", 10.0)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -2455,17 +2310,7 @@ func TestUserGameWorker_PlayStatus_NewGame_NoHours_SetsNotStarted(t *testing.T) 
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Test Game 2', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
 	)
-	egID := uuid.NewString()
-	igdbIDVal := igdbID
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', 'ext-1002', 'Test Game 2', false, true, ?)`,
-		egID, userID, igdbIDVal,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "ext-1002", Title: "Test Game 2", ResolvedIGDBID: igdbID, Platforms: []string{"pc-windows"}})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -2512,17 +2357,8 @@ func TestUserGameWorker_PlayStatus_ExistingNotStarted_WithHours_PromotesToInProg
 		`INSERT INTO user_games (id, user_id, game_id, play_status, created_at, updated_at) VALUES (?, ?, ?, 'not_started', now(), now())`,
 		ugID, userID, igdbID,
 	)
-	egID := uuid.NewString()
-	igdbIDVal := igdbID
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', 'ext-1003', 'Test Game 3', false, true, ?)`,
-		egID, userID, igdbIDVal,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 5.0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "ext-1003", Title: "Test Game 3", ResolvedIGDBID: igdbID})
+	egtest.InsertPlatform(t, testDB, egID, "pc-windows", 5.0)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -2570,17 +2406,8 @@ func TestUserGameWorker_PlayStatus_ExistingUserSet_NeverOverwritten(t *testing.T
 		`INSERT INTO user_games (id, user_id, game_id, play_status, created_at, updated_at) VALUES (?, ?, ?, 'completed', now(), now())`,
 		ugID, userID, igdbID,
 	)
-	egID := uuid.NewString()
-	igdbIDVal := igdbID
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', 'ext-1004', 'Test Game 4', false, true, ?)`,
-		egID, userID, igdbIDVal,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 50.0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "ext-1004", Title: "Test Game 4", ResolvedIGDBID: igdbID})
+	egtest.InsertPlatform(t, testDB, egID, "pc-windows", 50.0)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -2633,17 +2460,8 @@ func TestUserGameWorker_PromotesWishlistedGame(t *testing.T) {
 		wishlistUGID, userID, igdbID,
 	)
 
-	egID := uuid.NewString()
-	igdbIDVal := igdbID
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', 'ext-1005', 'Wishlist Game', false, true, ?)`,
-		egID, userID, igdbIDVal,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 5.0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "ext-1005", Title: "Wishlist Game", ResolvedIGDBID: igdbID})
+	egtest.InsertPlatform(t, testDB, egID, "pc-windows", 5.0)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
@@ -2811,24 +2629,8 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 
 	// Insert two changes rows: one added (with platform rows), one removed.
 	// The added game has explicit platform rows so we can assert they appear in the payload.
-	addedEgID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available)
-		 VALUES (?, ?, 'steam', '12345', 'Hades', false, true)`,
-		addedEgID, userID,
-	); err != nil {
-		t.Fatalf("insert external_game for added: %v", err)
-	}
-	for _, plat := range []string{"mac", "pc-windows"} {
-		if _, err := testDB.ExecContext(ctx,
-			`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
-			 VALUES (?, ?, ?, 0, now())`,
-			uuid.NewString(), addedEgID, plat,
-		); err != nil {
-			t.Fatalf("insert external_game_platform %s: %v", plat, err)
-		}
-	}
-	egID := insertTestExternalGame(t, userID, "steam", "999", "Old Game", "pc-windows")
+	addedEgID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "12345", Title: "Hades", Platforms: []string{"mac", "pc-windows"}})
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: userID, Storefront: "steam", ExternalID: "999", Title: "Old Game", Platforms: []string{"pc-windows"}})
 	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 		 VALUES (?, ?, ?, ?, 'added', 'Hades', now())`,

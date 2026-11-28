@@ -8,6 +8,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 )
 
 func TestLoadUserGameDetail(t *testing.T) {
@@ -29,7 +30,7 @@ func TestLoadUserGameDetail(t *testing.T) {
 
 	// External game wired to the platform — its presence is what makes the
 	// store_url deep-link resolvable in the projection.
-	insertExternalGame(t, testDB, "eg-read-1", userID, "steam", "ext-1", "Read Detail Game")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-read-1", UserID: userID, Storefront: "steam", ExternalID: "ext-1", Title: "Read Detail Game"})
 	if _, err := testDB.ExecContext(ctx,
 		`UPDATE user_game_platforms SET external_game_id = ? WHERE id = ?`,
 		"eg-read-1", "ugp-read-1"); err != nil {

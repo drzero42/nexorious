@@ -12,6 +12,7 @@ import (
 	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -78,13 +79,7 @@ func TestStoreLinkRefreshDispatch_HandlerOwned_PopulatesExistingRow(t *testing.T
 	adminID := insertMetaRefreshAdminUser(t)
 
 	// One resolvable external_games row (steam, no store_link → eligible).
-	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, created_at, updated_at)
-		 VALUES (?, ?, 'steam', '440', 'Team Fortress 2', true, now(), now())`,
-		uuid.NewString(), adminID,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert external_game: %v", err)
-	}
+	egtest.Insert(t, testDB, egtest.Game{UserID: adminID, Storefront: "steam", ExternalID: "440", Title: "Team Fortress 2"})
 
 	// The admin handler creates the Job with its dispatch.
 	lc := newTestLC(t)
@@ -160,13 +155,7 @@ func TestStoreLinkRefreshDispatch_HandlerOwned_UsersShareStorefront(t *testing.T
 	insertTestUser(t, testDB, otherID)
 
 	for _, uid := range []string{adminID, otherID} {
-		if _, err := testDB.NewRaw(
-			`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, created_at, updated_at)
-			 VALUES (?, ?, 'steam', '440', 'Team Fortress 2', true, now(), now())`,
-			uuid.NewString(), uid,
-		).Exec(ctx); err != nil {
-			t.Fatalf("insert external_game: %v", err)
-		}
+		egtest.Insert(t, testDB, egtest.Game{UserID: uid, Storefront: "steam", ExternalID: "440", Title: "Team Fortress 2"})
 	}
 
 	lc := newTestLC(t)

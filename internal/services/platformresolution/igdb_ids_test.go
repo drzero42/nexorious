@@ -4,15 +4,17 @@ import (
 	"context"
 	"testing"
 
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
 )
 
 func TestIGDBPlatformIDsForExternalGame_ReturnsIDsForOwnedPlatforms(t *testing.T) {
 	truncateAllTables(t)
 	insertTestUser(t, testDB, "u1")
-	egID := insertTestExternalGame(t, testDB, "u1", "steam", "Test Game")
-	insertTestExternalGamePlatform(t, testDB, egID, "pc-windows") // igdb_platform_id = 6
-	insertTestExternalGamePlatform(t, testDB, egID, "pc-linux")   // igdb_platform_id = 3
+	egID := egtest.Insert(t, testDB, egtest.Game{
+		UserID: "u1", Title: "Test Game",
+		Platforms: []string{"pc-windows", "pc-linux"}, // igdb_platform_id 6 and 3
+	})
 
 	ids, err := platformresolution.IGDBPlatformIDsForExternalGame(context.Background(), testDB, egID)
 	if err != nil {
@@ -38,15 +40,15 @@ func TestIGDBPlatformIDsForExternalGame_MissingEGReturnsEmpty(t *testing.T) {
 func TestIGDBPlatformIDsForExternalGame_NullIDsAreSkipped(t *testing.T) {
 	truncateAllTables(t)
 	insertTestUser(t, testDB, "u2")
-	egID := insertTestExternalGame(t, testDB, "u2", "physical", "Old Game")
+	egID := egtest.Insert(t, testDB, egtest.Game{UserID: "u2", Storefront: "physical", Title: "Old Game"})
 	// Insert a synthetic platform with NULL igdb_platform_id, attach the EG to it.
 	if _, err := testDB.NewRaw(
 		`INSERT INTO platforms (name, display_name, igdb_platform_id, default_storefront) VALUES ('test-null-platform', 'Test Null', NULL, 'physical') ON CONFLICT DO NOTHING`,
 	).Exec(context.Background()); err != nil {
 		t.Fatalf("insert null-id platform: %v", err)
 	}
-	insertTestExternalGamePlatform(t, testDB, egID, "test-null-platform")
-	insertTestExternalGamePlatform(t, testDB, egID, "playstation-2") // igdb_platform_id = 8
+	egtest.InsertPlatform(t, testDB, egID, "test-null-platform", 0)
+	egtest.InsertPlatform(t, testDB, egID, "playstation-2", 0) // igdb_platform_id = 8
 
 	ids, err := platformresolution.IGDBPlatformIDsForExternalGame(context.Background(), testDB, egID)
 	if err != nil {

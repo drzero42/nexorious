@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/externalgame"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 )
 
 const onlyThis = "?only_this_edition=true"
@@ -440,7 +441,7 @@ func TestListExternalGames_Editions(t *testing.T) {
 	f := newRM(t, "list-editions")
 	f.game("eg", 100, false, "playstation-4")
 	f.game("ed", 100, false, "playstation-5")
-	f.exec(`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES ('ed-p2', 'ed', 'playstation-4', 0, now())`)
+	egtest.InsertPlatform(t, testDB, "ed", "playstation-4", 0)
 	f.exec(`UPDATE external_games SET store_link = 'concept-ed' WHERE id = 'ed'`)
 	f.titled("solo", "Other", 0, false, "")
 

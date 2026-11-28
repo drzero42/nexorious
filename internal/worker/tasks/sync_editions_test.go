@@ -19,6 +19,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -38,34 +39,26 @@ type edGame struct {
 
 func edInsertGame(t *testing.T, userID string, g edGame) string {
 	t.Helper()
-	ctx := context.Background()
 	if g.title == "" {
 		g.title = "Horizon"
 	}
-	id := uuid.NewString()
 	if g.storefront == "" {
 		g.storefront = edStore
 	}
-	var resolved any
 	if g.resolved != 0 {
 		edEnsureGame(t, g.resolved)
-		resolved = g.resolved
 	}
-	created := time.Now().Add(-g.age - time.Hour)
-	if _, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, resolved_igdb_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, now())`,
-		id, userID, g.storefront, g.extID, g.title, g.skipped, g.available, resolved, created,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert external game %s: %v", g.extID, err)
-	}
-	if _, err := testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
-		uuid.NewString(), id,
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert platform %s: %v", g.extID, err)
-	}
-	return id
+	return egtest.Insert(t, testDB, egtest.Game{
+		UserID:         userID,
+		Storefront:     g.storefront,
+		ExternalID:     g.extID,
+		Title:          g.title,
+		Skipped:        g.skipped,
+		Unavailable:    !g.available,
+		ResolvedIGDBID: g.resolved,
+		CreatedAt:      time.Now().Add(-g.age - time.Hour),
+		Platforms:      []string{"pc-windows"},
+	})
 }
 
 func edEnsureGame(t *testing.T, igdbID int32) {

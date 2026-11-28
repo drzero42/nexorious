@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 )
 
 // rematchTitleFixture rematches the user's External game "Gauntlet™" through
@@ -16,7 +18,7 @@ func rematchTitleFixture(t *testing.T, igdbGame map[string]any, igdbID int) (row
 	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
 	insertAuthTestUser(t, testDB, "u-rm-title", "rmtitle", "pass123", true, false)
 	token := loginAndGetToken(t, e, "rmtitle", "pass123")
-	insertExternalGame(t, testDB, "eg-rm-title", "u-rm-title", "playstation-store", "ps-1", "Gauntlet™")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-rm-title", UserID: "u-rm-title", Storefront: "playstation-store", ExternalID: "ps-1", Title: "Gauntlet™"})
 
 	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-rm-title/rematch",
 		map[string]any{"igdb_id": igdbID}, token)
@@ -101,7 +103,7 @@ func TestRematchExternalGame_OtherUsersGame_NoLookup(t *testing.T) {
 	insertAuthTestUser(t, testDB, "u-rm-owner", "rmowner", "pass123", true, false)
 	insertAuthTestUser(t, testDB, "u-rm-other", "rmother", "pass123", true, false)
 	token := loginAndGetToken(t, e, "rmother", "pass123")
-	insertExternalGame(t, testDB, "eg-rm-foreign", "u-rm-owner", "playstation-store", "ps-1", "Gauntlet™")
+	egtest.Insert(t, testDB, egtest.Game{ID: "eg-rm-foreign", UserID: "u-rm-owner", Storefront: "playstation-store", ExternalID: "ps-1", Title: "Gauntlet™"})
 
 	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-rm-foreign/rematch",
 		map[string]any{"igdb_id": 295728}, token)

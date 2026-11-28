@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/externalgame/egtest"
 )
 
 // ─── Admin users test helpers ────────────────────────────────────────────────
@@ -1002,13 +1003,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	}
 
 	// external_games (1)
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title)
-		 VALUES (?, ?, 'steam', 'ext-1', 'External')`,
-		userID+"-eg", userID,
-	); err != nil {
-		t.Fatalf("seed external_games: %v", err)
-	}
+	egtest.Insert(t, db, egtest.Game{ID: userID + "-eg", UserID: userID, Storefront: "steam", ExternalID: "ext-1", Title: "External"})
 }
 
 // intToStr is a tiny zero-dep stringifier for unique ID suffixes in seeds.
